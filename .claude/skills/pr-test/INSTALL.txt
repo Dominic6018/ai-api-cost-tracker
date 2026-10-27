@@ -1,0 +1,20 @@
+Claude Code /pr-test skill for AI API Cost Tracker
+
+INSTALL:
+1. Open your ai-api-cost-tracker repository locally.
+2. Copy the included .claude/skills/pr-test/ folder into the repository root, preserving SKILL.md.
+3. Open Claude Code in that repository, then use:
+   /pr-test                 Full workflow: code change, PR, validation, merge
+   /pr-test create          Create PR without merging
+   /pr-test issue 12        Implement issue #12 then PR and merge
+   /pr-test merge 12        Validate and merge existing PR #12
+
+REQUIREMENTS:
+- Git and GitHub CLI (gh) installed.
+- Authenticated GitHub CLI (gh auth login).
+- Existing ai-api-cost-tracker remote GitHub repository.
+- Appropriate GitHub permissions.
+
+On each /pr-test invocation, Claude picks one meaningful roadmap task, creates/reuses an Issue, implements it, opens a PR, checks it, and merges only when safe. The roadmap and GitHub Issues/PRs preserve progress across sessions. If the roadmap does not exist, Claude creates it as part of the work.
+
+This skill does not autonomously run daily. It is only executed when you invoke it.
