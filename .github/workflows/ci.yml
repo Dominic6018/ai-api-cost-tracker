@@ -30,3 +30,43 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build
+
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Matches docker-compose.yml so CI exercises the documented dev setup.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cost_tracker
+          POSTGRES_PASSWORD: cost_tracker
+          POSTGRES_DB: cost_tracker
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cost_tracker -d cost_tracker"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://cost_tracker:cost_tracker@localhost:5432/cost_tracker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check migrations match the schema
+        run: |
+          npm run db:generate
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            echo "::error::src/db/schema.ts has changes without a migration. Run npm run db:generate and commit the result."
+            git status --porcelain drizzle
+            exit 1
+          fi
+      - name: Apply migrations to an empty database
+        run: npm run db:migrate
+      - name: Re-apply migrations (should be a no-op)
+        run: npm run db:migrate
+      - run: npm run test:integration

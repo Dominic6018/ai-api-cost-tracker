@@ -46,17 +46,18 @@ Open http://localhost:3000.
 
 ## Scripts
 
-| Script                 | Purpose                                      |
-| ---------------------- | -------------------------------------------- |
-| `npm run dev`          | Start the dev server                         |
-| `npm run build`        | Production build                             |
-| `npm run lint`         | ESLint                                       |
-| `npm run typecheck`    | TypeScript type check                        |
-| `npm test`             | Run unit tests once                          |
-| `npm run format:check` | Prettier check (`npm run format` to fix)     |
-| `npm run db:generate`  | Generate a migration from `src/db/schema.ts` |
-| `npm run db:migrate`   | Apply pending migrations                     |
-| `npm run db:studio`    | Open Drizzle Studio                          |
+| Script                     | Purpose                                                          |
+| -------------------------- | ---------------------------------------------------------------- |
+| `npm run dev`              | Start the dev server                                             |
+| `npm run build`            | Production build                                                 |
+| `npm run lint`             | ESLint                                                           |
+| `npm run typecheck`        | TypeScript type check                                            |
+| `npm test`                 | Run unit tests once                                              |
+| `npm run test:integration` | Run database integration tests (needs a migrated `DATABASE_URL`) |
+| `npm run format:check`     | Prettier check (`npm run format` to fix)                         |
+| `npm run db:generate`      | Generate a migration from `src/db/schema.ts`                     |
+| `npm run db:migrate`       | Apply pending migrations                                         |
+| `npm run db:studio`        | Open Drizzle Studio                                              |
 
 ## Project structure
 
@@ -80,6 +81,13 @@ docs/ROADMAP.md   Development roadmap
 - **usage_events**: individual requests with token counts (including cached input tokens), computed `cost_usd`, and an optional provider `request_id` for de-duplication.
 
 Monetary values use Postgres `numeric` rather than floating-point columns.
+
+## Testing
+
+- **Unit tests** (`npm test`) need no database.
+- **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
+
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), and runs the integration tests.
 
 ## Contributing
 
