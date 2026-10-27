@@ -12,31 +12,30 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 
 ## Milestone 1: Data layer
 
-- [ ] Verify the initial migration (`drizzle/0000_init.sql`) against a live Postgres
-- [ ] Pricing lookup: resolve the price effective at a given timestamp
-- [ ] Seed script for projects and verified model pricing (prices sourced from provider pricing pages, with a source date)
+- [x] Verify the initial migration (`drizzle/0000_init.sql`) against a live Postgres, with database integration tests in CI (#1)
+- [ ] Pricing lookup: resolve the price effective at a given timestamp (#2)
+- [ ] Seed script for projects and verified model pricing (prices sourced from provider pricing pages, with a source date) (#3)
 
 ## Milestone 2: Ingestion
 
-- [ ] `POST /api/usage` endpoint: validate payload, resolve pricing, compute cost, insert event
-- [ ] Per-project API keys (hashed at rest) to authenticate ingestion
-- [ ] Idempotent ingestion via `(provider, request_id)`
+- [ ] `POST /api/usage` endpoint: validate payload, resolve pricing, compute cost, insert event (#4)
+- [ ] Per-project API keys (hashed at rest) to authenticate ingestion (#5)
+- [ ] Idempotent ingestion via `(provider, request_id)` (#6)
 
 ## Milestone 3: Dashboard
 
-- [ ] Projects list and create/edit forms
-- [ ] Spend overview: totals for today, this month, and last 30 days
-- [ ] Spend over time chart and breakdown by provider/model
-- [ ] Usage events table with filtering and pagination
+- [ ] Projects list and create/edit forms (#7)
+- [ ] Spend overview: totals for today, this month, and last 30 days (#8)
+- [ ] Spend over time chart and breakdown by provider/model (#9)
+- [ ] Usage events table with filtering and pagination (#10)
 
 ## Milestone 4: Budgets and alerts
 
-- [ ] Budget utilization per project for the current month
-- [ ] Threshold alerts (e.g. 80% / 100%) surfaced in the UI
+- [ ] Budget utilization per project for the current month (#11)
+- [ ] Threshold alerts (e.g. 80% / 100%) surfaced in the UI (#12)
 
 ## Later
 
 - Provider usage-API importers (pull usage instead of push)
 - CSV export
 - Authentication for the dashboard
-- Database integration tests in CI using a Postgres service container
