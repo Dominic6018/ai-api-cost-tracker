@@ -60,14 +60,14 @@ Interpret this instruction as follows:
 4. Add or update appropriate tests for code changes when practical.
 5. Run the available project checks: lint, typecheck, unit tests, build, as applicable. Report absent commands honestly. Do not run destructive migrations, production writes, paid API calls, or external deployments.
 6. Inspect `git diff --check`, `git diff`, and the staged file list. Check for credentials, accidental personal information, binary artifacts, and unrelated changes.
-7. Commit the actual changes with a precise Conventional Commit message. Multiple commits are fine only if they represent distinct meaningful units of work. Never backdate, forge, or inflate Git history.
+7. Commit the actual changes with a precise Conventional Commit message. Multiple commits are fine only if they represent distinct meaningful units of work. Never backdate, forge, or inflate Git history. Do not add `Co-Authored-By` trailers or any other mention of Claude to commit messages; commits carry only the configured Git author.
 8. Push only the new feature branch (`git push -u origin <feature-branch>`). Never force-push or push directly to the default branch.
 
 ## 4. Create the PR (full/create/issue modes)
 
 - Open a real PR with `gh pr create --base <default-branch> --head <feature-branch> --title <clear-title> --body <description>`.
 - In the PR body summarize: the problem, implementation, tests performed, relevant limitations, and `Fixes #<issue-number>` when applicable.
-- State that the changes were implemented with Claude Code assistance; do not fabricate independent reviewers or approvals.
+- Do not mention Claude or Claude Code anywhere in the PR title or body (no attribution lines or "Generated with" footers); do not fabricate independent reviewers or approvals.
 - Retrieve and record the PR number and URL with `gh pr view --json number,url,state,headRefOid,baseRefName`.
 - In `create` mode, stop here. Do not merge.
 
