@@ -69,4 +69,8 @@ jobs:
         run: npm run db:migrate
       - name: Re-apply migrations (should be a no-op)
         run: npm run db:migrate
+      - name: Seed the database
+        run: npm run db:seed
+      - name: Re-seed (should insert nothing)
+        run: npm run db:seed | tee seed.log && grep -q "Seeded 0 project(s) and 0 of" seed.log
       - run: npm run test:integration
