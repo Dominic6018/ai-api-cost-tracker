@@ -131,6 +131,7 @@ export const usageEvents = pgTable(
   ],
 );
 
+export type Provider = (typeof providerEnum.enumValues)[number];
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;

@@ -36,8 +36,9 @@ cp .env.example .env
 # Start the development database (or point DATABASE_URL at your own Postgres)
 docker compose up -d db
 
-# Create the schema
+# Create the schema, then add a sample project and model prices
 npm run db:migrate
+npm run db:seed
 
 npm run dev
 ```
@@ -46,18 +47,19 @@ Open http://localhost:3000.
 
 ## Scripts
 
-| Script                     | Purpose                                                          |
-| -------------------------- | ---------------------------------------------------------------- |
-| `npm run dev`              | Start the dev server                                             |
-| `npm run build`            | Production build                                                 |
-| `npm run lint`             | ESLint                                                           |
-| `npm run typecheck`        | TypeScript type check                                            |
-| `npm test`                 | Run unit tests once                                              |
-| `npm run test:integration` | Run database integration tests (needs a migrated `DATABASE_URL`) |
-| `npm run format:check`     | Prettier check (`npm run format` to fix)                         |
-| `npm run db:generate`      | Generate a migration from `src/db/schema.ts`                     |
-| `npm run db:migrate`       | Apply pending migrations                                         |
-| `npm run db:studio`        | Open Drizzle Studio                                              |
+| Script                     | Purpose                                                               |
+| -------------------------- | --------------------------------------------------------------------- |
+| `npm run dev`              | Start the dev server                                                  |
+| `npm run build`            | Production build                                                      |
+| `npm run lint`             | ESLint                                                                |
+| `npm run typecheck`        | TypeScript type check                                                 |
+| `npm test`                 | Run unit tests once                                                   |
+| `npm run test:integration` | Run database integration tests (needs a migrated `DATABASE_URL`)      |
+| `npm run format:check`     | Prettier check (`npm run format` to fix)                              |
+| `npm run db:generate`      | Generate a migration from `src/db/schema.ts`                          |
+| `npm run db:migrate`       | Apply pending migrations                                              |
+| `npm run db:seed`          | Add sample data and model prices (safe to re-run; not for production) |
+| `npm run db:studio`        | Open Drizzle Studio                                                   |
 
 ## Project structure
 
@@ -68,6 +70,7 @@ src/
     schema.ts     Drizzle schema (projects, model_pricing, usage_events)
     index.ts      Server-only database client
     pricing.ts    Look up the price in effect for a model at a time
+    seed/         Sample project and dated model prices (`npm run db:seed`)
   lib/
     cost.ts       Token cost calculation and USD formatting
     env.ts        Environment variable validation
@@ -83,6 +86,10 @@ docs/ROADMAP.md   Development roadmap
 - **usage_events**: individual requests with token counts (including cached input tokens), computed `cost_usd`, and an optional provider `request_id` for de-duplication.
 
 Monetary values use Postgres `numeric` rather than floating-point columns.
+
+### Seed prices
+
+`npm run db:seed` loads prices from [src/db/seed/data.ts](src/db/seed/data.ts). Each entry records its official source URL and the date it was checked. Prices apply from the date they were checked, so earlier usage has no price. Models priced by prompt length, and Anthropic cache-write rates, aren't supported yet (#15). Re-running the seed never overwrites existing rows. To correct a price, add a new row with a later `effectiveFrom`.
 
 ## Testing
 
