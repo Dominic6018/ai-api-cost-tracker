@@ -67,9 +67,11 @@ src/
   db/
     schema.ts     Drizzle schema (projects, model_pricing, usage_events)
     index.ts      Server-only database client
+    pricing.ts    Look up the price in effect for a model at a time
   lib/
     cost.ts       Token cost calculation and USD formatting
     env.ts        Environment variable validation
+    pricing.ts    Effective-price selection and numeric parsing
 drizzle/          Generated SQL migrations
 docs/ROADMAP.md   Development roadmap
 ```
