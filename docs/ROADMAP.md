@@ -13,7 +13,7 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 ## Milestone 1: Data layer
 
 - [x] Verify the initial migration (`drizzle/0000_init.sql`) against a live Postgres, with database integration tests in CI (#1)
-- [ ] Pricing lookup: resolve the price effective at a given timestamp (#2)
+- [x] Pricing lookup: resolve the price effective at a given timestamp (#2)
 - [ ] Seed script for projects and verified model pricing (prices sourced from provider pricing pages, with a source date) (#3)
 
 ## Milestone 2: Ingestion
