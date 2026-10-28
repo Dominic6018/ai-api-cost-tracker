@@ -66,15 +66,18 @@ Open http://localhost:3000.
 ```
 src/
   app/            Next.js App Router pages and layouts
+    api/usage/    POST /api/usage route and its request handler
   db/
     schema.ts     Drizzle schema (projects, model_pricing, usage_events)
     index.ts      Server-only database client
     pricing.ts    Look up the price in effect for a model at a time
+    usage.ts      Price and store a usage event
     seed/         Sample project and dated model prices (`npm run db:seed`)
   lib/
     cost.ts       Token cost calculation and USD formatting
     env.ts        Environment variable validation
     pricing.ts    Effective-price selection and numeric parsing
+    usage.ts      Usage payload validation
 drizzle/          Generated SQL migrations
 docs/ROADMAP.md   Development roadmap
 ```
@@ -91,12 +94,44 @@ Monetary values use Postgres `numeric` rather than floating-point columns.
 
 `npm run db:seed` loads prices from [src/db/seed/data.ts](src/db/seed/data.ts). Each entry records its official source URL and the date it was checked. Prices apply from the date they were checked, so earlier usage has no price. Models priced by prompt length, and Anthropic cache-write rates, aren't supported yet (#15). Re-running the seed never overwrites existing rows. To correct a price, add a new row with a later `effectiveFrom`.
 
+## Recording usage
+
+> **Development only.** `POST /api/usage` has no authentication yet, so it returns 404 when `NODE_ENV` is `production` (including `npm start`). Per-project API keys are tracked in #5.
+
+```bash
+curl -X POST http://localhost:3000/api/usage \
+  -H 'content-type: application/json' \
+  -d '{
+    "projectId": "<project uuid>",
+    "provider": "openai",
+    "model": "gpt-4.1",
+    "inputTokens": 1000,
+    "outputTokens": 500,
+    "cachedInputTokens": 0,
+    "requestId": "req_abc123",
+    "occurredAt": "2026-11-01T12:00:00Z",
+    "metadata": { "route": "/chat" }
+  }'
+```
+
+`cachedInputTokens`, `requestId`, `occurredAt` (ISO 8601 with a time zone; defaults to now, and can't be in the future), and `metadata` (an object of at most 8 KB) are optional. The cost is computed on the server with the price in effect at `occurredAt`.
+
+| Status | `error.code`        | Meaning                                                           |
+| ------ | ------------------- | ----------------------------------------------------------------- |
+| 201    |                     | Stored; the body is `{ "event": { ..., "costUsd": "0.006000" } }` |
+| 400    | `invalid_json`      | Body isn't valid JSON                                             |
+| 400    | `invalid_payload`   | Validation failed; see `error.fieldErrors`                        |
+| 404    | `project_not_found` | No project with that `projectId`                                  |
+| 409    | `duplicate_request` | An event with this `provider` and `requestId` already exists      |
+| 413    | `payload_too_large` | Body is over 64 KB                                                |
+| 422    | `no_pricing`        | No price for the model at `occurredAt`                            |
+
 ## Testing
 
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), and runs the integration tests.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data.
 
 ## Contributing
 
