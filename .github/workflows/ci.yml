@@ -74,3 +74,22 @@ jobs:
       - name: Re-seed (should insert nothing)
         run: npm run db:seed | tee seed.log && grep -q "Seeded 0 project(s) and 0 of" seed.log
       - run: npm run test:integration
+      - name: Smoke-test POST /api/usage against the seeded database
+        run: |
+          npx next dev -p 3000 > next-dev.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3000/ && break; sleep 2; done
+
+          PROJECT_ID=$(psql "$DATABASE_URL" -tAc "SELECT id FROM projects WHERE slug = 'sample-app'")
+          BODY="{\"projectId\":\"$PROJECT_ID\",\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"requestId\":\"ci-smoke-$GITHUB_RUN_ID\"}"
+          post() { curl -s -o response.json -w '%{http_code}' -X POST http://localhost:3000/api/usage -H 'content-type: application/json' -d "$BODY"; }
+
+          # gpt-4.1 seed price: $2 input, $8 output per 1M tokens
+          STATUS=$(post); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"costUsd":"0.006000"' response.json
+
+          STATUS=$(post); cat response.json; echo
+          test "$STATUS" = 409
+      - name: Show dev server log
+        if: failure()
+        run: cat next-dev.log || true
