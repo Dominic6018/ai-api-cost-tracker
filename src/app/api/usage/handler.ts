@@ -1,0 +1,103 @@
+import type { RecordUsageResult } from "@/db/usage";
+import { parseUsagePayload, type UsageInput } from "@/lib/usage";
+
+/** Largest accepted request body. */
+export const MAX_BODY_BYTES = 64 * 1024;
+
+export interface UsageHandlerDeps {
+  recordUsage: (usage: UsageInput) => Promise<RecordUsageResult>;
+  /** Ingestion has no authentication yet (#5), so it is off in production. */
+  enabled: boolean;
+  now?: () => Date;
+}
+
+type ErrorCode =
+  | "not_found"
+  | "payload_too_large"
+  | "invalid_json"
+  | "invalid_payload"
+  | RecordUsageError;
+
+type RecordUsageError = Extract<RecordUsageResult, { ok: false }>["error"];
+
+function errorResponse(
+  status: number,
+  code: ErrorCode,
+  message: string,
+  extra: Record<string, unknown> = {},
+): Response {
+  return Response.json({ error: { code, message, ...extra } }, { status });
+}
+
+const RECORD_ERRORS: Record<
+  RecordUsageError,
+  { status: number; message: string }
+> = {
+  no_pricing: {
+    status: 422,
+    message: "No price is configured for this model at occurredAt",
+  },
+  project_not_found: { status: 404, message: "Project not found" },
+  duplicate_request: {
+    status: 409,
+    message: "A usage event with this provider and requestId already exists",
+  },
+};
+
+/** Builds the `POST /api/usage` handler; dependencies are injected for tests. */
+export function createUsageHandler(deps: UsageHandlerDeps) {
+  return async function handleUsage(request: Request): Promise<Response> {
+    if (!deps.enabled) {
+      return errorResponse(404, "not_found", "Not found");
+    }
+
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (declaredLength > MAX_BODY_BYTES) {
+      return errorResponse(413, "payload_too_large", "Request body too large");
+    }
+    const text = await request.text();
+    if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) {
+      return errorResponse(413, "payload_too_large", "Request body too large");
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return errorResponse(400, "invalid_json", "Request body must be JSON");
+    }
+
+    const parsed = parseUsagePayload(body, deps.now?.() ?? new Date());
+    if (!parsed.ok) {
+      return errorResponse(400, "invalid_payload", "Invalid usage payload", {
+        fieldErrors: parsed.fieldErrors,
+        formErrors: parsed.formErrors,
+      });
+    }
+
+    const result = await deps.recordUsage(parsed.usage);
+    if (!result.ok) {
+      const { status, message } = RECORD_ERRORS[result.error];
+      return errorResponse(status, result.error, message);
+    }
+
+    const { event } = result;
+    return Response.json(
+      {
+        event: {
+          id: event.id,
+          projectId: event.projectId,
+          provider: event.provider,
+          model: event.model,
+          inputTokens: event.inputTokens,
+          outputTokens: event.outputTokens,
+          cachedInputTokens: event.cachedInputTokens,
+          costUsd: event.costUsd,
+          requestId: event.requestId,
+          occurredAt: event.occurredAt.toISOString(),
+        },
+      },
+      { status: 201 },
+    );
+  };
+}
