@@ -17,11 +17,11 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 - [x] Seed script for projects and verified model pricing (prices sourced from provider pricing pages, with a source date) (#3)
 - [ ] Prompt-length pricing tiers and cache-write rates (#15)
 
-## Milestone 2: Ingestion
+## Milestone 2: Ingestion ✅
 
 - [x] `POST /api/usage` endpoint: validate payload, resolve pricing, compute cost, insert event (#4)
 - [x] Per-project API keys (hashed at rest) to authenticate ingestion (#5)
-- [ ] Idempotent ingestion via `(provider, request_id)` (#6)
+- [x] Idempotent ingestion via `(provider, request_id)` (#6)
 
 ## Milestone 3: Dashboard
 

@@ -131,16 +131,19 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 
 `cachedInputTokens`, `requestId`, `occurredAt` (ISO 8601 with a time zone; defaults to now, and can't be in the future), and `metadata` (an object of at most 8 KB) are optional. Unknown fields, including `projectId`, are rejected. The cost is computed on the server with the price in effect at `occurredAt`.
 
-| Status | `error.code`        | Meaning                                                           |
-| ------ | ------------------- | ----------------------------------------------------------------- |
-| 201    |                     | Stored; the body is `{ "event": { ..., "costUsd": "0.006000" } }` |
-| 400    | `invalid_json`      | Body isn't valid JSON                                             |
-| 400    | `invalid_payload`   | Validation failed; see `error.fieldErrors`                        |
-| 401    | `unauthorized`      | Missing, malformed, unknown or revoked API key                    |
-| 404    | `project_not_found` | The key's project no longer exists                                |
-| 409    | `duplicate_request` | An event with this `provider` and `requestId` already exists      |
-| 413    | `payload_too_large` | Body is over 64 KB                                                |
-| 422    | `no_pricing`        | No price for the model at `occurredAt`                            |
+**Retries are safe when you send `requestId`** (the provider's request ID, such as OpenAI's `x-request-id`). Repeating a request returns the original event with status 200 instead of storing it twice. The stored cost is kept, even if prices have changed since. The retry must come from the same project and have the same `model` and token counts. `occurredAt` and `metadata` aren't compared. Otherwise it gets a 409. Events without a `requestId` are always stored.
+
+| Status | `error.code`          | Meaning                                                                                      |
+| ------ | --------------------- | -------------------------------------------------------------------------------------------- |
+| 201    |                       | Stored; the body is `{ "event": { ..., "costUsd": "0.006000" }, "replayed": false }`         |
+| 200    |                       | Retry of a stored request; returns the original event with `"replayed": true`                |
+| 400    | `invalid_json`        | Body isn't valid JSON                                                                        |
+| 400    | `invalid_payload`     | Validation failed; see `error.fieldErrors`                                                   |
+| 401    | `unauthorized`        | Missing, malformed, unknown or revoked API key                                               |
+| 404    | `project_not_found`   | The key's project no longer exists                                                           |
+| 409    | `request_id_conflict` | This `provider` and `requestId` were already used for different usage, or by another project |
+| 413    | `payload_too_large`   | Body is over 64 KB                                                                           |
+| 422    | `no_pricing`          | No price for the model at `occurredAt`                                                       |
 
 ## Testing
 
