@@ -18,7 +18,7 @@ export function hashSessionToken(token: string): string {
  */
 export function safeRedirectPath(
   next: unknown,
-  fallback = "/projects",
+  fallback = "/overview",
 ): string {
   if (typeof next !== "string") return fallback;
   if (!next.startsWith("/") || next.startsWith("//")) return fallback;

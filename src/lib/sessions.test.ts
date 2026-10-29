@@ -39,6 +39,6 @@ describe("safeRedirectPath", () => {
     "/projects\nSet-Cookie: x",
     ["/projects", "/other"],
   ])("falls back for %j", (next) => {
-    expect(safeRedirectPath(next)).toBe("/projects");
+    expect(safeRedirectPath(next)).toBe("/overview");
   });
 });
