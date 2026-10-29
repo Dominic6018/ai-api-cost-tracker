@@ -39,9 +39,10 @@ const RECORD_ERRORS: Record<
     message: "No price is configured for this model at occurredAt",
   },
   project_not_found: { status: 404, message: "Project not found" },
-  duplicate_request: {
+  request_id_conflict: {
     status: 409,
-    message: "A usage event with this provider and requestId already exists",
+    message:
+      "This provider and requestId were already used for different usage",
   },
 };
 
@@ -95,7 +96,8 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
       return errorResponse(status, result.error, message);
     }
 
-    const { event } = result;
+    const { event, replayed } = result;
+    // 201 for a new event; 200 when a retry returns the stored one.
     return Response.json(
       {
         event: {
@@ -110,8 +112,9 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
           requestId: event.requestId,
           occurredAt: event.occurredAt.toISOString(),
         },
+        replayed,
       },
-      { status: 201 },
+      { status: replayed ? 200 : 201 },
     );
   };
 }
