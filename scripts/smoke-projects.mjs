@@ -81,7 +81,7 @@ function step(name) {
 }
 
 step("signed-out visitors are sent to the sign-in page");
-for (const path of ["/overview", "/projects", "/projects/new"]) {
+for (const path of ["/overview", "/spend", "/projects", "/projects/new"]) {
   const result = await page(path);
   assert.equal(result.status, 307, `GET ${path} while signed out`);
   const location = new URL(result.location, base);
@@ -202,6 +202,38 @@ step("editing clears the budget and renames the project");
   const updated = after.html.split("<tr").find((r) => r.includes(slug));
   assert.match(updated, /Smoke Project Renamed/);
   assert.match(updated, /No budget/);
+}
+
+step("spend over time filters by range and project");
+{
+  const total = (html) =>
+    html.match(/data-testid="range-total"[^>]*>([^<]+)</)?.[1];
+  const current = (html) =>
+    html.match(/aria-current="true"[^>]*>(\d+)(?:<!-- -->)? days</)?.[1];
+
+  const all = await page("/spend?range=7");
+  assert.equal(all.status, 200);
+  assert.equal(current(all.html), "7", "7-day range is selected");
+  assert.match(all.html, /role="img"/, "chart renders");
+  assert.match(all.html, /By provider/);
+  assert.match(all.html, /By model/);
+  const expected = process.env.EXPECT_TODAY_SPEND;
+  if (expected) assert.equal(total(all.html), expected, "7-day total");
+
+  // The smoke project has no usage, so filtering to it shows zero.
+  const list = await page("/projects");
+  const row = list.html.split("<tr").find((r) => r.includes(slug));
+  const projectId = row?.match(/\/projects\/([^/"]+)\/edit/)?.[1];
+  assert.ok(projectId, "found the smoke project id");
+  const filtered = await page(`/spend?range=7&project=${projectId}`);
+  assert.equal(total(filtered.html), "$0.00", "project filter applies");
+  assert.match(filtered.html, /No usage in this range/);
+
+  const fallback = await page("/spend?range=14&project=not-a-project");
+  assert.equal(fallback.status, 200);
+  assert.equal(current(fallback.html), "30", "invalid range falls back");
+  if (expected)
+    assert.equal(total(fallback.html), expected, "unknown project means all");
 }
 
 step("an unknown project id is a 404");

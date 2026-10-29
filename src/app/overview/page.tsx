@@ -47,6 +47,9 @@ export default async function OverviewPage() {
           </h1>
         </div>
         <nav className="flex flex-wrap items-center gap-4 text-sm">
+          <Link href="/spend" className="underline">
+            Spend over time
+          </Link>
           <Link href="/projects" className="underline">
             Projects
           </Link>
