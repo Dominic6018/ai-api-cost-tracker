@@ -19,6 +19,43 @@
   }
 }
 
+/*
+ * Chart tokens. The series colour is categorical slot 1, validated for
+ * contrast against this app's light (#ffffff) and dark (#0a0a0a) surfaces.
+ * Dark values are chosen for the dark surface, not inverted.
+ */
+.viz {
+  --viz-series-1: #2a78d6;
+  --viz-series-1-hover: #256abf;
+  --viz-grid: #e1e0d9;
+  --viz-baseline: #c3c2b7;
+  --viz-text-muted: #6b6a66;
+  --viz-tooltip-bg: #ffffff;
+  --viz-tooltip-border: rgba(11, 11, 11, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz {
+    --viz-series-1: #3987e5;
+    --viz-series-1-hover: #5598e7;
+    --viz-grid: #2c2c2a;
+    --viz-baseline: #383835;
+    --viz-text-muted: #9a9892;
+    --viz-tooltip-bg: #1a1a19;
+    --viz-tooltip-border: rgba(255, 255, 255, 0.12);
+  }
+}
+
+:root[data-theme="dark"] .viz {
+  --viz-series-1: #3987e5;
+  --viz-series-1-hover: #5598e7;
+  --viz-grid: #2c2c2a;
+  --viz-baseline: #383835;
+  --viz-text-muted: #9a9892;
+  --viz-tooltip-bg: #1a1a19;
+  --viz-tooltip-border: rgba(255, 255, 255, 0.12);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
