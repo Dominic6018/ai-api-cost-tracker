@@ -131,7 +131,35 @@ export const usageEvents = pgTable(
   ],
 );
 
+/**
+ * Per-project credentials for the ingestion API. Only a SHA-256 hash of the
+ * key is stored; the key itself is shown once, when it is created.
+ */
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // Leading characters of the key, safe to display and used for lookup.
+    keyPrefix: text("key_prefix").notNull(),
+    // Hex-encoded SHA-256 of the full key.
+    keyHash: text("key_hash").notNull(),
+    createdAt: timestamps.createdAt,
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("api_keys_key_prefix_idx").on(t.keyPrefix),
+    uniqueIndex("api_keys_key_hash_idx").on(t.keyHash),
+    index("api_keys_project_idx").on(t.projectId),
+  ],
+);
+
 export type Provider = (typeof providerEnum.enumValues)[number];
+export type ApiKey = typeof apiKeys.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;

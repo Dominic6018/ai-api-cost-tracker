@@ -9,10 +9,12 @@ export const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 const tokenCount = z.number().int().nonnegative().max(2_147_483_647);
 
-/** Body of `POST /api/usage`. */
+/**
+ * Body of `POST /api/usage`. The project comes from the API key, not the
+ * body, so a key can only record usage for its own project.
+ */
 export const usagePayloadSchema = z
   .object({
-    projectId: z.uuid(),
     provider: z.enum(providerEnum.enumValues),
     model: z.string().trim().min(1).max(200),
     inputTokens: tokenCount,
@@ -38,13 +40,18 @@ export const usagePayloadSchema = z
 
 export type UsagePayload = z.infer<typeof usagePayloadSchema>;
 
-/** A validated usage record ready to price and store. */
-export interface UsageInput extends Omit<UsagePayload, "occurredAt"> {
+/** A validated request body, with `occurredAt` resolved to a date. */
+export interface ParsedUsage extends Omit<UsagePayload, "occurredAt"> {
   occurredAt: Date;
 }
 
+/** A validated usage record attributed to a project, ready to price and store. */
+export interface UsageInput extends ParsedUsage {
+  projectId: string;
+}
+
 export type ParseUsageResult =
-  | { ok: true; usage: UsageInput }
+  | { ok: true; usage: ParsedUsage }
   | { ok: false; fieldErrors: Record<string, string[]>; formErrors: string[] };
 
 /**
