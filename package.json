@@ -17,6 +17,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed/run.ts",
     "api-key": "tsx src/db/scripts/api-key.ts",
+    "user": "tsx src/db/scripts/user.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },

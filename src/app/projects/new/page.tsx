@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { isDashboardEnabled } from "@/lib/dashboard";
+import { requireUser } from "@/lib/auth";
 import { createProjectAction } from "../actions";
 import { ProjectForm } from "../project-form";
 
@@ -10,8 +9,8 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function NewProjectPage() {
-  if (!isDashboardEnabled()) notFound();
+export default async function NewProjectPage() {
+  await requireUser("/projects/new");
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-4 py-12 sm:px-8">

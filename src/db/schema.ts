@@ -158,7 +158,42 @@ export const apiKeys = pgTable(
   ],
 );
 
+/** Dashboard accounts. Passwords are stored as scrypt hashes only. */
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Stored lowercased, so lookups are case-insensitive.
+    email: text("email").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("users_email_idx").on(t.email)],
+);
+
+/**
+ * Signed-in dashboard sessions. The cookie holds a random token; only its
+ * SHA-256 hash is stored, so a database leak doesn't expose live sessions.
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    createdAt: timestamps.createdAt,
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("sessions_token_hash_idx").on(t.tokenHash),
+    index("sessions_user_idx").on(t.userId),
+  ],
+);
+
 export type Provider = (typeof providerEnum.enumValues)[number];
+export type User = typeof users.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
