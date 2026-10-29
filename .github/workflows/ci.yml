@@ -30,6 +30,16 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build
+      - name: Production build keeps the dashboard off and ingestion authenticated
+        run: |
+          npm start -- -p 3000 > next-start.log 2>&1 &
+          for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:3000/ && break; sleep 1; done
+          for path in /projects /projects/new /projects/x/edit; do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000$path")
+            echo "$path -> $STATUS"; test "$STATUS" = 404
+          done
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3000/api/usage)
+          echo "/api/usage without a key -> $STATUS"; test "$STATUS" = 401
 
   database:
     runs-on: ubuntu-latest
@@ -116,6 +126,9 @@ jobs:
           npm run --silent api-key -- revoke "$KEY_PREFIX"
           STATUS=$(post -H "authorization: Bearer $API_KEY"); cat response.json; echo
           test "$STATUS" = 401
+
+          # Project pages: create, duplicate slug, edit, 404s
+          node scripts/smoke-projects.mjs http://localhost:3000
       - name: Show dev server log
         if: failure()
         run: cat next-dev.log || true
