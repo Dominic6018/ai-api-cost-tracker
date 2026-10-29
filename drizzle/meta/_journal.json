@@ -22,6 +22,13 @@
       "when": 1793290320775,
       "tag": "0002_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793291657107,
+      "tag": "0003_usage_occurred_at_index",
+      "breakpoints": true
     }
   ]
 }

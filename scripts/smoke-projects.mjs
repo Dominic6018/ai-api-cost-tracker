@@ -81,7 +81,7 @@ function step(name) {
 }
 
 step("signed-out visitors are sent to the sign-in page");
-for (const path of ["/projects", "/projects/new"]) {
+for (const path of ["/overview", "/projects", "/projects/new"]) {
   const result = await page(path);
   assert.equal(result.status, 307, `GET ${path} while signed out`);
   const location = new URL(result.location, base);
@@ -118,9 +118,25 @@ step("an off-site next parameter is ignored");
     email,
     password,
   });
-  assert.equal(new URL(result.location, base).pathname, "/projects");
+  assert.equal(new URL(result.location, base).pathname, "/overview");
   assert.equal(new URL(result.location, base).host, new URL(base).host);
   cookie = signedIn;
+}
+
+step("the spend overview renders totals for each window");
+{
+  const overview = await page("/overview");
+  assert.equal(overview.status, 200);
+  assert.match(overview.html, /Spend overview/);
+  for (const window of ["today", "month", "last30Days"]) {
+    assert.match(overview.html, new RegExp(`data-window="${window}"`));
+  }
+  // CI records known usage first and passes the expected total for today.
+  const expected = process.env.EXPECT_TODAY_SPEND;
+  if (expected) {
+    const today = overview.html.match(/data-window="today"[^>]*>([^<]+)</)?.[1];
+    assert.equal(today, expected, "today's total");
+  }
 }
 
 step("invalid values are rejected with inline errors");

@@ -120,6 +120,8 @@ export const usageEvents = pgTable(
   },
   (t) => [
     index("usage_events_project_occurred_idx").on(t.projectId, t.occurredAt),
+    // Spend totals across all projects filter by time alone.
+    index("usage_events_occurred_idx").on(t.occurredAt),
     index("usage_events_provider_model_idx").on(t.provider, t.model),
     uniqueIndex("usage_events_provider_request_idx")
       .on(t.provider, t.requestId)
