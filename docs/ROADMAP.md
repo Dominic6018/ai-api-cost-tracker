@@ -25,7 +25,8 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 
 ## Milestone 3: Dashboard
 
-- [ ] Projects list and create/edit forms (#7)
+- [x] Projects list and create/edit forms (#7)
+- [ ] Dashboard authentication; until then the dashboard is off in production (#20)
 - [ ] Spend overview: totals for today, this month, and last 30 days (#8)
 - [ ] Spend over time chart and breakdown by provider/model (#9)
 - [ ] Usage events table with filtering and pagination (#10)
@@ -39,4 +40,3 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 
 - Provider usage-API importers (pull usage instead of push)
 - CSV export
-- Authentication for the dashboard
