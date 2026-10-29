@@ -22,6 +22,7 @@ const at = (iso: string) => new Date(iso);
 
 let alpha: string;
 let beta: string;
+let gamma: string;
 let idle: string;
 
 beforeAll(async () => {
@@ -30,10 +31,11 @@ beforeAll(async () => {
     .values([
       { name: "Spend Alpha", slug: `it-${randomUUID()}` },
       { name: "Spend Beta", slug: `it-${randomUUID()}` },
+      { name: "Spend Gamma", slug: `it-${randomUUID()}` },
       { name: "Spend Idle", slug: `it-${randomUUID()}` },
     ])
     .returning({ id: projects.id });
-  [alpha, beta, idle] = created.map((p) => p.id);
+  [alpha, beta, gamma, idle] = created.map((p) => p.id);
 
   const event = (projectId: string, occurredAt: Date, costUsd: string) => ({
     projectId,
@@ -50,6 +52,8 @@ beforeAll(async () => {
     // Earlier this month, also inside the last 30 days
     event(alpha, at("2031-03-14T23:59:59Z"), "0.100000"),
     event(beta, at("2031-03-01T00:00:00Z"), "5.000000"),
+    // Sorts after "5" as text, so this catches ordering by the text form
+    event(gamma, at("2031-03-02T00:00:00Z"), "10.000000"),
     // Last month: inside the last 30 days (from 2031-02-13T18:00Z) only
     event(beta, at("2031-02-28T23:59:59Z"), "0.300000"),
     event(beta, at("2031-02-13T18:00:00Z"), "0.040000"),
@@ -60,7 +64,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Deleting the projects cascades to their usage events.
-  await db.delete(projects).where(inArray(projects.id, [alpha, beta, idle]));
+  await db
+    .delete(projects)
+    .where(inArray(projects.id, [alpha, beta, gamma, idle]));
   await client.end();
 });
 
@@ -70,9 +76,9 @@ describe("getSpendOverview", () => {
 
     expect(overview.totals).toEqual({
       today: "3.000001",
-      month: "8.100001",
-      last30Days: "8.440001",
-      events: 6,
+      month: "18.100001",
+      last30Days: "18.440001",
+      events: 7,
     });
 
     const byId = new Map(overview.projects.map((p) => [p.id, p]));
@@ -103,6 +109,7 @@ describe("getSpendOverview", () => {
 
   it("orders projects by this month's spend, highest first", async () => {
     const ids = (await getSpendOverview(db, now)).projects.map((p) => p.id);
+    expect(ids.indexOf(gamma)).toBeLessThan(ids.indexOf(beta));
     expect(ids.indexOf(beta)).toBeLessThan(ids.indexOf(alpha));
     expect(ids.indexOf(alpha)).toBeLessThan(ids.indexOf(idle));
   });
