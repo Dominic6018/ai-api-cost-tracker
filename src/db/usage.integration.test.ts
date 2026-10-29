@@ -103,13 +103,96 @@ describe("recordUsage", () => {
       error: "project_not_found",
     });
   });
+});
 
-  it("returns duplicate_request for a repeated provider request id", async () => {
+describe("recordUsage idempotency", () => {
+  async function countEvents(requestId: string) {
+    const rows = await db
+      .select({ id: usageEvents.id })
+      .from(usageEvents)
+      .where(eq(usageEvents.requestId, requestId));
+    return rows.length;
+  }
+
+  it("replays the stored event for a repeated request id", async () => {
     const requestId = `req-${randomUUID()}`;
-    expect((await recordUsage(db, usage({ requestId }))).ok).toBe(true);
-    expect(await recordUsage(db, usage({ requestId }))).toEqual({
-      ok: false,
-      error: "duplicate_request",
+    const first = await recordUsage(db, usage({ requestId }));
+    const second = await recordUsage(db, usage({ requestId }));
+
+    if (!first.ok || !second.ok) throw new Error("expected both to succeed");
+    expect(first.replayed).toBe(false);
+    expect(second.replayed).toBe(true);
+    expect(second.event).toEqual(first.event);
+    expect(await countEvents(requestId)).toBe(1);
+  });
+
+  it("replays even when occurredAt differs between attempts", async () => {
+    const requestId = `req-${randomUUID()}`;
+    await recordUsage(db, usage({ requestId }));
+    const retry = await recordUsage(
+      db,
+      usage({ requestId, occurredAt: new Date("2026-06-01T00:05:00Z") }),
+    );
+    expect(retry.ok && retry.replayed).toBe(true);
+    expect(await countEvents(requestId)).toBe(1);
+  });
+
+  it("returns request_id_conflict when the retry describes different usage", async () => {
+    const requestId = `req-${randomUUID()}`;
+    await recordUsage(db, usage({ requestId }));
+    expect(
+      await recordUsage(db, usage({ requestId, outputTokens: 1 })),
+    ).toEqual({ ok: false, error: "request_id_conflict" });
+    expect(await countEvents(requestId)).toBe(1);
+  });
+
+  it("never returns another project's event for the same request id", async () => {
+    const [other] = await db
+      .insert(projects)
+      .values({ name: "Other project", slug: `it-${randomUUID()}` })
+      .returning();
+    try {
+      const requestId = `req-${randomUUID()}`;
+      await recordUsage(db, usage({ requestId }));
+      expect(
+        await recordUsage(db, usage({ requestId, projectId: other.id })),
+      ).toEqual({ ok: false, error: "request_id_conflict" });
+    } finally {
+      await db.delete(projects).where(eq(projects.id, other.id));
+    }
+  });
+
+  it("always inserts events without a request id", async () => {
+    const first = await recordUsage(db, usage());
+    const second = await recordUsage(db, usage());
+    if (!first.ok || !second.ok) throw new Error("expected both to succeed");
+    expect(first.replayed || second.replayed).toBe(false);
+    expect(first.event.id).not.toBe(second.event.id);
+  });
+
+  it("stores one event when identical requests race", async () => {
+    // A separate pool so the requests really run concurrently.
+    const raceClient = postgres(parseEnv().DATABASE_URL, {
+      max: 8,
+      onnotice: () => {},
     });
+    try {
+      const raceDb = drizzle(raceClient);
+      const requestId = `req-${randomUUID()}`;
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          recordUsage(raceDb, usage({ requestId })),
+        ),
+      );
+
+      expect(results.every((r) => r.ok)).toBe(true);
+      const inserted = results.filter((r) => r.ok && !r.replayed);
+      expect(inserted).toHaveLength(1);
+      const ids = new Set(results.map((r) => r.ok && r.event.id));
+      expect(ids.size).toBe(1);
+      expect(await countEvents(requestId)).toBe(1);
+    } finally {
+      await raceClient.end();
+    }
   });
 });

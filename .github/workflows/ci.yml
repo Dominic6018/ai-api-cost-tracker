@@ -98,7 +98,17 @@ jobs:
           STATUS=$(post -H "authorization: Bearer $API_KEY"); cat response.json; echo
           test "$STATUS" = 201
           grep -q '"costUsd":"0.006000"' response.json
+          EVENT_ID=$(grep -oE '"id":"[^"]+"' response.json | head -1)
 
+          # A retry returns the same event instead of storing another
+          STATUS=$(post -H "authorization: Bearer $API_KEY"); cat response.json; echo
+          test "$STATUS" = 200
+          grep -q "$EVENT_ID" response.json
+          grep -q '"replayed":true' response.json
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id = 'ci-smoke-$GITHUB_RUN_ID'")" = 1
+
+          # Reusing the request id for different usage is a conflict
+          BODY=$(echo "$BODY" | sed 's/"outputTokens":500/"outputTokens":501/')
           STATUS=$(post -H "authorization: Bearer $API_KEY"); cat response.json; echo
           test "$STATUS" = 409
 
