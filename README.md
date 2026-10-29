@@ -59,6 +59,7 @@ Open http://localhost:3000.
 | `npm run db:generate`      | Generate a migration from `src/db/schema.ts`                          |
 | `npm run db:migrate`       | Apply pending migrations                                              |
 | `npm run db:seed`          | Add sample data and model prices (safe to re-run; not for production) |
+| `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
 
 ## Project structure
@@ -72,12 +73,15 @@ src/
     index.ts      Server-only database client
     pricing.ts    Look up the price in effect for a model at a time
     usage.ts      Price and store a usage event
+    api-keys.ts   Create, authenticate and revoke API keys
+    scripts/      `npm run api-key` command
     seed/         Sample project and dated model prices (`npm run db:seed`)
   lib/
     cost.ts       Token cost calculation and USD formatting
     env.ts        Environment variable validation
     pricing.ts    Effective-price selection and numeric parsing
     usage.ts      Usage payload validation
+    api-keys.ts   Key generation, hashing and Bearer parsing
 drizzle/          Generated SQL migrations
 docs/ROADMAP.md   Development roadmap
 ```
@@ -96,13 +100,24 @@ Monetary values use Postgres `numeric` rather than floating-point columns.
 
 ## Recording usage
 
-> **Development only.** `POST /api/usage` has no authentication yet, so it returns 404 when `NODE_ENV` is `production` (including `npm start`). Per-project API keys are tracked in #5.
+Each request is authenticated with a per-project API key. The key decides which project the usage belongs to.
+
+### API keys
 
 ```bash
-curl -X POST http://localhost:3000/api/usage \
-  -H 'content-type: application/json' \
-  -d '{
-    "projectId": "<project uuid>",
+# Create a key; it's printed once and can't be shown again
+npm run api-key -- create --project sample-app --name my-service
+
+# Revoke a key by its prefix (the first 12 characters, e.g. act_AbCdEfGh)
+npm run api-key -- revoke act_AbCdEfGh
+```
+
+Keys look like `act_` followed by 43 random characters (32 bytes from a cryptographically secure random source). Only a SHA-256 hash and the 12-character prefix are stored. A presented key is checked against the stored hash in constant time.
+
+### Request
+
+```bash
+curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KEY"   -H 'content-type: application/json'   -d '{
     "provider": "openai",
     "model": "gpt-4.1",
     "inputTokens": 1000,
@@ -114,14 +129,15 @@ curl -X POST http://localhost:3000/api/usage \
   }'
 ```
 
-`cachedInputTokens`, `requestId`, `occurredAt` (ISO 8601 with a time zone; defaults to now, and can't be in the future), and `metadata` (an object of at most 8 KB) are optional. The cost is computed on the server with the price in effect at `occurredAt`.
+`cachedInputTokens`, `requestId`, `occurredAt` (ISO 8601 with a time zone; defaults to now, and can't be in the future), and `metadata` (an object of at most 8 KB) are optional. Unknown fields, including `projectId`, are rejected. The cost is computed on the server with the price in effect at `occurredAt`.
 
 | Status | `error.code`        | Meaning                                                           |
 | ------ | ------------------- | ----------------------------------------------------------------- |
 | 201    |                     | Stored; the body is `{ "event": { ..., "costUsd": "0.006000" } }` |
 | 400    | `invalid_json`      | Body isn't valid JSON                                             |
 | 400    | `invalid_payload`   | Validation failed; see `error.fieldErrors`                        |
-| 404    | `project_not_found` | No project with that `projectId`                                  |
+| 401    | `unauthorized`      | Missing, malformed, unknown or revoked API key                    |
+| 404    | `project_not_found` | The key's project no longer exists                                |
 | 409    | `duplicate_request` | An event with this `provider` and `requestId` already exists      |
 | 413    | `payload_too_large` | Body is over 64 KB                                                |
 | 422    | `no_pricing`        | No price for the model at `occurredAt`                            |
@@ -131,7 +147,7 @@ curl -X POST http://localhost:3000/api/usage \
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys).
 
 ## Contributing
 
