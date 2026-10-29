@@ -19,8 +19,8 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 
 ## Milestone 2: Ingestion
 
-- [x] `POST /api/usage` endpoint: validate payload, resolve pricing, compute cost, insert event (#4). Development only until #5 adds authentication
-- [ ] Per-project API keys (hashed at rest) to authenticate ingestion (#5)
+- [x] `POST /api/usage` endpoint: validate payload, resolve pricing, compute cost, insert event (#4)
+- [x] Per-project API keys (hashed at rest) to authenticate ingestion (#5)
 - [ ] Idempotent ingestion via `(provider, request_id)` (#6)
 
 ## Milestone 3: Dashboard
