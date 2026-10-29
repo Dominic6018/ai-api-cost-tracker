@@ -28,7 +28,7 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 - [x] Projects list and create/edit forms (#7)
 - [x] Dashboard authentication: accounts, sign-in and sessions (#20)
 - [x] Spend overview: totals for today, this month, and last 30 days (#8)
-- [ ] Spend over time chart and breakdown by provider/model (#9)
+- [x] Spend over time chart and breakdown by provider/model (#9)
 - [ ] Usage events table with filtering and pagination (#10)
 
 ## Milestone 4: Budgets and alerts
