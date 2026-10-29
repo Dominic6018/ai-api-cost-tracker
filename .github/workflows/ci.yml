@@ -79,17 +79,33 @@ jobs:
           npx next dev -p 3000 > next-dev.log 2>&1 &
           for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3000/ && break; sleep 2; done
 
-          PROJECT_ID=$(psql "$DATABASE_URL" -tAc "SELECT id FROM projects WHERE slug = 'sample-app'")
-          BODY="{\"projectId\":\"$PROJECT_ID\",\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"requestId\":\"ci-smoke-$GITHUB_RUN_ID\"}"
-          post() { curl -s -o response.json -w '%{http_code}' -X POST http://localhost:3000/api/usage -H 'content-type: application/json' -d "$BODY"; }
+          # Create a throwaway key for this run's database; mask it in the logs.
+          npm run --silent api-key -- create --project sample-app --name ci-smoke > api-key.txt
+          API_KEY=$(grep -oE 'act_[A-Za-z0-9_-]{43}' api-key.txt)
+          echo "::add-mask::$API_KEY"
+          KEY_PREFIX=$(echo "$API_KEY" | cut -c1-12)
+
+          BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"requestId\":\"ci-smoke-$GITHUB_RUN_ID\"}"
+          post() { curl -s -o response.json -w '%{http_code}' -X POST http://localhost:3000/api/usage -H 'content-type: application/json' "$@" -d "$BODY"; }
+
+          # No key, and a well-formed key that doesn't exist, are both rejected
+          STATUS=$(post); cat response.json; echo
+          test "$STATUS" = 401
+          STATUS=$(post -H "authorization: Bearer act_$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | cut -c1-43)"); echo
+          test "$STATUS" = 401
 
           # gpt-4.1 seed price: $2 input, $8 output per 1M tokens
-          STATUS=$(post); cat response.json; echo
+          STATUS=$(post -H "authorization: Bearer $API_KEY"); cat response.json; echo
           test "$STATUS" = 201
           grep -q '"costUsd":"0.006000"' response.json
 
-          STATUS=$(post); cat response.json; echo
+          STATUS=$(post -H "authorization: Bearer $API_KEY"); cat response.json; echo
           test "$STATUS" = 409
+
+          # A revoked key stops working
+          npm run --silent api-key -- revoke "$KEY_PREFIX"
+          STATUS=$(post -H "authorization: Bearer $API_KEY"); cat response.json; echo
+          test "$STATUS" = 401
       - name: Show dev server log
         if: failure()
         run: cat next-dev.log || true

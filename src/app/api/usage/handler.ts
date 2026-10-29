@@ -1,18 +1,19 @@
+import type { AuthenticateResult } from "@/db/api-keys";
 import type { RecordUsageResult } from "@/db/usage";
+import { parseBearerToken } from "@/lib/api-keys";
 import { parseUsagePayload, type UsageInput } from "@/lib/usage";
 
 /** Largest accepted request body. */
 export const MAX_BODY_BYTES = 64 * 1024;
 
 export interface UsageHandlerDeps {
+  authenticate: (apiKey: string) => Promise<AuthenticateResult>;
   recordUsage: (usage: UsageInput) => Promise<RecordUsageResult>;
-  /** Ingestion has no authentication yet (#5), so it is off in production. */
-  enabled: boolean;
   now?: () => Date;
 }
 
 type ErrorCode =
-  | "not_found"
+  | "unauthorized"
   | "payload_too_large"
   | "invalid_json"
   | "invalid_payload"
@@ -47,8 +48,18 @@ const RECORD_ERRORS: Record<
 /** Builds the `POST /api/usage` handler; dependencies are injected for tests. */
 export function createUsageHandler(deps: UsageHandlerDeps) {
   return async function handleUsage(request: Request): Promise<Response> {
-    if (!deps.enabled) {
-      return errorResponse(404, "not_found", "Not found");
+    const apiKey = parseBearerToken(request.headers.get("authorization"));
+    const auth = apiKey
+      ? await deps.authenticate(apiKey)
+      : ({ ok: false } as const);
+    if (!auth.ok) {
+      const response = errorResponse(
+        401,
+        "unauthorized",
+        "A valid API key is required: Authorization: Bearer <key>",
+      );
+      response.headers.set("WWW-Authenticate", 'Bearer realm="api"');
+      return response;
     }
 
     const declaredLength = Number(request.headers.get("content-length"));
@@ -75,7 +86,10 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
       });
     }
 
-    const result = await deps.recordUsage(parsed.usage);
+    const result = await deps.recordUsage({
+      ...parsed.usage,
+      projectId: auth.projectId,
+    });
     if (!result.ok) {
       const { status, message } = RECORD_ERRORS[result.error];
       return errorResponse(status, result.error, message);

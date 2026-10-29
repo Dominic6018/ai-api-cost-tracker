@@ -4,7 +4,6 @@ import { MAX_METADATA_BYTES, parseUsagePayload } from "./usage";
 const now = new Date("2026-11-01T12:00:00Z");
 
 const valid = {
-  projectId: "4f0c6c5e-2f7a-4b8e-9d1a-3c5e7f9a1b2c",
   provider: "anthropic",
   model: "claude-sonnet-5-5",
   inputTokens: 1200,
@@ -52,7 +51,6 @@ describe("parseUsagePayload", () => {
   });
 
   it.each([
-    ["projectId", { projectId: "not-a-uuid" }],
     ["provider", { provider: "acme" }],
     ["model", { model: "   " }],
     ["inputTokens", { inputTokens: -1 }],
@@ -66,7 +64,7 @@ describe("parseUsagePayload", () => {
     expect(fieldErrors({ ...valid, ...override })).toHaveProperty(field);
   });
 
-  it.each(["projectId", "provider", "model", "inputTokens", "outputTokens"])(
+  it.each(["provider", "model", "inputTokens", "outputTokens"])(
     "requires %s",
     (field) => {
       const body: Record<string, unknown> = { ...valid };
