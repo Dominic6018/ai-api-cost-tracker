@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { isDashboardEnabled } from "@/lib/dashboard";
 
 const plannedFeatures = [
   {
@@ -34,14 +33,12 @@ export default function Home() {
           Track token usage and spend across AI API providers, models, and
           projects in one place.
         </p>
-        {isDashboardEnabled() && (
-          <Link
-            href="/projects"
-            className="w-fit rounded-md bg-foreground px-4 py-2 font-medium text-background"
-          >
-            Manage projects
-          </Link>
-        )}
+        <Link
+          href="/projects"
+          className="w-fit rounded-md bg-foreground px-4 py-2 font-medium text-background"
+        >
+          Manage projects
+        </Link>
       </header>
 
       <section aria-labelledby="planned" className="flex flex-col gap-4">

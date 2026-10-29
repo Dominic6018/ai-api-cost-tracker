@@ -4,21 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { createProject, updateProject } from "@/db/projects";
-import { isDashboardEnabled } from "@/lib/dashboard";
+import { requireUser } from "@/lib/auth";
 import type { ProjectFormState } from "@/lib/projects";
 import { submitProjectForm } from "./submit";
 
 // Server actions can be called from any route, so each one checks the
-// dashboard switch itself rather than relying on the page.
-function assertDashboardEnabled() {
-  if (!isDashboardEnabled()) throw new Error("Not found");
-}
+// session itself rather than relying on the page that renders the form.
 
 export async function createProjectAction(
   _previous: ProjectFormState | undefined,
   formData: FormData,
 ): Promise<ProjectFormState> {
-  assertDashboardEnabled();
+  await requireUser();
   const result = await submitProjectForm(formData, (values) =>
     createProject(db, values),
   );
@@ -33,7 +30,7 @@ export async function updateProjectAction(
   _previous: ProjectFormState | undefined,
   formData: FormData,
 ): Promise<ProjectFormState> {
-  assertDashboardEnabled();
+  await requireUser();
   const result = await submitProjectForm(formData, (values) =>
     updateProject(db, id, values),
   );

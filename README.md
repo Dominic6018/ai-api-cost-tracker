@@ -60,6 +60,7 @@ Open http://localhost:3000.
 | `npm run db:migrate`       | Apply pending migrations                                              |
 | `npm run db:seed`          | Add sample data and model prices (safe to re-run; not for production) |
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
+| `npm run user`             | Create a dashboard account (see Dashboard)                            |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
 
 ## Project structure
@@ -68,6 +69,7 @@ Open http://localhost:3000.
 src/
   app/            Next.js App Router pages and layouts
     api/usage/    POST /api/usage route and its request handler
+    login/        Sign-in page and sign-in/sign-out actions
     projects/     Projects list, create and edit pages (server actions)
   db/
     schema.ts     Drizzle schema (projects, model_pricing, usage_events)
@@ -76,7 +78,8 @@ src/
     usage.ts      Price and store a usage event
     api-keys.ts   Create, authenticate and revoke API keys
     projects.ts   List, get, create and update projects
-    scripts/      `npm run api-key` command
+    auth.ts       Users, password checks and sessions
+    scripts/      `npm run api-key` and `npm run user` commands
     seed/         Sample project and dated model prices (`npm run db:seed`)
   lib/
     cost.ts       Token cost calculation and USD formatting
@@ -84,7 +87,10 @@ src/
     pricing.ts    Effective-price selection and numeric parsing
     usage.ts      Usage payload validation
     api-keys.ts   Key generation, hashing and Bearer parsing
-    dashboard.ts  Dashboard on/off switch (off in production until #20)
+    auth.ts       Current user and requireUser() for pages and actions
+    login.ts      Sign-in form validation
+    passwords.ts  scrypt password hashing
+    sessions.ts   Session tokens and safe post-login redirects
     projects.ts   Project form validation
 drizzle/          Generated SQL migrations
 scripts/          End-to-end smoke tests run in CI
@@ -105,7 +111,17 @@ Monetary values use Postgres `numeric` rather than floating-point columns.
 
 ## Dashboard
 
-> **Development only.** The dashboard has no sign-in yet, so its pages and server actions return 404 when `NODE_ENV` is `production` (including `npm start`). Dashboard authentication is tracked in #20. Ingestion is unaffected because it uses API keys.
+The dashboard requires signing in. Create an account from the command line. The password is read from standard input, so it doesn't end up in your shell history, and it must be at least 12 characters:
+
+```bash
+npm run user -- create --email you@example.com < password.txt
+```
+
+Then sign in at `/login`. Signed-out visitors to dashboard pages are sent there and returned afterwards.
+
+- **Passwords** are stored as scrypt hashes (N=2^15, r=8, p=3), never in plain text. A wrong password and an unknown email get the same error.
+- **Sessions** last 30 days. The `session` cookie is `HttpOnly` and `SameSite=Lax`, and `Secure` in production. It holds a random 256-bit token, and only the token's SHA-256 hash is stored, so signing out revokes the session on the server.
+- **Every** dashboard page and server action checks the session itself. All accounts can manage all projects.
 
 - `/projects` lists projects with their slug and monthly budget.
 - `/projects/new` and `/projects/<id>/edit` create and edit projects. Slugs must be unique lowercase words joined by hyphens, and a duplicate slug is shown as an error on the field. The budget accepts an amount with up to two decimal places, or nothing for no budget. Forms also work without JavaScript.
@@ -162,7 +178,7 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys), then runs `scripts/smoke-projects.mjs` to create and edit a project through the real forms. The `check` job also starts the production build and confirms the dashboard returns 404 while ingestion still requires a key.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key.
 
 ## Contributing
 

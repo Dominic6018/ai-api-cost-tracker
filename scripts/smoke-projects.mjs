@@ -1,13 +1,17 @@
-// End-to-end check of the project pages against a running dev server and a
-// migrated database. Submits the forms the way a browser without JavaScript
-// does, using the hidden fields React renders for server actions.
+// End-to-end check of sign-in and the project pages against a running dev
+// server and a migrated database. Submits the forms the way a browser
+// without JavaScript does, using the hidden fields React renders for server
+// actions.
 //
-// Usage: node scripts/smoke-projects.mjs [base URL]
+// Usage: SMOKE_EMAIL=... SMOKE_PASSWORD=... node scripts/smoke-projects.mjs [base URL]
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 const base = process.argv[2] ?? "http://localhost:3000";
+const email = process.env.SMOKE_EMAIL;
+const password = process.env.SMOKE_PASSWORD;
+assert.ok(email && password, "set SMOKE_EMAIL and SMOKE_PASSWORD");
 
 const decode = (s) =>
   s
@@ -17,9 +21,27 @@ const decode = (s) =>
     .replaceAll("&gt;", ">")
     .replaceAll("&amp;", "&");
 
+/** The session cookie, as a browser would keep it between requests. */
+let cookie = "";
+
+function keepCookie(response) {
+  const setCookie = response.headers.get("set-cookie");
+  const match = setCookie?.match(/(?:^|,s*)session=([^;]*)/);
+  if (match) cookie = match[1] ? `session=${match[1]}` : "";
+  return setCookie;
+}
+
 async function page(path) {
-  const response = await fetch(base + path);
-  return { status: response.status, html: await response.text() };
+  const response = await fetch(base + path, {
+    headers: cookie ? { cookie } : {},
+    redirect: "manual",
+  });
+  keepCookie(response);
+  return {
+    status: response.status,
+    location: response.headers.get("location"),
+    html: await response.text(),
+  };
 }
 
 /** Submits the form on `path` with `fields`, keeping React's hidden inputs. */
@@ -33,23 +55,72 @@ async function submit(path, fields) {
   )) {
     form.append(decode(name), decode(value));
   }
-  assert.ok(form.has("$ACTION_KEY"), `${path} renders a server action form`);
+  assert.ok(
+    [...form.keys()].some((key) => key.startsWith("$ACTION_")),
+    `${path} renders a server action form`,
+  );
   for (const [name, value] of Object.entries(fields)) form.set(name, value);
 
   const response = await fetch(base + path, {
     method: "POST",
     body: form,
+    headers: cookie ? { cookie } : {},
     redirect: "manual",
   });
+  const setCookie = keepCookie(response);
   return {
     status: response.status,
     location: response.headers.get("location"),
+    setCookie,
     html: await response.text(),
   };
 }
 
 function step(name) {
   console.log(`- ${name}`);
+}
+
+step("signed-out visitors are sent to the sign-in page");
+for (const path of ["/projects", "/projects/new"]) {
+  const result = await page(path);
+  assert.equal(result.status, 307, `GET ${path} while signed out`);
+  const location = new URL(result.location, base);
+  assert.equal(location.pathname, "/login");
+  assert.equal(location.searchParams.get("next"), path);
+}
+
+step("a wrong password is rejected without revealing which part was wrong");
+{
+  const result = await submit("/login", { email, password: "wrong password" });
+  assert.equal(result.status, 200);
+  assert.match(result.html, /Invalid email or password/);
+  assert.equal(cookie, "", "no session cookie after a failed sign-in");
+}
+
+step("signing in sets a secure session cookie and returns to the page");
+{
+  const result = await submit("/login?next=%2Fprojects%2Fnew", {
+    email,
+    password,
+  });
+  assert.equal(result.status, 303, "redirect after sign-in");
+  assert.equal(new URL(result.location, base).pathname, "/projects/new");
+  assert.match(result.setCookie, /HttpOnly/i);
+  assert.match(result.setCookie, /SameSite=lax/i);
+  assert.ok(cookie, "session cookie is set");
+}
+
+step("an off-site next parameter is ignored");
+{
+  const signedIn = cookie;
+  cookie = "";
+  const result = await submit("/login?next=%2F%2Fevil.example", {
+    email,
+    password,
+  });
+  assert.equal(new URL(result.location, base).pathname, "/projects");
+  assert.equal(new URL(result.location, base).host, new URL(base).host);
+  cookie = signedIn;
 }
 
 step("invalid values are rejected with inline errors");
@@ -123,4 +194,20 @@ step("an unknown project id is a 404");
   assert.equal((await page("/projects/not-a-uuid/edit")).status, 404);
 }
 
-console.log("Project pages smoke test passed.");
+step("signing out ends the session, even if the old cookie is replayed");
+{
+  const signedIn = cookie;
+  const list = await page("/projects");
+  assert.equal(list.status, 200);
+  assert.ok(list.html.includes(email), "shows the signed-in email");
+
+  const result = await submit("/projects", {});
+  assert.equal(result.status, 303, "redirect after sign-out");
+  assert.equal(new URL(result.location, base).pathname, "/login");
+  assert.equal(cookie, "", "session cookie is cleared");
+
+  cookie = signedIn;
+  assert.equal((await page("/projects")).status, 307, "old session is revoked");
+}
+
+console.log("Sign-in and project pages smoke test passed.");
