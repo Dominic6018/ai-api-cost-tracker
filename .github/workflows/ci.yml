@@ -34,7 +34,7 @@ jobs:
         run: |
           npm start -- -p 3000 > next-start.log 2>&1 &
           for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:3000/ && break; sleep 1; done
-          for path in /projects /projects/new /projects/x/edit; do
+          for path in /overview /projects /projects/new /projects/x/edit; do
             RESULT=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "http://localhost:3000$path")
             echo "$path -> $RESULT"
             case "$RESULT" in "307 http://localhost:3000/login?next="*) ;; *) exit 1 ;; esac
@@ -139,8 +139,9 @@ jobs:
           fi
           echo "$SMOKE_PASSWORD" | npm run --silent user -- create --email "$SMOKE_EMAIL"
 
-          # Sign-in, project create/duplicate/edit, 404s and sign-out
-          node scripts/smoke-projects.mjs http://localhost:3000
+          # Sign-in, spend overview, project create/duplicate/edit, 404s and
+          # sign-out. The only usage recorded today is the $0.006 event above.
+          EXPECT_TODAY_SPEND='$0.006' node scripts/smoke-projects.mjs http://localhost:3000
       - name: Show dev server log
         if: failure()
         run: cat next-dev.log || true
