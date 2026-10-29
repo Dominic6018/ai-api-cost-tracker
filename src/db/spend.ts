@@ -38,18 +38,22 @@ export async function getSpendOverview(
   now: Date = new Date(),
 ): Promise<SpendOverview> {
   const windows = spendWindows(now);
+  // Raw `sql` parameters bypass column type mapping, and the postgres-js
+  // driver doesn't serialize Date objects, so pass ISO strings.
   const sumSince = (start: Date) =>
-    sql<string>`coalesce(sum(${usageEvents.costUsd}) filter (where ${usageEvents.occurredAt} >= ${start}), 0)::numeric(14, 6)::text`;
+    sql`coalesce(sum(${usageEvents.costUsd}) filter (where ${usageEvents.occurredAt} >= ${start.toISOString()}::timestamptz), 0)::numeric(14, 6)`;
+  const asText = (amount: ReturnType<typeof sumSince>) =>
+    sql<string>`${amount}::text`;
 
-  const month = sumSince(windows.month);
+  const monthSum = sumSince(windows.month);
   const rows = await db
     .select({
       id: projects.id,
       name: projects.name,
       slug: projects.slug,
-      today: sumSince(windows.today),
-      month,
-      last30Days: sumSince(windows.last30Days),
+      today: asText(sumSince(windows.today)),
+      month: asText(monthSum),
+      last30Days: asText(sumSince(windows.last30Days)),
       events: sql<number>`count(${usageEvents.id})::int`,
       isTotal: sql<boolean>`grouping(${projects.id}) = 1`,
     })
@@ -62,7 +66,8 @@ export async function getSpendOverview(
       ),
     )
     .groupBy(sql`rollup((${projects.id}, ${projects.name}, ${projects.slug}))`)
-    .orderBy(desc(month), asc(projects.name));
+    // Order by the numeric sum; ordering the text form would put "10" before "9".
+    .orderBy(desc(monthSum), asc(projects.name));
 
   const zero = {
     today: "0.000000",
