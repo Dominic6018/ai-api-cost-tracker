@@ -32,7 +32,11 @@ const storedEvent: UsageEvent = {
 };
 
 function setup({
-  result = { ok: true, event: storedEvent } as RecordUsageResult,
+  result = {
+    ok: true,
+    event: storedEvent,
+    replayed: false,
+  } as RecordUsageResult,
   auth = {
     ok: true,
     projectId,
@@ -83,6 +87,7 @@ describe("POST /api/usage handler", () => {
         requestId: "req_1",
         occurredAt: "2026-11-01T12:00:00.000Z",
       },
+      replayed: false,
     });
     expect(authenticate).toHaveBeenCalledWith(apiKey);
     expect(recordUsage).toHaveBeenCalledWith({
@@ -157,11 +162,23 @@ describe("POST /api/usage handler", () => {
   it.each([
     ["no_pricing", 422],
     ["project_not_found", 404],
-    ["duplicate_request", 409],
+    ["request_id_conflict", 409],
   ] as const)("maps %s to HTTP %d", async (error, status) => {
     const { handler } = setup({ result: { ok: false, error } });
     const response = await handler(post(body));
     expect(response.status).toBe(status);
     expect((await response.json()).error.code).toBe(error);
+  });
+
+  it("returns 200 with the stored event when a retry is replayed", async () => {
+    const { handler } = setup({
+      result: { ok: true, event: storedEvent, replayed: true },
+    });
+    const response = await handler(post(body));
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.replayed).toBe(true);
+    expect(json.event.id).toBe(storedEvent.id);
   });
 });
