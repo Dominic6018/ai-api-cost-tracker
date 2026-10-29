@@ -26,7 +26,7 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 ## Milestone 3: Dashboard
 
 - [x] Projects list and create/edit forms (#7)
-- [ ] Dashboard authentication; until then the dashboard is off in production (#20)
+- [x] Dashboard authentication: accounts, sign-in and sessions (#20)
 - [ ] Spend overview: totals for today, this month, and last 30 days (#8)
 - [ ] Spend over time chart and breakdown by provider/model (#9)
 - [ ] Usage events table with filtering and pagination (#10)

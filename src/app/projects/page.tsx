@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
 import { formatUsd } from "@/lib/cost";
-import { isDashboardEnabled } from "@/lib/dashboard";
+import { requireUser } from "@/lib/auth";
+import { logoutAction } from "../login/actions";
 
 export const metadata: Metadata = { title: "Projects · AI API Cost Tracker" };
 
@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Projects · AI API Cost Tracker" };
 export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
-  if (!isDashboardEnabled()) notFound();
+  const user = await requireUser("/projects");
   const projects = await listProjects(db);
 
   return (
@@ -24,12 +24,20 @@ export default async function ProjectsPage() {
           </Link>
           <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>
         </div>
-        <Link
-          href="/projects/new"
-          className="rounded-md bg-foreground px-4 py-2 font-medium text-background"
-        >
-          New project
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <form action={logoutAction} className="flex items-center gap-3">
+            <span className="text-sm text-foreground/60">{user.email}</span>
+            <button type="submit" className="text-sm underline">
+              Sign out
+            </button>
+          </form>
+          <Link
+            href="/projects/new"
+            className="rounded-md bg-foreground px-4 py-2 font-medium text-background"
+          >
+            New project
+          </Link>
+        </div>
       </header>
 
       {projects.length === 0 ? (
