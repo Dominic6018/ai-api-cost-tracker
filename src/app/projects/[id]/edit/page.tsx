@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { getProject } from "@/db/projects";
-import { isDashboardEnabled } from "@/lib/dashboard";
+import { requireUser } from "@/lib/auth";
 import { updateProjectAction } from "../../actions";
 import { ProjectForm } from "../../project-form";
 
@@ -17,8 +17,8 @@ export default async function EditProjectPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  if (!isDashboardEnabled()) notFound();
   const { id } = await params;
+  await requireUser(`/projects/${id}/edit`);
   const project = await getProject(db, id);
   if (!project) notFound();
 
