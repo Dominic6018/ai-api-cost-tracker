@@ -73,6 +73,8 @@ describe("findEffectivePricing", () => {
       inputPerMTokUsd: 3,
       outputPerMTokUsd: 15,
       cachedInputPerMTokUsd: 0.3,
+      cacheWritePerMTokUsd: null,
+      longContext: null,
     });
     expect(result.row.model).toBe(model);
   });
