@@ -108,6 +108,7 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
           cachedInputTokens: event.cachedInputTokens,
+          cacheWriteInputTokens: event.cacheWriteInputTokens,
           costUsd: event.costUsd,
           requestId: event.requestId,
           occurredAt: event.occurredAt.toISOString(),

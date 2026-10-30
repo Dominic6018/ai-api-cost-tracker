@@ -142,6 +142,19 @@ jobs:
           # Sign-in, spend overview, project create/duplicate/edit, 404s and
           # sign-out. The only usage recorded today is the $0.006 event above.
           EXPECT_TODAY_SPEND='$0.006' EXPECT_REQUEST_ID="ci-smoke-$GITHUB_RUN_ID" node scripts/smoke-projects.mjs http://localhost:3000
+
+          # Long-prompt tier and cache writes through the real API, with a
+          # fresh key (the first one was revoked above). Claude Haiku 5.5
+          # charges more for prompts over 100,000 input tokens:
+          # 100,000 * $0.50 + 50,000 writes * $0.625 + 1,000 out * $2.50, per 1M
+          npm run --silent api-key -- create --project sample-app --name ci-tiers > api-key-2.txt
+          API_KEY_2=$(grep -oE 'act_[A-Za-z0-9_-]{43}' api-key-2.txt)
+          echo "::add-mask::$API_KEY_2"
+          BODY='{"provider":"anthropic","model":"claude-haiku-5-5","inputTokens":150000,"cacheWriteInputTokens":50000,"outputTokens":1000}'
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"costUsd":"0.083750"' response.json
+          grep -q '"cacheWriteInputTokens":50000' response.json
       - name: Show dev server log
         if: failure()
         run: cat next-dev.log || true

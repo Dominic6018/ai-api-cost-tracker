@@ -7,6 +7,12 @@ export interface PricingRow {
   inputPerMTokUsd: string;
   outputPerMTokUsd: string;
   cachedInputPerMTokUsd: string | null;
+  cacheWritePerMTokUsd: string | null;
+  longContextThresholdTokens: number | null;
+  longInputPerMTokUsd: string | null;
+  longOutputPerMTokUsd: string | null;
+  longCachedInputPerMTokUsd: string | null;
+  longCacheWritePerMTokUsd: string | null;
 }
 
 export type PricingLookupResult<Row extends PricingRow = PricingRow> =
@@ -55,14 +61,48 @@ function parseUsd(name: string, value: string): number {
   return amount;
 }
 
+const optionalUsd = (name: string, value: string | null) =>
+  value === null ? null : parseUsd(name, value);
+
 /** Converts `numeric` string columns to the shape `calculateCostUsd` expects. */
 export function toTokenPricing(row: PricingRow): TokenPricing {
-  return {
+  const pricing: TokenPricing = {
     inputPerMTokUsd: parseUsd("inputPerMTokUsd", row.inputPerMTokUsd),
     outputPerMTokUsd: parseUsd("outputPerMTokUsd", row.outputPerMTokUsd),
-    cachedInputPerMTokUsd:
-      row.cachedInputPerMTokUsd === null
-        ? null
-        : parseUsd("cachedInputPerMTokUsd", row.cachedInputPerMTokUsd),
+    cachedInputPerMTokUsd: optionalUsd(
+      "cachedInputPerMTokUsd",
+      row.cachedInputPerMTokUsd,
+    ),
+    cacheWritePerMTokUsd: optionalUsd(
+      "cacheWritePerMTokUsd",
+      row.cacheWritePerMTokUsd,
+    ),
+    longContext: null,
   };
+
+  if (row.longContextThresholdTokens !== null) {
+    // The database requires long input and output rates with a threshold.
+    if (row.longInputPerMTokUsd === null || row.longOutputPerMTokUsd === null) {
+      throw new TypeError(
+        "A long-context threshold needs long input and output rates",
+      );
+    }
+    pricing.longContext = {
+      thresholdTokens: row.longContextThresholdTokens,
+      inputPerMTokUsd: parseUsd("longInputPerMTokUsd", row.longInputPerMTokUsd),
+      outputPerMTokUsd: parseUsd(
+        "longOutputPerMTokUsd",
+        row.longOutputPerMTokUsd,
+      ),
+      cachedInputPerMTokUsd: optionalUsd(
+        "longCachedInputPerMTokUsd",
+        row.longCachedInputPerMTokUsd,
+      ),
+      cacheWritePerMTokUsd: optionalUsd(
+        "longCacheWritePerMTokUsd",
+        row.longCacheWritePerMTokUsd,
+      ),
+    };
+  }
+  return pricing;
 }

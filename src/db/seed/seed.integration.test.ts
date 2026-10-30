@@ -86,4 +86,21 @@ describe("seed", () => {
     expect(before.found && before.pricing.inputPerMTokUsd).toBe(0.75);
     expect(after.found && after.pricing.inputPerMTokUsd).toBe(1.5);
   });
+
+  it("stores a tiered price that the pricing lookup turns into a long tier", async () => {
+    const result = await findEffectivePricing(db, {
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      at: new Date("2026-11-01T00:00:00Z"),
+    });
+    if (!result.found) throw new Error("expected pricing");
+    expect(result.pricing.cacheWritePerMTokUsd).toBe(0.125);
+    expect(result.pricing.longContext).toEqual({
+      thresholdTokens: 100_000,
+      inputPerMTokUsd: 0.5,
+      outputPerMTokUsd: 2.5,
+      cachedInputPerMTokUsd: 0.05,
+      cacheWritePerMTokUsd: 0.625,
+    });
+  });
 });

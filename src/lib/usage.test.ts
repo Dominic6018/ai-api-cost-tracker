@@ -21,7 +21,12 @@ describe("parseUsagePayload", () => {
     const result = parseUsagePayload(valid, now);
     expect(result).toEqual({
       ok: true,
-      usage: { ...valid, cachedInputTokens: 0, occurredAt: now },
+      usage: {
+        ...valid,
+        cachedInputTokens: 0,
+        cacheWriteInputTokens: 0,
+        occurredAt: now,
+      },
     });
   });
 
@@ -103,5 +108,29 @@ describe("parseUsagePayload", () => {
   it("rejects a non-object body", () => {
     expect(parseUsagePayload(null, now).ok).toBe(false);
     expect(parseUsagePayload([valid], now).ok).toBe(false);
+  });
+
+  it("accepts cache-write tokens within input tokens", () => {
+    const result = parseUsagePayload(
+      { ...valid, cachedInputTokens: 600, cacheWriteInputTokens: 600 },
+      now,
+    );
+    expect(result.ok && result.usage.cacheWriteInputTokens).toBe(600);
+  });
+
+  it("rejects cached plus cache-write tokens above input tokens", () => {
+    expect(
+      fieldErrors({
+        ...valid,
+        cachedInputTokens: 600,
+        cacheWriteInputTokens: 601,
+      }),
+    ).toHaveProperty("cacheWriteInputTokens");
+  });
+
+  it("rejects negative cache-write tokens", () => {
+    expect(fieldErrors({ ...valid, cacheWriteInputTokens: -1 })).toHaveProperty(
+      "cacheWriteInputTokens",
+    );
   });
 });

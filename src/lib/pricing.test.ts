@@ -18,6 +18,12 @@ function row(
     inputPerMTokUsd: input,
     outputPerMTokUsd: "15",
     cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null,
+    longContextThresholdTokens: null,
+    longInputPerMTokUsd: null,
+    longOutputPerMTokUsd: null,
+    longCachedInputPerMTokUsd: null,
+    longCacheWritePerMTokUsd: null,
     ...overrides,
   };
 }
@@ -114,7 +120,44 @@ describe("toTokenPricing", () => {
       inputPerMTokUsd: 3,
       outputPerMTokUsd: 15.5,
       cachedInputPerMTokUsd: null,
+      cacheWritePerMTokUsd: null,
+      longContext: null,
     });
+  });
+
+  it("builds the long-prompt tier from the long columns", () => {
+    expect(
+      toTokenPricing(
+        row(jan, null, "0.10", {
+          outputPerMTokUsd: "0.50",
+          cachedInputPerMTokUsd: "0.01",
+          cacheWritePerMTokUsd: "0.125",
+          longContextThresholdTokens: 100_000,
+          longInputPerMTokUsd: "0.50",
+          longOutputPerMTokUsd: "2.50",
+          longCachedInputPerMTokUsd: "0.05",
+          longCacheWritePerMTokUsd: null,
+        }),
+      ),
+    ).toEqual({
+      inputPerMTokUsd: 0.1,
+      outputPerMTokUsd: 0.5,
+      cachedInputPerMTokUsd: 0.01,
+      cacheWritePerMTokUsd: 0.125,
+      longContext: {
+        thresholdTokens: 100_000,
+        inputPerMTokUsd: 0.5,
+        outputPerMTokUsd: 2.5,
+        cachedInputPerMTokUsd: 0.05,
+        cacheWritePerMTokUsd: null,
+      },
+    });
+  });
+
+  it("rejects a threshold without long rates", () => {
+    expect(() =>
+      toTokenPricing(row(jan, null, "1", { longContextThresholdTokens: 10 })),
+    ).toThrow(TypeError);
   });
 
   it("parses a cached rate when present", () => {

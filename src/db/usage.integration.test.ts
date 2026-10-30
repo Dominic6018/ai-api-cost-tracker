@@ -18,8 +18,9 @@ const db = drizzle(client);
 
 // Unique per run so tests never collide with seed or leftover rows.
 const model = `it-usage-${randomUUID()}`;
+const tieredModel = `it-usage-tiered-${randomUUID()}`;
 let projectId: string;
-let pricingId: string;
+const pricingIds: string[] = [];
 
 beforeAll(async () => {
   const [project] = await db
@@ -28,24 +29,41 @@ beforeAll(async () => {
     .returning();
   projectId = project.id;
 
-  const [price] = await db
+  const prices = await db
     .insert(modelPricing)
-    .values({
-      provider: "anthropic",
-      model,
-      inputPerMTokUsd: "3",
-      outputPerMTokUsd: "15",
-      cachedInputPerMTokUsd: "0.3",
-      effectiveFrom: new Date("2026-01-01T00:00:00Z"),
-    })
+    .values([
+      {
+        provider: "anthropic",
+        model,
+        inputPerMTokUsd: "3",
+        outputPerMTokUsd: "15",
+        cachedInputPerMTokUsd: "0.3",
+        effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+      },
+      // Claude Haiku 5.5's rates: higher for prompts over 100,000 tokens.
+      {
+        provider: "anthropic",
+        model: tieredModel,
+        inputPerMTokUsd: "0.10",
+        outputPerMTokUsd: "0.50",
+        cachedInputPerMTokUsd: "0.01",
+        cacheWritePerMTokUsd: "0.125",
+        longContextThresholdTokens: 100_000,
+        longInputPerMTokUsd: "0.50",
+        longOutputPerMTokUsd: "2.50",
+        longCachedInputPerMTokUsd: "0.05",
+        longCacheWritePerMTokUsd: "0.625",
+        effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+      },
+    ])
     .returning();
-  pricingId = price.id;
+  pricingIds.push(...prices.map((p) => p.id));
 });
 
 afterAll(async () => {
   // Deleting the project cascades to its usage events.
   await db.delete(projects).where(eq(projects.id, projectId));
-  await db.delete(modelPricing).where(inArray(modelPricing.id, [pricingId]));
+  await db.delete(modelPricing).where(inArray(modelPricing.id, pricingIds));
   await client.end();
 });
 
@@ -57,6 +75,7 @@ function usage(overrides: Partial<UsageInput> = {}): UsageInput {
     inputTokens: 1_000_000,
     outputTokens: 100_000,
     cachedInputTokens: 400_000,
+    cacheWriteInputTokens: 0,
     occurredAt: new Date("2026-06-01T00:00:00Z"),
     ...overrides,
   };
@@ -105,6 +124,43 @@ describe("recordUsage", () => {
   });
 });
 
+describe("recordUsage with tiered pricing and cache writes", () => {
+  const tiered = (overrides: Partial<UsageInput>) =>
+    usage({
+      model: tieredModel,
+      cachedInputTokens: 0,
+      cacheWriteInputTokens: 0,
+      outputTokens: 1_000_000,
+      ...overrides,
+    });
+
+  it("prices a short prompt at the base rates, cache writes included", async () => {
+    // 50k uncached * $0.10 + 30k writes * $0.125 + 20k cached * $0.01
+    // + 1M out * $0.50, per 1M tokens
+    const result = await recordUsage(
+      db,
+      tiered({
+        inputTokens: 100_000,
+        cacheWriteInputTokens: 30_000,
+        cachedInputTokens: 20_000,
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.event.costUsd).toBe("0.508950");
+    expect(result.event.cacheWriteInputTokens).toBe(30_000);
+  });
+
+  it("prices a prompt over the threshold at the long rates", async () => {
+    // 100k uncached * $0.50 + 100k writes * $0.625 + 1M out * $2.50
+    const result = await recordUsage(
+      db,
+      tiered({ inputTokens: 200_000, cacheWriteInputTokens: 100_000 }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.event.costUsd).toBe("2.612500");
+  });
+});
+
 describe("recordUsage idempotency", () => {
   async function countEvents(requestId: string) {
     const rows = await db
@@ -135,6 +191,14 @@ describe("recordUsage idempotency", () => {
     );
     expect(retry.ok && retry.replayed).toBe(true);
     expect(await countEvents(requestId)).toBe(1);
+  });
+
+  it("treats different cache-write tokens as different usage", async () => {
+    const requestId = `req-${randomUUID()}`;
+    await recordUsage(db, usage({ requestId }));
+    expect(
+      await recordUsage(db, usage({ requestId, cacheWriteInputTokens: 1 })),
+    ).toEqual({ ok: false, error: "request_id_conflict" });
   });
 
   it("returns request_id_conflict when the retry describes different usage", async () => {
