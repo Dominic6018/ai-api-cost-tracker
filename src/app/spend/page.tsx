@@ -91,6 +91,9 @@ export default async function SpendPage({
           <Link href="/overview" className="underline">
             Overview
           </Link>
+          <Link href="/usage" className="underline">
+            Usage events
+          </Link>
           <Link href="/projects" className="underline">
             Projects
           </Link>
