@@ -5,6 +5,7 @@ import { getSpendOverview, type SpendTotals } from "@/db/spend";
 import { requireUser } from "@/lib/auth";
 import { formatUsd } from "@/lib/cost";
 import { logoutAction } from "../login/actions";
+import { BudgetAlerts } from "../budget-alerts";
 import { BudgetMeter } from "./budget-meter";
 
 export const metadata: Metadata = {
@@ -65,6 +66,8 @@ export default async function OverviewPage() {
           </form>
         </nav>
       </header>
+
+      <BudgetAlerts projects={overview.projects} />
 
       <section aria-label="Total spend" className="grid gap-4 sm:grid-cols-3">
         {WINDOWS.map(({ key, label }) => (
