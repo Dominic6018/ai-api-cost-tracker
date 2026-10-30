@@ -19,6 +19,8 @@ export interface ProjectSpend extends SpendTotals {
   id: string;
   name: string;
   slug: string;
+  /** USD as a decimal string, or null when the project has no budget. */
+  monthlyBudgetUsd: string | null;
 }
 
 export interface SpendOverview {
@@ -51,6 +53,7 @@ export async function getSpendOverview(
       id: projects.id,
       name: projects.name,
       slug: projects.slug,
+      monthlyBudgetUsd: projects.monthlyBudgetUsd,
       today: asText(sumSince(windows.today)),
       month: asText(monthSum),
       last30Days: asText(sumSince(windows.last30Days)),
@@ -65,7 +68,9 @@ export async function getSpendOverview(
         gte(usageEvents.occurredAt, earliestWindowStart(windows)),
       ),
     )
-    .groupBy(sql`rollup((${projects.id}, ${projects.name}, ${projects.slug}))`)
+    .groupBy(
+      sql`rollup((${projects.id}, ${projects.name}, ${projects.slug}, ${projects.monthlyBudgetUsd}))`,
+    )
     // Order by the numeric sum; ordering the text form would put "10" before "9".
     .orderBy(desc(monthSum), asc(projects.name));
 
@@ -92,6 +97,7 @@ export async function getSpendOverview(
         id: row.id,
         name: row.name,
         slug: row.slug,
+        monthlyBudgetUsd: row.monthlyBudgetUsd,
         ...strip(row),
       })),
   };

@@ -33,7 +33,7 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 
 ## Milestone 4: Budgets and alerts
 
-- [ ] Budget utilization per project for the current month (#11)
+- [x] Budget utilization per project for the current month (#11)
 - [ ] Threshold alerts (e.g. 80% / 100%) surfaced in the UI (#12)
 
 ## Later

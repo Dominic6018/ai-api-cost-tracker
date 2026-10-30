@@ -99,6 +99,7 @@ src/
     sessions.ts   Session tokens and safe post-login redirects
     spend.ts      UTC spend window boundaries
     spend-series.ts  Chart ranges, day filling and axis ticks
+    budget.ts     Exact budget use: share used, remaining, over budget
     usage-filters.ts Usage filter parsing, date bounds and cursors
     projects.ts   Project form validation
 drizzle/          Generated SQL migrations
@@ -133,6 +134,7 @@ Then sign in at `/login`. Signed-out visitors to dashboard pages are sent there 
 - **Every** dashboard page and server action checks the session itself. All accounts can manage all projects.
 
 - `/overview` is the page you land on after signing in. It shows total spend **today**, **this month** and over the **last 30 days**, overall and per project. Totals are summed in SQL as exact decimals. Today and this month start at midnight **UTC**. The last 30 days is a rolling window of 30 × 24 hours ending now. Usage counts by its `occurredAt`, not when it was received.
+  Each project's row also shows **this month's spend against its monthly budget**: the amount, the percentage used (rounded down, so it never shows 100% early), a meter, and how much is left or how far over it is. Projects without a budget show spend only. The budget arithmetic uses whole micro-dollars, so it's exact.
 - `/spend` charts daily spend over the last **7, 30 or 90** days (UTC days, ending today) for all projects or one project. Hover or focus a bar to see its value, or open the table view. Below the chart, tables break spend down **by provider** and **by model**, with input, cached input and output tokens and request counts. The range and project filters apply to everything on the page and are kept in the URL (`?range=30&project=<id>`).
 - `/usage` lists individual usage events, newest first: time, project, provider, model, token counts, cost and request ID. Filter by project, provider, model and a UTC date range (both ends inclusive). Filters are kept in the URL. Pages hold 50 events. Paging uses `(occurred_at, id)` keysets with microsecond-precise cursors, so events are never skipped or repeated, even when they share a timestamp.
 - `/projects` lists projects with their slug and monthly budget.

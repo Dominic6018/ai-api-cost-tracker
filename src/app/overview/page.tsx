@@ -5,6 +5,7 @@ import { getSpendOverview, type SpendTotals } from "@/db/spend";
 import { requireUser } from "@/lib/auth";
 import { formatUsd } from "@/lib/cost";
 import { logoutAction } from "../login/actions";
+import { BudgetMeter } from "./budget-meter";
 
 export const metadata: Metadata = {
   title: "Spend overview · AI API Cost Tracker",
@@ -85,7 +86,7 @@ export default async function OverviewPage() {
         ))}
       </section>
 
-      {!hasUsage ? (
+      {!hasUsage && (
         <section className="rounded-lg border border-dashed border-foreground/20 p-8 text-center text-foreground/70">
           <p className="font-medium text-foreground">No usage recorded yet</p>
           <p className="mt-1 text-sm">
@@ -94,13 +95,15 @@ export default async function OverviewPage() {
             arrives.
           </p>
         </section>
-      ) : (
+      )}
+
+      {overview.projects.length > 0 && (
         <section aria-labelledby="by-project" className="flex flex-col gap-3">
           <h2 id="by-project" className="text-xl font-medium">
             By project
           </h2>
           <div className="overflow-x-auto rounded-lg border border-foreground/10">
-            <table className="w-full min-w-[32rem] text-left text-sm">
+            <table className="w-full min-w-[44rem] text-left text-sm">
               <thead className="border-b border-foreground/10 text-foreground/60">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-medium">
@@ -115,6 +118,9 @@ export default async function OverviewPage() {
                       {label}
                     </th>
                   ))}
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Monthly budget
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -137,6 +143,12 @@ export default async function OverviewPage() {
                         {usd(project[key])}
                       </td>
                     ))}
+                    <td className="px-4 py-3">
+                      <BudgetMeter
+                        spentUsd={project.month}
+                        budgetUsd={project.monthlyBudgetUsd}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
