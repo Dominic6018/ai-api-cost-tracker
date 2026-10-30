@@ -80,3 +80,54 @@ export function formatUsedPercent(
   if (usedPermille === 0 && spentMicros > 0n) return "<0.1%";
   return `${(usedPermille / 10).toFixed(1)}%`;
 }
+
+/**
+ * Alert thresholds as a percentage of the monthly budget. The single
+ * source for every budget warning in the app.
+ */
+export const BUDGET_THRESHOLDS = {
+  warningPercent: 80,
+  overPercent: 100,
+} as const;
+
+export type BudgetStatus = "none" | "ok" | "warning" | "over";
+
+/**
+ * Alert state for a project's month. Compared exactly in micro-dollars,
+ * so 79.999999% is "ok" and exactly 80% is "warning". Spending exactly
+ * the budget counts as "over": it's at 100%, with nothing left.
+ */
+export function budgetStatus(utilization: BudgetUtilization): BudgetStatus {
+  if (!utilization.hasBudget) return "none";
+  const { spentMicros, budgetMicros } = utilization;
+  const atPercent = (percent: number) =>
+    spentMicros * 100n >= budgetMicros * BigInt(percent);
+  if (atPercent(BUDGET_THRESHOLDS.overPercent)) {
+    // A zero budget with no spend has nothing to alert about.
+    return budgetMicros === 0n && spentMicros === 0n ? "ok" : "over";
+  }
+  return atPercent(BUDGET_THRESHOLDS.warningPercent) ? "warning" : "ok";
+}
+
+/** Projects at or above a budget threshold this month, worst first. */
+export function budgetAlerts<
+  P extends { name: string; month: string; monthlyBudgetUsd: string | null },
+>(projects: P[]) {
+  return projects
+    .map((project) => {
+      const utilization = budgetUtilization(
+        project.month,
+        project.monthlyBudgetUsd,
+      );
+      return { project, utilization, status: budgetStatus(utilization) };
+    })
+    .filter(
+      (alert): alert is typeof alert & { status: "warning" | "over" } =>
+        alert.status === "warning" || alert.status === "over",
+    )
+    .sort(
+      (a, b) =>
+        Number(b.status === "over") - Number(a.status === "over") ||
+        a.project.name.localeCompare(b.project.name),
+    );
+}

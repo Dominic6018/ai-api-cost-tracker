@@ -31,10 +31,10 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 - [x] Spend over time chart and breakdown by provider/model (#9)
 - [x] Usage events table with filtering and pagination (#10)
 
-## Milestone 4: Budgets and alerts
+## Milestone 4: Budgets and alerts ✅
 
 - [x] Budget utilization per project for the current month (#11)
-- [ ] Threshold alerts (e.g. 80% / 100%) surfaced in the UI (#12)
+- [x] Threshold alerts (e.g. 80% / 100%) surfaced in the UI (#12)
 
 ## Later
 

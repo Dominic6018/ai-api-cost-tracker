@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
+import { getSpendOverview } from "@/db/spend";
+import { budgetStatus, budgetUtilization } from "@/lib/budget";
 import { formatUsd } from "@/lib/cost";
 import { requireUser } from "@/lib/auth";
+import { BudgetAlerts } from "../budget-alerts";
+import { BudgetStatusBadge } from "../budget-status";
 import { logoutAction } from "../login/actions";
 
 export const metadata: Metadata = { title: "Projects · AI API Cost Tracker" };
@@ -13,7 +17,11 @@ export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
   const user = await requireUser("/projects");
-  const projects = await listProjects(db);
+  const [projects, overview] = await Promise.all([
+    listProjects(db),
+    getSpendOverview(db),
+  ]);
+  const monthSpend = new Map(overview.projects.map((p) => [p.id, p.month]));
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-4 py-12 sm:px-8">
@@ -40,13 +48,15 @@ export default async function ProjectsPage() {
         </div>
       </header>
 
+      <BudgetAlerts projects={overview.projects} />
+
       {projects.length === 0 ? (
         <p className="rounded-lg border border-dashed border-foreground/20 p-8 text-center text-foreground/70">
           No projects yet. Create one to start recording usage.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-foreground/10">
-          <table className="w-full min-w-[32rem] text-left text-sm">
+          <table className="w-full min-w-[40rem] text-left text-sm">
             <thead className="border-b border-foreground/10 text-foreground/60">
               <tr>
                 <th scope="col" className="px-4 py-3 font-medium">
@@ -57,6 +67,9 @@ export default async function ProjectsPage() {
                 </th>
                 <th scope="col" className="px-4 py-3 text-right font-medium">
                   Monthly budget
+                </th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">
+                  Spent this month
                 </th>
                 <th scope="col" className="px-4 py-3">
                   <span className="sr-only">Actions</span>
@@ -79,6 +92,27 @@ export default async function ProjectsPage() {
                     ) : (
                       formatUsd(Number(project.monthlyBudgetUsd))
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {(() => {
+                      const spent = monthSpend.get(project.id) ?? "0";
+                      const utilization = budgetUtilization(
+                        spent,
+                        project.monthlyBudgetUsd,
+                      );
+                      const status = budgetStatus(utilization);
+                      return (
+                        <div className="flex flex-col items-end gap-1">
+                          <span>{formatUsd(Number(spent))}</span>
+                          <BudgetStatusBadge
+                            status={status}
+                            overBudget={
+                              !utilization.hasBudget || utilization.overBudget
+                            }
+                          />
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <Link
