@@ -72,6 +72,67 @@ describe("seed prices", () => {
   });
 });
 
+describe("seed price tiers and cache writes", () => {
+  const tiered = seedPrices.filter((p) => p.longContext);
+
+  it("includes tiered models", () => {
+    expect(tiered.map((p) => p.model)).toEqual(
+      expect.arrayContaining(["claude-haiku-5-5", "gemini-2.5-pro"]),
+    );
+  });
+
+  it("uses whole, positive token thresholds", () => {
+    for (const price of tiered) {
+      expect(Number.isInteger(price.longContext!.thresholdTokens)).toBe(true);
+      expect(price.longContext!.thresholdTokens).toBeGreaterThan(0);
+    }
+  });
+
+  it("stores long-tier and cache-write amounts as decimals", () => {
+    for (const price of seedPrices) {
+      const long = price.longContext;
+      const amounts = [
+        price.cacheWritePerMTokUsd,
+        long?.inputPerMTokUsd,
+        long?.outputPerMTokUsd,
+        long?.cachedInputPerMTokUsd,
+        long?.cacheWritePerMTokUsd,
+      ].filter((v): v is string => v !== undefined);
+      for (const amount of amounts) expect(isDecimal(amount)).toBe(true);
+    }
+  });
+
+  it("charges more for long prompts, never less", () => {
+    for (const { inputPerMTokUsd, outputPerMTokUsd, longContext } of tiered) {
+      expect(Number(longContext!.inputPerMTokUsd)).toBeGreaterThan(
+        Number(inputPerMTokUsd),
+      );
+      expect(Number(longContext!.outputPerMTokUsd)).toBeGreaterThanOrEqual(
+        Number(outputPerMTokUsd),
+      );
+    }
+  });
+
+  it("prices cache reads at or below input and writes at or above it", () => {
+    for (const price of seedPrices) {
+      const tiers = [price, price.longContext].filter(
+        (t): t is NonNullable<typeof t> => Boolean(t),
+      );
+      for (const tier of tiers) {
+        const input = Number(tier.inputPerMTokUsd);
+        if (tier.cachedInputPerMTokUsd) {
+          expect(Number(tier.cachedInputPerMTokUsd)).toBeLessThanOrEqual(input);
+        }
+        if (tier.cacheWritePerMTokUsd) {
+          expect(Number(tier.cacheWritePerMTokUsd)).toBeGreaterThanOrEqual(
+            input,
+          );
+        }
+      }
+    }
+  });
+});
+
 describe("sample projects", () => {
   it("has at least one project with unique slugs", () => {
     expect(sampleProjects.length).toBeGreaterThan(0);

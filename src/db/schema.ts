@@ -77,6 +77,31 @@ export const modelPricing = pgTable(
       precision: 12,
       scale: 6,
     }),
+    // Price for writing to the prompt cache; null bills writes as input.
+    cacheWritePerMTokUsd: numeric("cache_write_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    // Prompt-length tier: a request whose input tokens (including cached
+    // and cache-write tokens) exceed the threshold pays the long rates for
+    // the whole request. All long_* columns are null for untiered models.
+    longContextThresholdTokens: integer("long_context_threshold_tokens"),
+    longInputPerMTokUsd: numeric("long_input_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    longOutputPerMTokUsd: numeric("long_output_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    longCachedInputPerMTokUsd: numeric("long_cached_input_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    longCacheWritePerMTokUsd: numeric("long_cache_write_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
     effectiveFrom: timestamp("effective_from", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -92,6 +117,12 @@ export const modelPricing = pgTable(
     check(
       "model_pricing_effective_range",
       sql`${t.effectiveTo} IS NULL OR ${t.effectiveTo} > ${t.effectiveFrom}`,
+    ),
+    // A threshold needs long input and output rates; without one, no long
+    // rates may be set.
+    check(
+      "model_pricing_long_context_complete",
+      sql`(${t.longContextThresholdTokens} IS NULL AND ${t.longInputPerMTokUsd} IS NULL AND ${t.longOutputPerMTokUsd} IS NULL AND ${t.longCachedInputPerMTokUsd} IS NULL AND ${t.longCacheWritePerMTokUsd} IS NULL) OR (${t.longContextThresholdTokens} > 0 AND ${t.longInputPerMTokUsd} IS NOT NULL AND ${t.longOutputPerMTokUsd} IS NOT NULL)`,
     ),
   ],
 );
@@ -109,6 +140,10 @@ export const usageEvents = pgTable(
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
+    // Portion of inputTokens written to the prompt cache.
+    cacheWriteInputTokens: integer("cache_write_input_tokens")
+      .notNull()
+      .default(0),
     costUsd: numeric("cost_usd", { precision: 14, scale: 6 }).notNull(),
     // Provider request id, used to de-duplicate ingested events.
     requestId: text("request_id"),
@@ -128,7 +163,7 @@ export const usageEvents = pgTable(
       .where(sql`${t.requestId} IS NOT NULL`),
     check(
       "usage_events_tokens_non_negative",
-      sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0 AND ${t.cachedInputTokens} >= 0`,
+      sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0 AND ${t.cachedInputTokens} >= 0 AND ${t.cacheWriteInputTokens} >= 0`,
     ),
   ],
 );

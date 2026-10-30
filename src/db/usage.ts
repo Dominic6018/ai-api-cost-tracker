@@ -60,7 +60,8 @@ function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
     existing.model === usage.model &&
     existing.inputTokens === usage.inputTokens &&
     existing.outputTokens === usage.outputTokens &&
-    existing.cachedInputTokens === usage.cachedInputTokens;
+    existing.cachedInputTokens === usage.cachedInputTokens &&
+    existing.cacheWriteInputTokens === usage.cacheWriteInputTokens;
   return sameUsage
     ? { ok: true, event: existing, replayed: true }
     : { ok: false, error: "request_id_conflict" };
@@ -102,6 +103,7 @@ export async function recordUsage(
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
         cachedInputTokens: usage.cachedInputTokens,
+        cacheWriteInputTokens: usage.cacheWriteInputTokens,
         costUsd: costUsd.toFixed(6),
         requestId: usage.requestId ?? null,
         occurredAt: usage.occurredAt,

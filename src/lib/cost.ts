@@ -1,17 +1,32 @@
 /** Token counts for a single request. */
 export interface TokenUsage {
+  /** All input tokens, including cached and cache-write tokens. */
   inputTokens: number;
   outputTokens: number;
-  /** Portion of inputTokens served from the provider's prompt cache. */
+  /** Portion of inputTokens read from the provider's prompt cache. */
   cachedInputTokens?: number;
+  /** Portion of inputTokens written to the provider's prompt cache. */
+  cacheWriteInputTokens?: number;
 }
 
-/** Prices in USD per 1M tokens. */
-export interface TokenPricing {
+/** One set of prices in USD per 1M tokens. */
+export interface TokenRates {
   inputPerMTokUsd: number;
   outputPerMTokUsd: number;
   /** Falls back to the input price when the model has no cache discount. */
   cachedInputPerMTokUsd?: number | null;
+  /** Falls back to the input price when cache writes aren't charged extra. */
+  cacheWritePerMTokUsd?: number | null;
+}
+
+/** A model's prices, optionally with higher rates for long prompts. */
+export interface TokenPricing extends TokenRates {
+  /**
+   * Rates for the whole request when its input tokens exceed
+   * `thresholdTokens`. Long-tier cached and cache-write rates fall back
+   * to the long input rate.
+   */
+  longContext?: (TokenRates & { thresholdTokens: number }) | null;
 }
 
 const TOKENS_PER_MILLION = 1_000_000;
@@ -32,33 +47,60 @@ function assertPrice(name: string, value: number): void {
 }
 
 /**
+ * The rates that apply to a request. A prompt longer than the model's
+ * threshold pays the long rates for every token, as providers bill it;
+ * "longer" means strictly more input tokens than the threshold.
+ */
+export function ratesForUsage(
+  usage: Pick<TokenUsage, "inputTokens">,
+  pricing: TokenPricing,
+): TokenRates {
+  const long = pricing.longContext;
+  if (long && usage.inputTokens > long.thresholdTokens) return long;
+  return pricing;
+}
+
+/**
  * Computes the USD cost of a request, rounded to 6 decimal places to match
- * the `cost_usd` column precision. Cached input tokens are billed at the
- * cached rate and are not double-counted at the full input rate.
+ * the `cost_usd` column precision. Cached and cache-write input tokens are
+ * billed at their own rates and not double-counted at the input rate.
  */
 export function calculateCostUsd(
   usage: TokenUsage,
   pricing: TokenPricing,
 ): number {
   const cached = usage.cachedInputTokens ?? 0;
+  const writes = usage.cacheWriteInputTokens ?? 0;
   assertCount("inputTokens", usage.inputTokens);
   assertCount("outputTokens", usage.outputTokens);
   assertCount("cachedInputTokens", cached);
-  if (cached > usage.inputTokens) {
+  assertCount("cacheWriteInputTokens", writes);
+  if (cached + writes > usage.inputTokens) {
     throw new RangeError(
-      `cachedInputTokens (${cached}) cannot exceed inputTokens (${usage.inputTokens})`,
+      `cachedInputTokens (${cached}) plus cacheWriteInputTokens (${writes}) cannot exceed inputTokens (${usage.inputTokens})`,
+    );
+  }
+  if (pricing.longContext) {
+    assertCount(
+      "longContext.thresholdTokens",
+      pricing.longContext.thresholdTokens,
     );
   }
 
-  const cachedRate = pricing.cachedInputPerMTokUsd ?? pricing.inputPerMTokUsd;
-  assertPrice("inputPerMTokUsd", pricing.inputPerMTokUsd);
-  assertPrice("outputPerMTokUsd", pricing.outputPerMTokUsd);
+  const rates = ratesForUsage(usage, pricing);
+  const inputRate = rates.inputPerMTokUsd;
+  const cachedRate = rates.cachedInputPerMTokUsd ?? inputRate;
+  const writeRate = rates.cacheWritePerMTokUsd ?? inputRate;
+  assertPrice("inputPerMTokUsd", inputRate);
+  assertPrice("outputPerMTokUsd", rates.outputPerMTokUsd);
   assertPrice("cachedInputPerMTokUsd", cachedRate);
+  assertPrice("cacheWritePerMTokUsd", writeRate);
 
   const raw =
-    ((usage.inputTokens - cached) * pricing.inputPerMTokUsd +
+    ((usage.inputTokens - cached - writes) * inputRate +
       cached * cachedRate +
-      usage.outputTokens * pricing.outputPerMTokUsd) /
+      writes * writeRate +
+      usage.outputTokens * rates.outputPerMTokUsd) /
     TOKENS_PER_MILLION;
 
   return Number(raw.toFixed(USD_DECIMALS));

@@ -20,6 +20,9 @@ export const usagePayloadSchema = z
     inputTokens: tokenCount,
     outputTokens: tokenCount,
     cachedInputTokens: tokenCount.default(0),
+    // Anthropic reports these as cache_creation_input_tokens. Like cached
+    // tokens, they're part of inputTokens.
+    cacheWriteInputTokens: tokenCount.default(0),
     requestId: z.string().trim().min(1).max(200).optional(),
     occurredAt: z.iso.datetime({ offset: true }).optional(),
     metadata: z
@@ -36,7 +39,17 @@ export const usagePayloadSchema = z
   .refine((usage) => usage.cachedInputTokens <= usage.inputTokens, {
     path: ["cachedInputTokens"],
     message: "cachedInputTokens cannot exceed inputTokens",
-  });
+  })
+  .refine(
+    (usage) =>
+      usage.cachedInputTokens + usage.cacheWriteInputTokens <=
+      usage.inputTokens,
+    {
+      path: ["cacheWriteInputTokens"],
+      message:
+        "cachedInputTokens plus cacheWriteInputTokens cannot exceed inputTokens",
+    },
+  );
 
 export type UsagePayload = z.infer<typeof usagePayloadSchema>;
 
