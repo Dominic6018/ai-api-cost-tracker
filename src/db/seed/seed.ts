@@ -31,6 +31,14 @@ export async function seed(db: Database): Promise<SeedResult> {
         inputPerMTokUsd: price.inputPerMTokUsd,
         outputPerMTokUsd: price.outputPerMTokUsd,
         cachedInputPerMTokUsd: price.cachedInputPerMTokUsd,
+        cacheWritePerMTokUsd: price.cacheWritePerMTokUsd ?? null,
+        longContextThresholdTokens: price.longContext?.thresholdTokens ?? null,
+        longInputPerMTokUsd: price.longContext?.inputPerMTokUsd ?? null,
+        longOutputPerMTokUsd: price.longContext?.outputPerMTokUsd ?? null,
+        longCachedInputPerMTokUsd:
+          price.longContext?.cachedInputPerMTokUsd ?? null,
+        longCacheWritePerMTokUsd:
+          price.longContext?.cacheWritePerMTokUsd ?? null,
         effectiveFrom: new Date(price.effectiveFrom),
         effectiveTo: price.effectiveTo ? new Date(price.effectiveTo) : null,
       })),

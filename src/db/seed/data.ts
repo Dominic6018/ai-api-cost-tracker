@@ -11,6 +11,16 @@ export interface SeedPrice {
   outputPerMTokUsd: string;
   /** Price for reading cached input; null when the provider lists none. */
   cachedInputPerMTokUsd: string | null;
+  /** Price for writing to the prompt cache; omit when not charged extra. */
+  cacheWritePerMTokUsd?: string;
+  /** Higher rates for prompts with more input tokens than the threshold. */
+  longContext?: {
+    thresholdTokens: number;
+    inputPerMTokUsd: string;
+    outputPerMTokUsd: string;
+    cachedInputPerMTokUsd?: string;
+    cacheWritePerMTokUsd?: string;
+  };
   /** ISO timestamp the price applies from (inclusive). */
   effectiveFrom: string;
   /** ISO timestamp the price stops applying (exclusive); omit if open-ended. */
@@ -28,10 +38,13 @@ const ANTHROPIC = "https://platform.claude.com/docs/en/about-claude/pricing";
 const OPENAI = "https://developers.openai.com/api/docs/pricing";
 const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 
-// The schema stores one rate per model, so only models with a single flat
-// rate are seeded. Models priced by prompt length (OpenAI flagships above
-// 272K tokens, Gemini 2.5/3.1 Pro above 200K, Claude Haiku 5.5 above 100K)
-// are left out until tiered pricing is supported.
+// Models priced by prompt length carry a long-context tier. OpenAI's
+// long-context (>272K) rates are rendered client-side on its pricing page
+// and couldn't be verified from the page source, so its tiered flagships
+// aren't seeded.
+//
+// Cache writes use the shortest cache duration's rate (Anthropic's
+// 5-minute writes). Longer-lived writes cost more and are under-priced.
 //
 // Start dates before the check date aren't recorded, so prices apply from
 // the day they were checked. Usage before then has no price.
@@ -39,14 +52,16 @@ const CHECKED_ON = "2026-10-28";
 const FROM = `${CHECKED_ON}T00:00:00Z`;
 
 export const seedPrices: SeedPrice[] = [
-  // Anthropic: flat pricing across the full context window.
-  // Cached input is the "Cache hits and refreshes" rate.
+  // Anthropic: flat pricing across the full context window, except Haiku
+  // 5.5. Cached input is the "Cache hits and refreshes" rate; cache writes
+  // are the "5m cache writes" rate.
   {
     provider: "anthropic",
     model: "claude-fable-5-1",
     inputPerMTokUsd: "10",
     outputPerMTokUsd: "50",
     cachedInputPerMTokUsd: "0.25",
+    cacheWritePerMTokUsd: "12.50",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -57,6 +72,7 @@ export const seedPrices: SeedPrice[] = [
     inputPerMTokUsd: "4",
     outputPerMTokUsd: "20",
     cachedInputPerMTokUsd: "0.20",
+    cacheWritePerMTokUsd: "5",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -67,6 +83,28 @@ export const seedPrices: SeedPrice[] = [
     inputPerMTokUsd: "2",
     outputPerMTokUsd: "10",
     cachedInputPerMTokUsd: "0.10",
+    cacheWritePerMTokUsd: "2.50",
+    effectiveFrom: FROM,
+    source: ANTHROPIC,
+    checkedOn: CHECKED_ON,
+  },
+
+  {
+    // Prompts over 100,000 tokens (counting cache reads and writes) pay the
+    // long rates for the whole request.
+    provider: "anthropic",
+    model: "claude-haiku-5-5",
+    inputPerMTokUsd: "0.10",
+    outputPerMTokUsd: "0.50",
+    cachedInputPerMTokUsd: "0.01",
+    cacheWritePerMTokUsd: "0.125",
+    longContext: {
+      thresholdTokens: 100_000,
+      inputPerMTokUsd: "0.50",
+      outputPerMTokUsd: "2.50",
+      cachedInputPerMTokUsd: "0.05",
+      cacheWritePerMTokUsd: "0.625",
+    },
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -144,6 +182,24 @@ export const seedPrices: SeedPrice[] = [
     inputPerMTokUsd: "0.30",
     outputPerMTokUsd: "2.50",
     cachedInputPerMTokUsd: "0.03",
+    effectiveFrom: FROM,
+    source: GOOGLE,
+    checkedOn: CHECKED_ON,
+  },
+  {
+    // Prompts over 200K tokens pay the long rates. The hourly cache storage
+    // fee isn't modelled.
+    provider: "google",
+    model: "gemini-2.5-pro",
+    inputPerMTokUsd: "1.25",
+    outputPerMTokUsd: "10",
+    cachedInputPerMTokUsd: "0.125",
+    longContext: {
+      thresholdTokens: 200_000,
+      inputPerMTokUsd: "2.50",
+      outputPerMTokUsd: "15",
+      cachedInputPerMTokUsd: "0.25",
+    },
     effectiveFrom: FROM,
     source: GOOGLE,
     checkedOn: CHECKED_ON,

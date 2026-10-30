@@ -29,6 +29,13 @@
       "when": 1793291657107,
       "tag": "0003_usage_occurred_at_index",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793352534841,
+      "tag": "0004_tiered_pricing_and_cache_writes",
+      "breakpoints": true
     }
   ]
 }

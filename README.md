@@ -110,14 +110,14 @@ docs/ROADMAP.md   Development roadmap
 ## Data model
 
 - **projects**: a grouping of usage (app, team, or environment) with an optional monthly budget.
-- **model_pricing**: USD-per-million-token prices per provider/model, versioned by `effective_from`/`effective_to` so historical costs stay accurate when prices change.
-- **usage_events**: individual requests with token counts (including cached input tokens), computed `cost_usd`, and an optional provider `request_id` for de-duplication.
+- **model_pricing**: USD-per-million-token prices per provider/model, versioned by `effective_from`/`effective_to` so historical costs stay accurate when prices change. Optional columns hold a cache-write rate, and a **prompt-length tier**: a token threshold plus a second set of rates. A request with more input tokens than the threshold (counting cached and cache-write tokens) pays the long rates for every token, including output. A database check makes sure a threshold always comes with long input and output rates.
+- **usage_events**: individual requests with token counts (including cached and cache-write input tokens), computed `cost_usd`, and an optional provider `request_id` for de-duplication.
 
 Monetary values use Postgres `numeric` rather than floating-point columns.
 
 ### Seed prices
 
-`npm run db:seed` loads prices from [src/db/seed/data.ts](src/db/seed/data.ts). Each entry records its official source URL and the date it was checked. Prices apply from the date they were checked, so earlier usage has no price. Models priced by prompt length, and Anthropic cache-write rates, aren't supported yet (#15). Re-running the seed never overwrites existing rows. To correct a price, add a new row with a later `effectiveFrom`.
+`npm run db:seed` loads prices from [src/db/seed/data.ts](src/db/seed/data.ts). Each entry records its official source URL and the date it was checked. Prices apply from the date they were checked, so earlier usage has no price. Claude Haiku 5.5 (over 100,000 tokens) and Gemini 2.5 Pro (over 200K) are seeded with their long-prompt tiers, and Claude models with their 5-minute cache-write rates. OpenAI's tiered flagships aren't seeded, because their long-context rates couldn't be verified from the pricing page's source. Longer-lived cache writes (Anthropic 1-hour, OpenAI 12-hour) cost more than the rate stored, so they're under-priced. Re-running the seed never overwrites existing rows, so a database seeded before cache-write rates were added keeps its old rows; reset it, or add a new row with a later `effectiveFrom`, to pick them up.
 
 ## Dashboard
 
@@ -166,13 +166,14 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
     "inputTokens": 1000,
     "outputTokens": 500,
     "cachedInputTokens": 0,
+    "cacheWriteInputTokens": 0,
     "requestId": "req_abc123",
     "occurredAt": "2026-11-01T12:00:00Z",
     "metadata": { "route": "/chat" }
   }'
 ```
 
-`cachedInputTokens`, `requestId`, `occurredAt` (ISO 8601 with a time zone; defaults to now, and can't be in the future), and `metadata` (an object of at most 8 KB) are optional. Unknown fields, including `projectId`, are rejected. The cost is computed on the server with the price in effect at `occurredAt`.
+`cachedInputTokens` (read from the prompt cache), `cacheWriteInputTokens` (written to it, Anthropic's `cache_creation_input_tokens`), `requestId`, `occurredAt` (ISO 8601 with a time zone; defaults to now, and can't be in the future), and `metadata` (an object of at most 8 KB) are optional. Cached and cache-write tokens are part of `inputTokens`, so together they can't exceed it. Unknown fields, including `projectId`, are rejected. The cost is computed on the server with the price in effect at `occurredAt`.
 
 **Retries are safe when you send `requestId`** (the provider's request ID, such as OpenAI's `x-request-id`). Repeating a request returns the original event with status 200 instead of storing it twice. The stored cost is kept, even if prices have changed since. The retry must come from the same project and have the same `model` and token counts. `occurredAt` and `metadata` aren't compared. Otherwise it gets a 409. Events without a `requestId` are always stored.
 
