@@ -299,6 +299,50 @@ step("an unknown project id is a 404");
   assert.equal((await page("/projects/not-a-uuid/edit")).status, 404);
 }
 
+step("budget alerts appear on the overview and projects list");
+// Needs usage on Sample App, which CI records before running this script.
+if (process.env.EXPECT_TODAY_SPEND) {
+  const list = await page("/projects");
+  const row = list.html.split("<tr").find((r) => r.includes(">sample-app<"));
+  const editPath = row?.match(/href="(\/projects\/[^"]+\/edit)"/)?.[1];
+  assert.ok(editPath, "found Sample App's edit page");
+  const setBudget = async (monthlyBudgetUsd) => {
+    const result = await submit(editPath, {
+      name: "Sample App",
+      slug: "sample-app",
+      monthlyBudgetUsd,
+    });
+    assert.equal(result.status, 303, "budget saved");
+  };
+  const sampleRow = (html) =>
+    // Table rows only: the alert summary above the table also names the project.
+    html
+      .split("<tr")
+      .slice(1)
+      .find((r) => r.includes(">Sample App<")) ?? "";
+
+  // A $0.00 budget with spend is over budget.
+  await setBudget("0.00");
+  const overview = await page("/overview");
+  assert.match(
+    overview.html,
+    /data-testid="budget-alerts"/,
+    "alert summary shown",
+  );
+  assert.match(overview.html, /1 project needs attention/);
+  assert.match(sampleRow(overview.html), /data-budget-state="over"/);
+  assert.match(sampleRow(overview.html), /Over budget/);
+  const projects = await page("/projects");
+  assert.match(projects.html, /data-testid="budget-alerts"/);
+  assert.match(sampleRow(projects.html), /data-budget-status="over"/);
+
+  // Restoring the $100 budget clears the alerts.
+  await setBudget("100.00");
+  const restored = await page("/overview");
+  assert.doesNotMatch(restored.html, /data-testid="budget-alerts"/);
+  assert.match(sampleRow(restored.html), /data-budget-state="ok"/);
+}
+
 step("signing out ends the session, even if the old cookie is replayed");
 {
   const signedIn = cookie;

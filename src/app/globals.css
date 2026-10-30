@@ -3,6 +3,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Status colours are reserved for alerts and never used for series. */
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
 }
 
 @theme inline {
@@ -28,6 +31,7 @@
   --viz-series-1: #2a78d6;
   --viz-series-1-hover: #256abf;
   --viz-meter-track: #cde2fb;
+  --viz-meter-track-neutral: #e1e0d9;
   --viz-grid: #e1e0d9;
   --viz-baseline: #c3c2b7;
   --viz-text-muted: #6b6a66;
@@ -40,6 +44,7 @@
     --viz-series-1: #3987e5;
     --viz-series-1-hover: #5598e7;
     --viz-meter-track: #183a63;
+    --viz-meter-track-neutral: #2c2c2a;
     --viz-grid: #2c2c2a;
     --viz-baseline: #383835;
     --viz-text-muted: #9a9892;
@@ -52,6 +57,7 @@
   --viz-series-1: #3987e5;
   --viz-series-1-hover: #5598e7;
   --viz-meter-track: #183a63;
+  --viz-meter-track-neutral: #2c2c2a;
   --viz-grid: #2c2c2a;
   --viz-baseline: #383835;
   --viz-text-muted: #9a9892;
