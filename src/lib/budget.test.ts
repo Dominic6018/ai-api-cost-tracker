@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  BUDGET_THRESHOLDS,
+  budgetAlerts,
+  budgetStatus,
   budgetUtilization,
   formatMicrosUsd,
   formatUsedPercent,
@@ -122,5 +125,76 @@ describe("formatMicrosUsd", () => {
     expect(formatMicrosUsd(0n, format)).toBe("$0.0000");
     expect(formatMicrosUsd(100n, format)).toBe("$0.0001");
     expect(formatMicrosUsd(3_420_000n, format)).toBe("$3.4200");
+  });
+});
+
+describe("budgetStatus", () => {
+  const status = (spent: string, budget: string | null) =>
+    budgetStatus(budgetUtilization(spent, budget));
+
+  it("is none without a budget", () => {
+    expect(status("1000", null)).toBe("none");
+  });
+
+  it.each([
+    ["0", "100", "ok"],
+    ["79.999999", "100", "ok"],
+    ["80", "100", "warning"],
+    ["80.000000", "100.00", "warning"],
+    ["99.999999", "100", "warning"],
+    ["100", "100", "over"],
+    ["100.000001", "100", "over"],
+    ["250", "100", "over"],
+  ] as const)("spending %s of %s is %s", (spent, budget, expected) => {
+    expect(status(spent, budget)).toBe(expected);
+  });
+
+  it("uses exact thresholds for awkward budgets", () => {
+    // 80% of $0.07 is $0.056 exactly.
+    expect(status("0.055999", "0.07")).toBe("ok");
+    expect(status("0.056", "0.07")).toBe("warning");
+    // 80% of $0.01 is $0.008.
+    expect(status("0.008", "0.01")).toBe("warning");
+    expect(status("0.01", "0.01")).toBe("over");
+  });
+
+  it("treats a zero budget as ok without spend and over with any", () => {
+    expect(status("0", "0")).toBe("ok");
+    expect(status("0.000001", "0")).toBe("over");
+  });
+
+  it("defines the thresholds in one place", () => {
+    expect(BUDGET_THRESHOLDS).toEqual({ warningPercent: 80, overPercent: 100 });
+  });
+});
+
+describe("budgetAlerts", () => {
+  const project = (name: string, month: string, budget: string | null) => ({
+    name,
+    month,
+    monthlyBudgetUsd: budget,
+  });
+
+  it("lists over-budget projects first, then warnings, by name", () => {
+    const alerts = budgetAlerts([
+      project("Zeta", "90", "100"),
+      project("Alpha", "85", "100"),
+      project("Mid", "150", "100"),
+      project("Fine", "10", "100"),
+      project("Unbudgeted", "999", null),
+      project("Beta", "100", "100"),
+    ]);
+    expect(alerts.map((a) => [a.project.name, a.status])).toEqual([
+      ["Beta", "over"],
+      ["Mid", "over"],
+      ["Alpha", "warning"],
+      ["Zeta", "warning"],
+    ]);
+  });
+
+  it("is empty when everything is within budget", () => {
+    expect(
+      budgetAlerts([project("A", "1", "100"), project("B", "0", null)]),
+    ).toEqual([]);
   });
 });
