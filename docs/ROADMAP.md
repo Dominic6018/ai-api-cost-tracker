@@ -1,6 +1,8 @@
 # Development Roadmap
 
-Each item below maps to a GitHub Issue. Milestones are delivered in order; items within a milestone can be worked in parallel.
+**Positioning:** a lightweight, self-hosted AI cost ledger. It tells you exactly what each customer, feature and agent run costs, with no prompt data stored. It complements gateways (which route requests and cap spend) and tracing tools (which attach cost to runs) rather than replacing them.
+
+Milestones are delivered in order, and items within a milestone can be worked in parallel. Items link to GitHub Issues; issues for later milestones are opened when the milestone starts. Milestones 5–10 come from a review of the AI cost-tooling market in October 2026 (see [Why these milestones](#why-these-milestones)).
 
 ## Milestone 0: Foundation ✅
 
@@ -36,7 +38,55 @@ Each item below maps to a GitHub Issue. Milestones are delivered in order; items
 - [x] Budget utilization per project for the current month (#11)
 - [x] Threshold alerts (e.g. 80% / 100%) surfaced in the UI (#12)
 
-## Later
+## Milestone 5: Ship it
 
-- Provider usage-API importers (pull usage instead of push)
-- CSV export
+Portfolio and production basics: deployable, demonstrable and safe to expose.
+
+- [ ] Docker image and deployment guide (#29)
+- [ ] Demo data generator for a public demo (#30)
+- [ ] Rate limiting for sign-in and API key authentication (#31)
+- [ ] Password reset and session revocation from the CLI (#32)
+- [ ] README showcase: screenshots, positioning and quick start (#33)
+- [ ] Prepare the repository for public release (#34)
+
+## Milestone 6: Automatic usage capture
+
+Recording usage shouldn't require hand-written API calls.
+
+- [ ] TypeScript and Python wrappers for the OpenAI, Anthropic and Gemini SDKs that report usage, including cached and cache-write tokens
+- [ ] OpenTelemetry intake that reads the standard GenAI token attributes (`gen_ai.usage.*`)
+- [ ] Import from provider usage and cost APIs, to reconcile recorded costs with provider invoices
+
+## Milestone 7: Cost by customer, feature and agent run
+
+- [ ] Customer, user, feature and run as indexed, filterable fields, plus free-form tags
+- [ ] Cost per customer and per feature, and unit costs (e.g. cost per resolved ticket)
+- [ ] CSV and FOCUS exports, and a read-only reporting API
+
+## Milestone 8: Guardrails
+
+- [ ] Budget notifications by email, Slack and webhook at the existing 80% / 100% thresholds
+- [ ] A budget check an app calls before spending (allow or deny), with per-run and per-period caps
+- [ ] Month-end spend forecast and spike detection
+
+## Milestone 9: Price management
+
+- [ ] A screen for managing prices, requiring a source and check date for every change
+- [ ] Separate rates per cache duration; batch, flex and priority tiers; non-token charges (search, images, audio)
+- [ ] OpenAI long-context tiers, once their rates can be verified from the pricing page
+
+## Milestone 10: Teams
+
+- [ ] Organizations, roles (admin, member, viewer) and an audit log; single sign-on later
+- [ ] Optional per-customer billing through Stripe
+
+## Why these milestones
+
+From the October 2026 market review:
+
+- **Freelance demand:** Upwork's 2026 skills report shows AI integration demand up 178% year over year. Milestone 5 makes this work visible and deployable for clients.
+- **Allocation is the top AI FinOps gap:** nearly all FinOps teams now manage AI spend, but provider invoices only split it by key or project. Milestone 7 adds the per-customer, per-feature and per-run views they ask for.
+- **Capture friction:** gateway and tracing tools record usage automatically, while this app needs explicit API calls. Milestone 6 closes that gap.
+- **From alerts to enforcement:** agent workloads have moved teams to hard per-run caps and pre-spend checks. Milestone 8 builds on the existing thresholds.
+- **Prices change often:** a wrong price makes every number wrong. Milestone 9 makes keeping prices correct a routine, audited task.
+- **Teams and agencies:** Milestone 10 enables multi-user and client-facing use.
