@@ -145,6 +145,30 @@ step("the spend overview renders totals for each window");
   }
 }
 
+step("the overview shows each project's monthly budget use");
+{
+  const overview = await page("/overview");
+  const row = overview.html
+    .split("<tr")
+    .find((r) => r.includes(">Sample App<"));
+  assert.ok(row, "seeded Sample App is listed");
+  const budget = row
+    .match(/data-testid="budget"[\s\S]*?<\/td>/)?.[0]
+    .replace(/<!-- -->/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&amp;", "&");
+  assert.match(budget, /of \$100\.00/, "shows the seeded $100 budget");
+  assert.match(budget, /left/, "shows what remains");
+  assert.match(row, /role="meter"/, "renders a meter");
+  // CI records $0.006 of usage for Sample App, 0.006% of its budget.
+  if (process.env.EXPECT_TODAY_SPEND) {
+    assert.match(budget, /\$0\.006 of \$100\.00/);
+    assert.match(budget, /<0\.1%/);
+  }
+}
+
 step("invalid values are rejected with inline errors");
 {
   const result = await submit("/projects/new", {
