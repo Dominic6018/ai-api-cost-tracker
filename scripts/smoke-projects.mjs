@@ -81,7 +81,13 @@ function step(name) {
 }
 
 step("signed-out visitors are sent to the sign-in page");
-for (const path of ["/overview", "/spend", "/projects", "/projects/new"]) {
+for (const path of [
+  "/overview",
+  "/spend",
+  "/usage",
+  "/projects",
+  "/projects/new",
+]) {
   const result = await page(path);
   assert.equal(result.status, 307, `GET ${path} while signed out`);
   const location = new URL(result.location, base);
@@ -234,6 +240,33 @@ step("spend over time filters by range and project");
   assert.equal(current(fallback.html), "30", "invalid range falls back");
   if (expected)
     assert.equal(total(fallback.html), expected, "unknown project means all");
+}
+
+step("usage events are listed and filterable");
+{
+  const all = await page("/usage");
+  assert.equal(all.status, 200);
+  assert.match(all.html, /data-testid="usage-events"/, "table renders");
+  // CI passes the request id of the usage it recorded earlier.
+  const requestId = process.env.EXPECT_REQUEST_ID;
+  if (requestId)
+    assert.ok(all.html.includes(requestId), "recorded event is listed");
+
+  const openai = await page("/usage?provider=openai&model=gpt-4.1");
+  if (requestId)
+    assert.ok(openai.html.includes(requestId), "matching filters keep it");
+  assert.match(openai.html, /<option value="openai" selected="">/);
+
+  const none = await page("/usage?provider=anthropic");
+  assert.match(none.html, /No usage events match these filters/);
+  assert.match(
+    none.html,
+    /href="\/usage"[^>]*>Clear</,
+    "offers to clear filters",
+  );
+
+  const bad = await page("/usage?cursor=garbage&from=nope");
+  assert.equal(bad.status, 200, "invalid parameters are ignored");
 }
 
 step("an unknown project id is a 404");
