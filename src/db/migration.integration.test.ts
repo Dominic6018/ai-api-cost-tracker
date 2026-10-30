@@ -136,6 +136,43 @@ describe("projects constraints", () => {
 });
 
 describe("model_pricing constraints", () => {
+  it("requires long input and output rates with a long-context threshold", async () => {
+    const base = {
+      provider: "anthropic" as const,
+      inputPerMTokUsd: "1",
+      outputPerMTokUsd: "2",
+    };
+    expect(
+      await pgErrorCode(
+        db.insert(modelPricing).values({
+          ...base,
+          model: `it-${randomUUID()}`,
+          longContextThresholdTokens: 100_000,
+        }),
+      ),
+    ).toBe(CHECK_VIOLATION);
+    expect(
+      await pgErrorCode(
+        db.insert(modelPricing).values({
+          ...base,
+          model: `it-${randomUUID()}`,
+          longInputPerMTokUsd: "3",
+        }),
+      ),
+    ).toBe(CHECK_VIOLATION);
+    expect(
+      await pgErrorCode(
+        db.insert(modelPricing).values({
+          ...base,
+          model: `it-${randomUUID()}`,
+          longContextThresholdTokens: 0,
+          longInputPerMTokUsd: "3",
+          longOutputPerMTokUsd: "4",
+        }),
+      ),
+    ).toBe(CHECK_VIOLATION);
+  });
+
   it("rejects an effective_to that is not after effective_from", async () => {
     const at = new Date("2026-01-01T00:00:00Z");
     expect(
