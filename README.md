@@ -2,7 +2,7 @@
 
 Track token usage and spend across AI API providers (OpenAI, Anthropic, Google, Mistral, and others), broken down by project and model.
 
-> **Status:** early development. The project skeleton, database schema, and cost-calculation core are in place; ingestion, dashboards, and budgets are tracked in [docs/ROADMAP.md](docs/ROADMAP.md) and GitHub Issues.
+> **Status:** the core is complete: authenticated usage ingestion with exact, tier-aware pricing, a signed-in dashboard (overview, spend over time, usage events, projects) and monthly budgets with alerts. Next up is Milestone 5 (deployment, demo data and public release); see [docs/ROADMAP.md](docs/ROADMAP.md) and GitHub Issues.
 
 ## Tech stack
 
