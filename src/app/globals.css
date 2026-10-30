@@ -27,6 +27,7 @@
 .viz {
   --viz-series-1: #2a78d6;
   --viz-series-1-hover: #256abf;
+  --viz-meter-track: #cde2fb;
   --viz-grid: #e1e0d9;
   --viz-baseline: #c3c2b7;
   --viz-text-muted: #6b6a66;
@@ -38,6 +39,7 @@
   :root:where(:not([data-theme="light"])) .viz {
     --viz-series-1: #3987e5;
     --viz-series-1-hover: #5598e7;
+    --viz-meter-track: #183a63;
     --viz-grid: #2c2c2a;
     --viz-baseline: #383835;
     --viz-text-muted: #9a9892;
@@ -49,6 +51,7 @@
 :root[data-theme="dark"] .viz {
   --viz-series-1: #3987e5;
   --viz-series-1-hover: #5598e7;
+  --viz-meter-track: #183a63;
   --viz-grid: #2c2c2a;
   --viz-baseline: #383835;
   --viz-text-muted: #9a9892;

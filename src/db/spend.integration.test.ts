@@ -29,8 +29,16 @@ beforeAll(async () => {
   const created = await db
     .insert(projects)
     .values([
-      { name: "Spend Alpha", slug: `it-${randomUUID()}` },
-      { name: "Spend Beta", slug: `it-${randomUUID()}` },
+      {
+        name: "Spend Alpha",
+        slug: `it-${randomUUID()}`,
+        monthlyBudgetUsd: "5.00",
+      },
+      {
+        name: "Spend Beta",
+        slug: `it-${randomUUID()}`,
+        monthlyBudgetUsd: "0.00",
+      },
       { name: "Spend Gamma", slug: `it-${randomUUID()}` },
       { name: "Spend Idle", slug: `it-${randomUUID()}` },
     ])
@@ -125,5 +133,20 @@ describe("getSpendOverview", () => {
       last30Days: "0.000000",
       events: 0,
     });
+  });
+
+  it("returns each project's budget once, without splitting rows", async () => {
+    const overview = await getSpendOverview(db, now);
+    const mine = overview.projects.filter((p) =>
+      [alpha, beta, gamma, idle].includes(p.id),
+    );
+    expect(mine).toHaveLength(4);
+    const byId = new Map(mine.map((p) => [p.id, p]));
+    expect(byId.get(alpha)?.monthlyBudgetUsd).toBe("5.00");
+    expect(byId.get(beta)?.monthlyBudgetUsd).toBe("0.00");
+    expect(byId.get(gamma)?.monthlyBudgetUsd).toBeNull();
+    expect(byId.get(idle)?.monthlyBudgetUsd).toBeNull();
+    // Budgets don't change the totals row.
+    expect(overview.totals.month).toBe("18.100001");
   });
 });
