@@ -1,0 +1,12 @@
+# Never send secrets or local state to the build context.
+.env*
+!.env.example
+.git
+node_modules
+.next
+coverage
+*.tsbuildinfo
+npm-debug.log*
+.vscode
+.idea
+.claude

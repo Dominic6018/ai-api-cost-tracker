@@ -17,4 +17,32 @@ describe("parseEnv", () => {
       /postgres/,
     );
   });
+
+  it("doesn't use a pooler by default", () => {
+    expect(
+      parseEnv({ DATABASE_URL: "postgres://u:p@localhost:5432/db" })
+        .DATABASE_POOLED,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["true", true],
+    ["false", false],
+  ])("reads DATABASE_POOLED=%s", (value, expected) => {
+    expect(
+      parseEnv({
+        DATABASE_URL: "postgres://u:p@localhost:5432/db",
+        DATABASE_POOLED: value,
+      }).DATABASE_POOLED,
+    ).toBe(expected);
+  });
+
+  it("rejects an unclear DATABASE_POOLED value", () => {
+    expect(() =>
+      parseEnv({
+        DATABASE_URL: "postgres://u:p@localhost:5432/db",
+        DATABASE_POOLED: "yes",
+      }),
+    ).toThrow(/DATABASE_POOLED/);
+  });
 });
