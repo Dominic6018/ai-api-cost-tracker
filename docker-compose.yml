@@ -41,8 +41,10 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://cost_tracker:${POSTGRES_PASSWORD:-cost_tracker}@db:5432/cost_tracker
+    # This machine only: put a reverse proxy in front for remote access, so
+    # per-IP rate limits see the real client address.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       migrate:
         condition: service_completed_successfully

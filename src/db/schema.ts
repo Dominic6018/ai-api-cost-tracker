@@ -229,6 +229,20 @@ export const sessions = pgTable(
   ],
 );
 
+/**
+ * Fixed-window counters for rate limiting sign-in and API-key checks. Keys
+ * hold a SHA-256 hash, so attempted emails and client IPs aren't stored.
+ */
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    key: text("key").primaryKey(),
+    count: integer("count").notNull(),
+    resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("rate_limits_reset_at_idx").on(t.resetAt)],
+);
+
 export type Provider = (typeof providerEnum.enumValues)[number];
 export type User = typeof users.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;

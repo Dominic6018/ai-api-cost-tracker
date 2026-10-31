@@ -36,6 +36,13 @@
       "when": 1793352534841,
       "tag": "0004_tiered_pricing_and_cache_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793444336244,
+      "tag": "0005_rate_limits",
+      "breakpoints": true
     }
   ]
 }

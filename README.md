@@ -106,6 +106,7 @@ src/
     auth.ts       Current user and requireUser() for pages and actions
     login.ts      Sign-in form validation
     passwords.ts  scrypt password hashing
+    rate-limit.ts Rate limit rules, hashed keys and client IP
     sessions.ts   Session tokens and safe post-login redirects
     spend.ts      UTC spend window boundaries
     spend-series.ts  Chart ranges, day filling and axis ticks
@@ -124,6 +125,7 @@ docs/ROADMAP.md   Development roadmap
 - **projects**: a grouping of usage (app, team, or environment) with an optional monthly budget.
 - **model_pricing**: USD-per-million-token prices per provider/model, versioned by `effective_from`/`effective_to` so historical costs stay accurate when prices change. Optional columns hold a cache-write rate, and a **prompt-length tier**: a token threshold plus a second set of rates. A request with more input tokens than the threshold (counting cached and cache-write tokens) pays the long rates for every token, including output. A database check makes sure a threshold always comes with long input and output rates.
 - **usage_events**: individual requests with token counts (including cached and cache-write input tokens), computed `cost_usd`, and an optional provider `request_id` for de-duplication.
+- **rate_limits**: fixed-window attempt counters for sign-in and API keys. Keys are SHA-256 hashes, so attempted emails and client IPs aren't stored. Ended windows are deleted as new attempts arrive.
 
 Monetary values use Postgres `numeric` rather than floating-point columns.
 
@@ -156,6 +158,7 @@ npm run user -- create --email you@example.com < password.txt
 Then sign in at `/login`. Signed-out visitors to dashboard pages are sent there and returned afterwards.
 
 - **Passwords** are stored as scrypt hashes (N=2^15, r=8, p=3), never in plain text. A wrong password and an unknown email get the same error.
+- **Sign-in is rate limited** to 5 attempts per email address and 20 failed attempts per client IP every 15 minutes. Signing in successfully resets the email's count. Both limits show the same message, so it doesn't reveal which applied or whether the account exists. Someone who knows an email address can lock it out for 15 minutes; that's the trade-off for stopping password guessing.
 - **Sessions** last 30 days. The `session` cookie is `HttpOnly` and `SameSite=Lax`, and `Secure` in production. It holds a random 256-bit token, and only the token's SHA-256 hash is stored, so signing out revokes the session on the server.
 - **Every** dashboard page and server action checks the session itself. All accounts can manage all projects.
 
@@ -214,13 +217,14 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 | 409    | `request_id_conflict` | This `provider` and `requestId` were already used for different usage, or by another project |
 | 413    | `payload_too_large`   | Body is over 64 KB                                                                           |
 | 422    | `no_pricing`          | No price for the model at `occurredAt`                                                       |
+| 429    | `rate_limited`        | Over 30 invalid API keys from this IP in 15 minutes; wait for the `Retry-After` seconds      |
 
 ## Testing
 
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image.
 
 ## Contributing
 

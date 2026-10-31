@@ -1,6 +1,8 @@
 import type { AuthenticateResult } from "@/db/api-keys";
+import type { RateLimitResult } from "@/db/rate-limits";
 import type { RecordUsageResult } from "@/db/usage";
 import { parseBearerToken } from "@/lib/api-keys";
+import { clientIp, retryAfterSeconds } from "@/lib/rate-limit";
 import { parseUsagePayload, type UsageInput } from "@/lib/usage";
 
 /** Largest accepted request body. */
@@ -8,12 +10,15 @@ export const MAX_BODY_BYTES = 64 * 1024;
 
 export interface UsageHandlerDeps {
   authenticate: (apiKey: string) => Promise<AuthenticateResult>;
+  /** Counts a rejected key from this client IP against its rate limit. */
+  recordAuthFailure: (clientIp: string) => Promise<RateLimitResult>;
   recordUsage: (usage: UsageInput) => Promise<RecordUsageResult>;
   now?: () => Date;
 }
 
 type ErrorCode =
   | "unauthorized"
+  | "rate_limited"
   | "payload_too_large"
   | "invalid_json"
   | "invalid_payload"
@@ -48,11 +53,27 @@ const RECORD_ERRORS: Record<
 
 /** Builds the `POST /api/usage` handler; dependencies are injected for tests. */
 export function createUsageHandler(deps: UsageHandlerDeps) {
+  const now = () => deps.now?.() ?? new Date();
   return async function handleUsage(request: Request): Promise<Response> {
     const apiKey = parseBearerToken(request.headers.get("authorization"));
     const auth = apiKey
       ? await deps.authenticate(apiKey)
       : ({ ok: false } as const);
+    // Only rejected keys are counted, so valid requests cost no extra query.
+    // Requests without a key aren't guessing one, and never reach the database.
+    if (!auth.ok && apiKey) {
+      const limit = await deps.recordAuthFailure(clientIp(request.headers));
+      if (limit.limited) {
+        const retryAfter = retryAfterSeconds(limit.resetAt, now());
+        const response = errorResponse(
+          429,
+          "rate_limited",
+          `Too many invalid API keys from this address. Retry in ${retryAfter} seconds.`,
+        );
+        response.headers.set("Retry-After", String(retryAfter));
+        return response;
+      }
+    }
     if (!auth.ok) {
       const response = errorResponse(
         401,
@@ -79,7 +100,7 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
       return errorResponse(400, "invalid_json", "Request body must be JSON");
     }
 
-    const parsed = parseUsagePayload(body, deps.now?.() ?? new Date());
+    const parsed = parseUsagePayload(body, now());
     if (!parsed.ok) {
       return errorResponse(400, "invalid_payload", "Invalid usage payload", {
         fieldErrors: parsed.fieldErrors,

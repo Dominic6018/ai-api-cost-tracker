@@ -130,6 +130,18 @@ jobs:
           STATUS=$(post -H "authorization: Bearer $API_KEY"); cat response.json; echo
           test "$STATUS" = 401
 
+          # Repeated invalid keys from one address get 429 with Retry-After
+          # (30 per 15 minutes; two were rejected above). Valid keys still
+          # work from the same address, as the long-prompt check below shows.
+          for i in $(seq 1 30); do
+            STATUS=$(post -D headers.txt -H "authorization: Bearer act_$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | cut -c1-43)")
+            test "$STATUS" = 429 && break
+            test "$STATUS" = 401
+          done
+          cat response.json; echo; grep -i '^retry-after:' headers.txt
+          test "$STATUS" = 429
+          grep -q '"code":"rate_limited"' response.json
+
           # Dashboard: a throwaway account with a random, masked password
           export SMOKE_EMAIL=smoke@example.com
           export SMOKE_PASSWORD=$(openssl rand -base64 24)
