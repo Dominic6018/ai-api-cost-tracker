@@ -45,6 +45,14 @@ npm run dev
 
 Open http://localhost:3000.
 
+### Run the whole stack with Docker
+
+```bash
+docker compose up -d --build   # Postgres, migrations, then the app on http://localhost:3000
+```
+
+For production, including HTTPS, secrets, managed hosting (Vercel and hosted Postgres) and creating the first account, see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
 ## Scripts
 
 | Script                     | Purpose                                                               |
@@ -103,6 +111,8 @@ src/
     usage-filters.ts Usage filter parsing, date bounds and cursors
     projects.ts   Project form validation
 drizzle/          Generated SQL migrations
+Dockerfile        Multi-stage image: tools (migrations, CLI) and a non-root standalone runtime
+docs/DEPLOYMENT.md  Deployment guide
 scripts/          End-to-end smoke tests run in CI
 docs/ROADMAP.md   Development roadmap
 ```
@@ -194,7 +204,7 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image.
 
 ## Contributing
 
