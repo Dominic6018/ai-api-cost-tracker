@@ -90,6 +90,17 @@ docker compose exec -T db pg_dump -U cost_tracker cost_tracker > backup-$(date +
 
 Run migrations before deploying a version that needs them, and keep the direct connection string out of the app's environment.
 
+## A public demo
+
+To show the app with realistic data, load the demo set after seeding prices. On a production deployment it needs an explicit flag:
+
+```bash
+npm run db:seed
+npm run db:demo -- --allow-production          # or: docker compose run --rm migrate npm run db:demo -- --allow-production
+```
+
+Re-run it to refresh the data (budgets follow the current month), and remove it with `npm run db:demo -- --remove`. Use a separate database for a public demo, not one holding real usage.
+
 ## Production checklist
 
 - [ ] HTTPS in front of the app, so session cookies are sent
