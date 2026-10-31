@@ -173,6 +173,23 @@ jobs:
           # sign-out. The only usage recorded today is the $0.006 event above.
           EXPECT_TODAY_SPEND='$0.006' EXPECT_REQUEST_ID="ci-smoke-$GITHUB_RUN_ID" node scripts/smoke-projects.mjs http://localhost:3000
 
+          # Account management: list shows emails, never hashes; a reset
+          # takes a new password and signs the user out; unknown emails fail.
+          npm run --silent user -- list | tee users.txt
+          grep -q "^$SMOKE_EMAIL " users.txt
+          if grep -q 'scrypt' users.txt; then echo "list shows a hash"; exit 1; fi
+          if echo "too-short" | npm run --silent user -- reset-password --email "$SMOKE_EMAIL"; then
+            echo "a short password was accepted"; exit 1
+          fi
+          NEW_PASSWORD=$(openssl rand -base64 24)
+          echo "::add-mask::$NEW_PASSWORD"
+          echo "$NEW_PASSWORD" | npm run --silent user -- reset-password --email "$SMOKE_EMAIL" | tee reset.txt
+          grep -q "Reset the password for $SMOKE_EMAIL" reset.txt
+          npm run --silent user -- revoke-sessions --email "$SMOKE_EMAIL"
+          if npm run --silent user -- revoke-sessions --email nobody@example.com; then
+            echo "an unknown email was accepted"; exit 1
+          fi
+
           # Long-prompt tier and cache writes through the real API, with a
           # fresh key (the first one was revoked above). Claude Haiku 5.5
           # charges more for prompts over 100,000 input tokens:

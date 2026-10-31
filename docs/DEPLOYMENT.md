@@ -48,6 +48,8 @@ docker compose run --rm -T migrate npm run --silent user -- create --email you@e
 docker compose run --rm migrate npm run api-key -- create --project my-app --name production
 ```
 
+The same commands manage accounts later: `user -- list`, `user -- reset-password --email ...` (password on standard input, as above) and `user -- revoke-sessions --email ...` to sign someone out everywhere.
+
 The API key is printed once. Store it in your application's secrets.
 
 ### 4. Put HTTPS in front
