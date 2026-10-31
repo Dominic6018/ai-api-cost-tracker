@@ -69,7 +69,7 @@ For production, including HTTPS, secrets, managed hosting (Vercel and hosted Pos
 | `npm run db:seed`          | Add sample data and model prices (safe to re-run; not for production) |
 | `npm run db:demo`          | Load demo projects and 90 days of usage (`-- --remove` deletes them)  |
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
-| `npm run user`             | Create a dashboard account (see Dashboard)                            |
+| `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
 
 ## Project structure
@@ -94,6 +94,7 @@ src/
     spend-series.ts  Daily spend and provider/model breakdown queries
     usage-events.ts  Keyset-paginated usage event listing
     auth.ts       Users, password checks and sessions
+    accounts.ts   Password reset, session revocation and account list
     scripts/      `npm run api-key` and `npm run user` commands
     seed/         Sample project and dated model prices (`npm run db:seed`)
     demo/         Deterministic demo data generator and loader (`npm run db:demo`)
@@ -156,6 +157,16 @@ npm run user -- create --email you@example.com < password.txt
 ```
 
 Then sign in at `/login`. Signed-out visitors to dashboard pages are sent there and returned afterwards.
+
+Accounts are managed from the same command:
+
+```bash
+npm run user -- list                                        # emails and active session counts
+npm run user -- reset-password --email you@example.com < password.txt
+npm run user -- revoke-sessions --email you@example.com     # sign out everywhere
+```
+
+`reset-password` follows the same password rules, signs the user out everywhere, and lifts any sign-in lockout on that email. `revoke-sessions` keeps the password; use it when a device is lost or a cookie may have leaked.
 
 - **Passwords** are stored as scrypt hashes (N=2^15, r=8, p=3), never in plain text. A wrong password and an unknown email get the same error.
 - **Sign-in is rate limited** to 5 attempts per email address and 20 failed attempts per client IP every 15 minutes. Signing in successfully resets the email's count. Both limits show the same message, so it doesn't reveal which applied or whether the account exists. Someone who knows an email address can lock it out for 15 minutes; that's the trade-off for stopping password guessing.
@@ -224,7 +235,7 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image. The `secrets` job scans the full Git history for credentials with gitleaks.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. It then lists, resets and signs out that account with `npm run user`. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image. The `secrets` job scans the full Git history for credentials with gitleaks.
 
 ## Contributing
 
