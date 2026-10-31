@@ -1,10 +1,12 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { createSession, deleteSession, verifyCredentials } from "@/db/auth";
+import { createSession, deleteSession } from "@/db/auth";
+import { signIn } from "@/db/sign-in";
 import { parseLoginForm, type LoginFormState } from "@/lib/login";
+import { clientIp } from "@/lib/rate-limit";
 import { safeRedirectPath, SESSION_COOKIE } from "@/lib/sessions";
 
 export async function loginAction(
@@ -14,11 +16,23 @@ export async function loginAction(
   const parsed = parseLoginForm(formData);
   if (!parsed.ok) return parsed.state;
 
-  const user = await verifyCredentials(db, parsed);
-  // One message for unknown emails and wrong passwords alike.
-  if (!user) return { email: parsed.email, error: "Invalid email or password" };
+  const result = await signIn(db, {
+    ...parsed,
+    clientIp: clientIp(await headers()),
+  });
+  if (!result.ok) {
+    return {
+      email: parsed.email,
+      // One message for unknown emails and wrong passwords alike, and one
+      // for every rate limit, so neither reveals which accounts exist.
+      error:
+        result.error === "rate_limited"
+          ? "Too many sign-in attempts. Try again later."
+          : "Invalid email or password",
+    };
+  }
 
-  const { token, expiresAt } = await createSession(db, user.id);
+  const { token, expiresAt } = await createSession(db, result.user.id);
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

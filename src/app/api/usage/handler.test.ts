@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AuthenticateResult } from "@/db/api-keys";
+import type { RateLimitResult } from "@/db/rate-limits";
 import type { UsageEvent } from "@/db/schema";
 import type { RecordUsageResult } from "@/db/usage";
 import { createUsageHandler, MAX_BODY_BYTES } from "./handler";
@@ -43,23 +44,31 @@ function setup({
     projectId,
     apiKeyId: "key-1",
   } as AuthenticateResult,
+  limit = {
+    limited: false,
+    resetAt: new Date(now.getTime() + 15 * 60 * 1000),
+  } as RateLimitResult,
 } = {}) {
   const authenticate = vi.fn().mockResolvedValue(auth);
+  const recordAuthFailure = vi.fn().mockResolvedValue(limit);
   const recordUsage = vi.fn().mockResolvedValue(result);
   const handler = createUsageHandler({
     authenticate,
+    recordAuthFailure,
     recordUsage,
     now: () => now,
   });
-  return { handler, authenticate, recordUsage };
+  return { handler, authenticate, recordAuthFailure, recordUsage };
 }
 
 function post(
   payload: unknown,
   authorization: string | null = `Bearer ${apiKey}`,
+  extraHeaders: Record<string, string> = {},
 ) {
   const headers: Record<string, string> = {
     "content-type": "application/json",
+    ...extraHeaders,
   };
   if (authorization !== null) headers.authorization = authorization;
   return new Request("http://localhost/api/usage", {
@@ -71,7 +80,7 @@ function post(
 
 describe("POST /api/usage handler", () => {
   it("records usage for the key's project and returns 201", async () => {
-    const { handler, authenticate, recordUsage } = setup();
+    const { handler, authenticate, recordAuthFailure, recordUsage } = setup();
     const response = await handler(post(body));
 
     expect(response.status).toBe(201);
@@ -92,6 +101,7 @@ describe("POST /api/usage handler", () => {
       replayed: false,
     });
     expect(authenticate).toHaveBeenCalledWith(apiKey);
+    expect(recordAuthFailure).not.toHaveBeenCalled();
     expect(recordUsage).toHaveBeenCalledWith({
       ...body,
       projectId,
@@ -107,20 +117,43 @@ describe("POST /api/usage handler", () => {
     ["a non-Bearer scheme", `Basic ${apiKey}`],
     ["a Bearer header without a key", "Bearer "],
   ])("returns 401 for %s without checking the key", async (_, header) => {
-    const { handler, authenticate, recordUsage } = setup();
+    const { handler, authenticate, recordAuthFailure, recordUsage } = setup();
     const response = await handler(post(body, header));
 
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toMatch(/^Bearer/);
     expect((await response.json()).error.code).toBe("unauthorized");
     expect(authenticate).not.toHaveBeenCalled();
+    expect(recordAuthFailure).not.toHaveBeenCalled();
     expect(recordUsage).not.toHaveBeenCalled();
   });
 
-  it("returns 401 when the key is rejected", async () => {
-    const { handler, recordUsage } = setup({ auth: { ok: false } });
-    const response = await handler(post(body));
+  it("returns 401 when the key is rejected, and counts it against the client IP", async () => {
+    const { handler, recordAuthFailure, recordUsage } = setup({
+      auth: { ok: false },
+    });
+    const response = await handler(
+      post(body, undefined, { "x-forwarded-for": "203.0.113.7" }),
+    );
     expect(response.status).toBe(401);
+    expect(recordAuthFailure).toHaveBeenCalledWith("203.0.113.7");
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 with Retry-After once the client IP is over its limit", async () => {
+    const { handler, recordUsage } = setup({
+      auth: { ok: false },
+      limit: {
+        limited: true,
+        resetAt: new Date(now.getTime() + 90_500),
+      },
+    });
+    const response = await handler(post(body));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("91");
+    const json = await response.json();
+    expect(json.error.code).toBe("rate_limited");
+    expect(json.error.message).toMatch(/91 seconds/);
     expect(recordUsage).not.toHaveBeenCalled();
   });
 
