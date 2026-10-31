@@ -172,7 +172,7 @@ jobs:
         run: |
           check() {
             RESULT=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$@")
-            echo "$* -> $RESULT"
+            echo "$* -> $RESULT" >&2
             echo "$RESULT"
           }
           test "$(check http://localhost:3000/login | tail -1)" = "200 "
