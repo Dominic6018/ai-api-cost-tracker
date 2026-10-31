@@ -43,7 +43,7 @@ Milestones are delivered in order, and items within a milestone can be worked in
 Portfolio and production basics: deployable, demonstrable and safe to expose.
 
 - [x] Docker image and deployment guide (#29)
-- [ ] Demo data generator for a public demo (#30)
+- [x] Demo data generator for a public demo (#30)
 - [ ] Rate limiting for sign-in and API key authentication (#31)
 - [ ] Password reset and session revocation from the CLI (#32)
 - [ ] README showcase: screenshots, positioning and quick start (#33)

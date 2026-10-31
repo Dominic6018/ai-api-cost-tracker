@@ -155,6 +155,20 @@ jobs:
           test "$STATUS" = 201
           grep -q '"costUsd":"0.083750"' response.json
           grep -q '"cacheWriteInputTokens":50000' response.json
+      - name: Demo data loads, refuses production, and removes cleanly
+        run: |
+          npm run db:demo | tee demo.log
+          grep -q "demo-support-bot: budget warning" demo.log
+          grep -q "demo-research-agent: budget over" demo.log
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM projects WHERE slug LIKE 'demo-%'")" = 4
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) > 8000 FROM usage_events WHERE request_id LIKE 'demo-%'")" = t
+
+          if NODE_ENV=production npm run --silent db:demo; then
+            echo "demo data ran in production without --allow-production"; exit 1
+          fi
+
+          npm run db:demo -- --remove
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id LIKE 'demo-%'")" = 0
       - name: Show dev server log
         if: failure()
         run: cat next-dev.log || true
