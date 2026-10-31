@@ -1,14 +1,18 @@
-# Local development database. Not intended for production use.
+# Development: `docker compose up -d db` starts only Postgres.
+# Full stack: `docker compose up -d --build` starts Postgres, applies
+# migrations, then serves the app on http://localhost:3000.
+# See docs/DEPLOYMENT.md before exposing this beyond your own machine.
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: cost_tracker
-      POSTGRES_PASSWORD: cost_tracker
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cost_tracker}
       POSTGRES_DB: cost_tracker
+    # Reachable from this machine only, never from the network.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -16,6 +20,32 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Applies pending migrations, then exits. Also runs the CLI, e.g.
+  # docker compose run --rm -T migrate npm run --silent user -- create ...
+  migrate:
+    build:
+      context: .
+      target: tools
+    environment:
+      DATABASE_URL: postgres://cost_tracker:${POSTGRES_PASSWORD:-cost_tracker}@db:5432/cost_tracker
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npm", "run", "db:migrate"]
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://cost_tracker:${POSTGRES_PASSWORD:-cost_tracker}@db:5432/cost_tracker
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:
