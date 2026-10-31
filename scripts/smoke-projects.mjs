@@ -359,4 +359,19 @@ step("signing out ends the session, even if the old cookie is replayed");
   assert.equal((await page("/projects")).status, 307, "old session is revoked");
 }
 
+step("repeated failed sign-ins are refused with a generic message");
+{
+  cookie = "";
+  // An address with no account, so the smoke account stays usable.
+  const target = `locked-${randomUUID()}@example.com`;
+  for (let i = 0; i < 5; i++) {
+    const result = await submit("/login", { email: target, password: "x" });
+    assert.match(result.html, /Invalid email or password/);
+  }
+  const result = await submit("/login", { email: target, password: "x" });
+  assert.equal(result.status, 200);
+  assert.match(result.html, /Too many sign-in attempts/);
+  assert.equal(cookie, "", "no session cookie when rate limited");
+}
+
 console.log("Sign-in and project pages smoke test passed.");
