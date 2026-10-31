@@ -158,3 +158,37 @@ jobs:
       - name: Show dev server log
         if: failure()
         run: cat next-dev.log || true
+
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      # Only for this throwaway CI stack.
+      POSTGRES_PASSWORD: ci-docker-password
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start Postgres, migrations and the app
+        run: docker compose up -d --build --wait --wait-timeout 180 app
+      - name: The app serves pages and enforces authentication
+        run: |
+          check() {
+            RESULT=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$@")
+            echo "$* -> $RESULT" >&2
+            echo "$RESULT"
+          }
+          test "$(check http://localhost:3000/login | tail -1)" = "200 "
+          case "$(check http://localhost:3000/projects | tail -1)" in "307 http://localhost:3000/login"*) ;; *) exit 1 ;; esac
+          test "$(check -X POST http://localhost:3000/api/usage | tail -1)" = "401 "
+      - name: The app runs as a non-root user
+        run: |
+          USER_ID=$(docker compose exec -T app id -u)
+          echo "app runs as uid $USER_ID"
+          test "$USER_ID" != "0"
+      - name: Migrations applied and the CLI works in the tools image
+        run: |
+          docker compose ps -a migrate --format '{{.State}} {{.ExitCode}}' | grep -q "exited 0"
+          PASSWORD=$(openssl rand -base64 24)
+          echo "::add-mask::$PASSWORD"
+          echo "$PASSWORD" | docker compose run --rm -T migrate npm run --silent user -- create --email docker@example.com
+      - name: Show logs
+        if: failure()
+        run: docker compose logs --no-color
