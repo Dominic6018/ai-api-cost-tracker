@@ -19,7 +19,7 @@ With `NODE_ENV=production`, the session cookie is marked `Secure`, so **signing 
 
 - **db**: Postgres 17, with data in the `pgdata` volume. It's published on `127.0.0.1:5432` only.
 - **migrate**: applies pending migrations, then exits. The same image runs the `user` and `api-key` commands.
-- **app**: the production server on port 3000. It's a Next.js standalone build running as the unprivileged `node` user, and it starts only after migrations succeed.
+- **app**: the production server on port 3000, reachable from this machine only. It's a Next.js standalone build running as the unprivileged `node` user, and it starts only after migrations succeed.
 
 ### 1. Configure
 
@@ -60,7 +60,7 @@ costs.example.com {
 }
 ```
 
-Don't expose port 3000 directly to the internet.
+Compose publishes port 3000 on `127.0.0.1` only, so it isn't reachable from the network without the proxy. Rate limits for sign-in and API keys are kept per client IP, read from the last `X-Forwarded-For` entry. Caddy and nginx (with `$proxy_add_x_forwarded_for`) set it correctly. A client reaching the app directly could send its own header and dodge the per-IP limits.
 
 ### Upgrades and backups
 
@@ -109,4 +109,4 @@ Re-run it to refresh the data (budgets follow the current month), and remove it 
 - [ ] Database backups scheduled and a restore tested
 - [ ] `npm run db:seed` **not** run against production (it refuses when `NODE_ENV=production`)
 - [ ] API keys stored as secrets, and revoked with `npm run api-key -- revoke <prefix>` when no longer needed
-- [ ] Until rate limiting lands (#31), limit sign-in and API traffic at your proxy if the app is public
+- [ ] The app reached only through the proxy, so rate limits see real client IPs

@@ -44,7 +44,7 @@ Portfolio and production basics: deployable, demonstrable and safe to expose.
 
 - [x] Docker image and deployment guide (#29)
 - [x] Demo data generator for a public demo (#30)
-- [ ] Rate limiting for sign-in and API key authentication (#31)
+- [x] Rate limiting for sign-in and API key authentication (#31)
 - [ ] Password reset and session revocation from the CLI (#32)
 - [ ] README showcase: screenshots, positioning and quick start (#33)
 - [ ] Prepare the repository for public release (#34)
