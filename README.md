@@ -2,7 +2,7 @@
 
 Track token usage and spend across AI API providers (OpenAI, Anthropic, Google, Mistral, and others), broken down by project and model.
 
-> **Status:** the core is complete: authenticated usage ingestion with exact, tier-aware pricing, a signed-in dashboard (overview, spend over time, usage events, projects) and monthly budgets with alerts. Next up is Milestone 5 (deployment, demo data and public release); see [docs/ROADMAP.md](docs/ROADMAP.md) and GitHub Issues.
+> **Status:** the core is complete: authenticated usage ingestion with exact, tier-aware pricing, a signed-in dashboard (overview, spend over time, usage events, projects) and monthly budgets with alerts. Milestone 5 (shipping it) is under way: Docker deployment, demo data, rate limiting and the public release are done; see [docs/ROADMAP.md](docs/ROADMAP.md) and GitHub Issues.
 
 ## Tech stack
 
@@ -224,8 +224,14 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image. The `secrets` job scans the full Git history for credentials with gitleaks.
 
 ## Contributing
 
-Work happens through GitHub Issues, feature branches, and Pull Requests against `main`. CI must pass before merging. See [docs/ROADMAP.md](docs/ROADMAP.md) for planned work.
+Work happens through GitHub Issues, feature branches, and Pull Requests against `main`, which is protected: CI must pass before merging. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and how to run the checks, and [docs/ROADMAP.md](docs/ROADMAP.md) for planned work.
+
+Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)

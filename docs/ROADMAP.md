@@ -47,7 +47,7 @@ Portfolio and production basics: deployable, demonstrable and safe to expose.
 - [x] Rate limiting for sign-in and API key authentication (#31)
 - [ ] Password reset and session revocation from the CLI (#32)
 - [ ] README showcase: screenshots, positioning and quick start (#33)
-- [ ] Prepare the repository for public release (#34)
+- [x] Prepare the repository for public release (#34)
 
 ## Milestone 6: Automatic usage capture
 
