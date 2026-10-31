@@ -10,5 +10,7 @@ export default defineConfig({
     include: ["src/**/*.integration.test.ts"],
     // Tests share one database, so run files sequentially.
     fileParallelism: false,
+    // Some tests load thousands of rows (e.g. demo data).
+    testTimeout: 30_000,
   },
 });

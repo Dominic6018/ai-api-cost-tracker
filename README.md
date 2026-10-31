@@ -67,6 +67,7 @@ For production, including HTTPS, secrets, managed hosting (Vercel and hosted Pos
 | `npm run db:generate`      | Generate a migration from `src/db/schema.ts`                          |
 | `npm run db:migrate`       | Apply pending migrations                                              |
 | `npm run db:seed`          | Add sample data and model prices (safe to re-run; not for production) |
+| `npm run db:demo`          | Load demo projects and 90 days of usage (`-- --remove` deletes them)  |
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create a dashboard account (see Dashboard)                            |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
@@ -95,6 +96,7 @@ src/
     auth.ts       Users, password checks and sessions
     scripts/      `npm run api-key` and `npm run user` commands
     seed/         Sample project and dated model prices (`npm run db:seed`)
+    demo/         Deterministic demo data generator and loader (`npm run db:demo`)
   lib/
     cost.ts       Token cost calculation and USD formatting
     env.ts        Environment variable validation
@@ -128,6 +130,20 @@ Monetary values use Postgres `numeric` rather than floating-point columns.
 ### Seed prices
 
 `npm run db:seed` loads prices from [src/db/seed/data.ts](src/db/seed/data.ts). Each entry records its official source URL and the date it was checked. Prices apply from the date they were checked, so earlier usage has no price. Claude Haiku 5.5 (over 100,000 tokens) and Gemini 2.5 Pro (over 200K) are seeded with their long-prompt tiers, and Claude models with their 5-minute cache-write rates. OpenAI's tiered flagships aren't seeded, because their long-context rates couldn't be verified from the pricing page's source. Longer-lived cache writes (Anthropic 1-hour, OpenAI 12-hour) cost more than the rate stored, so they're under-priced. Re-running the seed never overwrites existing rows, so a database seeded before cache-write rates were added keeps its old rows; reset it, or add a new row with a later `effectiveFrom`, to pick them up.
+
+## Demo data
+
+```bash
+npm run db:seed    # prices first
+npm run db:demo    # demo projects and 90 days of synthetic usage
+```
+
+Loads four projects with about 14,000 usage events across the seeded Anthropic, OpenAI and Google models. The data includes cache reads and writes, long prompts that hit pricing tiers, weekday patterns, growth, and a runaway-agent spike. Each project tells one story: **Support Bot** is nearing its budget, **Research Agent** is over it, **Checkout Assistant** is comfortably within it, and **Batch Summaries** has no budget.
+
+- **Deterministic:** the same `--seed` (default 2026) on the same day gives the same data. Budgets are set from this month's spend, so the four budget states hold on any day.
+- **Priced at today's seed prices** using the app's real cost code, since history before the prices' check date has no stored price.
+- **Safe to re-run:** it replaces earlier demo data in one transaction. Demo projects have slugs starting with `demo-`, and only those are touched. `npm run db:demo -- --remove` deletes them and their usage.
+- **Refuses to run when `NODE_ENV=production`** unless you pass `--allow-production` (see [Deployment](docs/DEPLOYMENT.md) for a public demo).
 
 ## Dashboard
 
@@ -204,7 +220,7 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image.
 
 ## Contributing
 
