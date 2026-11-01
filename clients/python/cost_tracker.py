@@ -1,6 +1,6 @@
 """AI API Cost Tracker client: reports token usage to ``POST /api/usage``.
 
-Dependency-free (standard library only, Python 3.9+). Copy this file into
+Dependency-free (standard library only, Python 3.10+). Copy this file into
 your project. Only token counts are sent, never prompts or responses.
 
     tracker = CostTracker(base_url, api_key)
