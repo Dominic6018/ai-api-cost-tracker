@@ -1,0 +1,6 @@
+{
+  "name": "@ai-api-cost-tracker/client",
+  "private": true,
+  "type": "module",
+  "exports": "./cost-tracker.ts"
+}

@@ -53,8 +53,9 @@ Portfolio and production basics: deployable, demonstrable and safe to expose.
 
 Recording usage shouldn't require hand-written API calls.
 
-- [ ] TypeScript and Python wrappers for the OpenAI, Anthropic and Gemini SDKs that report usage, including cached and cache-write tokens
-- [ ] OpenTelemetry intake that reads the standard GenAI token attributes (`gen_ai.usage.*`)
+- [x] TypeScript client that reports usage from OpenAI, Anthropic and Gemini responses, including cached and cache-write tokens (#43)
+- [ ] Python client with the same usage mappings (#44)
+- [ ] OpenTelemetry intake that reads the standard GenAI token attributes (`gen_ai.usage.*`) (#45)
 - [ ] Import from provider usage and cost APIs, to reconcile recorded costs with provider invoices
 
 ## Milestone 7: Cost by customer, feature and agent run
