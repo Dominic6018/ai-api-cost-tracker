@@ -45,6 +45,7 @@ Change [src/db/schema.ts](src/db/schema.ts), then run `npm run db:generate` and 
 | `check`    | Lint, types, formatting, unit tests, the build, and that the production server requires sign-in and API keys    |
 | `database` | Migrations and seed on a fresh Postgres, integration tests, and end-to-end smoke tests of the API and dashboard |
 | `docker`   | The Docker image and Compose stack: healthy start, authentication, non-root user, migrations and the CLI        |
+| `python`   | The Python client's tests on Python 3.9, the oldest version it supports                                         |
 | `secrets`  | The full Git history scanned for credentials with [gitleaks](https://github.com/gitleaks/gitleaks)              |
 
 ## Guidelines

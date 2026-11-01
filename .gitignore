@@ -44,3 +44,6 @@ next-env.d.ts
 
 # allow the documented env template
 !.env.example
+
+# Python
+__pycache__/
