@@ -21,7 +21,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 
 - **Exact costs.** Input, cached input, cache writes and output are priced separately, including prompt-length tiers such as Claude Haiku 5.5 above 100,000 tokens. Money is stored as exact decimals, never floating point.
 - **Dated prices.** A price change never rewrites history. Seed prices for Anthropic, OpenAI and Google models record their official source and the date they were checked.
-- **One small API.** `POST /api/usage` with a per-project API key. Retries with the same `requestId` are safe.
+- **One small API.** `POST /api/usage` with a per-project API key, or the [TypeScript client](clients/typescript/README.md), which reads usage from OpenAI, Anthropic and Gemini responses. Retries with the same `requestId` are safe.
 - **Dashboard.** Spend today, this month and over 30 days; a daily chart over 7, 30 or 90 days with spend by provider and model; a filterable history of every request; light and dark mode.
 - **Budgets.** A monthly budget per project, with alerts at 80% and 100%.
 - **Secure by default.** API keys and sessions are stored only as hashes, passwords with scrypt, and sign-in and API keys are rate limited.
@@ -49,7 +49,7 @@ Open http://localhost:3000 and sign in. To record real usage, create an API key 
 
 What it doesn't do yet, and where that's planned:
 
-- **Usage is reported by your code** calling the API. There are no SDK wrappers, OpenTelemetry intake or provider invoice import yet ([Milestone 6](docs/ROADMAP.md#milestone-6-automatic-usage-capture)).
+- **Usage is reported by your code**, through the API or the [TypeScript client](clients/typescript/README.md). A Python client, OpenTelemetry intake and provider invoice import are next ([Milestone 6](docs/ROADMAP.md#milestone-6-automatic-usage-capture)).
 - **Cost is broken down by project, provider and model.** Per customer, feature and run comes in Milestone 7; `metadata` is stored but not yet filterable.
 - **Budget alerts appear on the dashboard only**, with no email, Slack or webhook notifications (Milestone 8).
 - **Prices are token prices, managed as seed data**, with no admin screen (Milestone 9). Batch and priority tiers, non-token charges (search, images, audio) and longer-lived cache writes aren't priced, and OpenAI's long-context tiers aren't seeded.
@@ -163,7 +163,8 @@ src/
 drizzle/          Generated SQL migrations
 Dockerfile        Multi-stage image: tools (migrations, CLI) and a non-root standalone runtime
 docs/DEPLOYMENT.md  Deployment guide
-scripts/          End-to-end smoke tests run in CI
+scripts/          End-to-end smoke tests and screenshots run in CI
+clients/typescript/  Dependency-free client that reports usage from provider responses
 docs/ROADMAP.md   Development roadmap
 ```
 
@@ -230,6 +231,8 @@ npm run user -- revoke-sessions --email you@example.com     # sign out everywher
 ## Recording usage
 
 Each request is authenticated with a per-project API key. The key decides which project the usage belongs to.
+
+From TypeScript or JavaScript, the [TypeScript client](clients/typescript/README.md) reads usage from OpenAI, Anthropic and Gemini responses and reports it for you: `await tracker.track(openai.responses.create(...))`. Other languages call the API below.
 
 ### API keys
 

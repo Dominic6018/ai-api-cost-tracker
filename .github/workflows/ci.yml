@@ -202,6 +202,10 @@ jobs:
           test "$STATUS" = 201
           grep -q '"costUsd":"0.083750"' response.json
           grep -q '"cacheWriteInputTokens":50000' response.json
+
+          # The TypeScript client: an Anthropic response with cache traffic,
+          # reported through track(), priced and replayed safely.
+          COST_TRACKER_API_KEY="$API_KEY_2" node scripts/smoke-client.mjs http://localhost:3000
       - name: Demo data loads, refuses production, and removes cleanly
         run: |
           npm run db:demo | tee demo.log

@@ -7,7 +7,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "clients/**/*.test.ts"],
     // Integration tests need a migrated database; run them with `npm run test:integration`.
     exclude: [...configDefaults.exclude, "src/**/*.integration.test.ts"],
   },
