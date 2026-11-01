@@ -216,6 +216,22 @@ jobs:
 
           npm run db:demo -- --remove
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id LIKE 'demo-%'")" = 0
+      - name: Screenshot the dashboard with demo data, in light and dark mode
+        run: |
+          # Demo projects only, as a new user would see them. This is the
+          # job's last use of its throwaway database.
+          psql "$DATABASE_URL" -c "DELETE FROM projects WHERE slug NOT LIKE 'demo-%'"
+          npm run --silent db:demo
+          SHOT_PASSWORD=$(openssl rand -base64 24)
+          echo "::add-mask::$SHOT_PASSWORD"
+          echo "$SHOT_PASSWORD" | npm run --silent user -- create --email demo@example.com
+          SHOT_EMAIL=demo@example.com SHOT_PASSWORD="$SHOT_PASSWORD" node scripts/screenshots.mjs http://localhost:3000 screenshots
+      - name: Upload screenshots for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+          retention-days: 14
       - name: Show dev server log
         if: failure()
         run: cat next-dev.log || true
@@ -250,6 +266,11 @@ jobs:
           PASSWORD=$(openssl rand -base64 24)
           echo "::add-mask::$PASSWORD"
           echo "$PASSWORD" | docker compose run --rm -T migrate npm run --silent user -- create --email docker@example.com
+      - name: The README quick start loads prices and demo data
+        run: |
+          docker compose run --rm migrate npm run --silent db:seed
+          docker compose run --rm migrate npm run --silent db:demo | tee demo.log
+          grep -q "demo-research-agent: budget over" demo.log
       - name: Show logs
         if: failure()
         run: docker compose logs --no-color
