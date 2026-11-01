@@ -1,8 +1,60 @@
 # AI API Cost Tracker
 
-Track token usage and spend across AI API providers (OpenAI, Anthropic, Google, Mistral, and others), broken down by project and model.
+A lightweight, self-hosted ledger of what your AI API calls cost. Your app sends the token counts from each request; the tracker prices them exactly against dated, tier-aware model prices and shows spend by project, provider and model, with monthly budgets and alerts. **Prompts and responses are never sent or stored**, only token counts.
 
-> **Status:** the core is complete: authenticated usage ingestion with exact, tier-aware pricing, a signed-in dashboard (overview, spend over time, usage events, projects) and monthly budgets with alerts. Milestone 5 (shipping it) is under way: Docker deployment, demo data, rate limiting and the public release are done; see [docs/ROADMAP.md](docs/ROADMAP.md) and GitHub Issues.
+It complements LLM gateways (which route requests and cap spend) and tracing tools (which follow a request through an agent) rather than replacing them: it's the system of record for cost. Cost per customer, feature and agent run is next on the [roadmap](docs/ROADMAP.md#milestone-7-cost-by-customer-feature-and-agent-run).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
+  <img alt="Spend overview: two projects need attention, spend today, this month and over the last 30 days, and each project's monthly budget meter" src="docs/screenshots/overview-light.png">
+</picture>
+
+| Spend over time                                                                                                                                                                                                                        | Usage events                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/spend-dark.png"><img alt="Daily spend over 90 days as a bar chart, with spend and tokens by provider" src="docs/screenshots/spend-light.png"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/usage-dark.png"><img alt="Filterable table of usage events with tokens, cost and request ID" src="docs/screenshots/usage-light.png"></picture> |
+
+<sub>Demo data from `npm run db:demo`, captured by CI on 1 November 2026, and shown in your GitHub theme. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
+
+> **Status:** Milestones 0–5 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting and the public release. Next is automatic usage capture; see [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Features
+
+- **Exact costs.** Input, cached input, cache writes and output are priced separately, including prompt-length tiers such as Claude Haiku 5.5 above 100,000 tokens. Money is stored as exact decimals, never floating point.
+- **Dated prices.** A price change never rewrites history. Seed prices for Anthropic, OpenAI and Google models record their official source and the date they were checked.
+- **One small API.** `POST /api/usage` with a per-project API key. Retries with the same `requestId` are safe.
+- **Dashboard.** Spend today, this month and over 30 days; a daily chart over 7, 30 or 90 days with spend by provider and model; a filterable history of every request; light and dark mode.
+- **Budgets.** A monthly budget per project, with alerts at 80% and 100%.
+- **Secure by default.** API keys and sessions are stored only as hashes, passwords with scrypt, and sign-in and API keys are rate limited.
+- **Self-hosted.** Docker Compose or Vercel with hosted Postgres, under the MIT license.
+
+## Quick start with Docker
+
+About five minutes with Docker installed:
+
+```bash
+git clone https://github.com/Dominic6018/ai-api-cost-tracker.git
+cd ai-api-cost-tracker
+docker compose up -d --build                          # Postgres, migrations and the app
+
+docker compose run --rm migrate npm run db:seed       # model prices and a sample project
+docker compose run --rm migrate npm run db:demo       # optional: four demo projects, 90 days of usage
+
+# Create your account; the password is read from standard input (12+ characters)
+echo 'choose a long password' | docker compose run --rm -T migrate npm run --silent user -- create --email you@example.com
+```
+
+Open http://localhost:3000 and sign in. To record real usage, create an API key ([Recording usage](#recording-usage)); remove the demo with `docker compose run --rm migrate npm run db:demo -- --remove`. For HTTPS, secrets and backups in production, see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
+## Limitations
+
+What it doesn't do yet, and where that's planned:
+
+- **Usage is reported by your code** calling the API. There are no SDK wrappers, OpenTelemetry intake or provider invoice import yet ([Milestone 6](docs/ROADMAP.md#milestone-6-automatic-usage-capture)).
+- **Cost is broken down by project, provider and model.** Per customer, feature and run comes in Milestone 7; `metadata` is stored but not yet filterable.
+- **Budget alerts appear on the dashboard only**, with no email, Slack or webhook notifications (Milestone 8).
+- **Prices are token prices, managed as seed data**, with no admin screen (Milestone 9). Batch and priority tiers, non-token charges (search, images, audio) and longer-lived cache writes aren't priced, and OpenAI's long-context tiers aren't seeded.
+- **One team per install.** Every account sees and manages every project, there are no roles (Milestone 10), and accounts are created and reset from the command line.
+- **Days are UTC days** for "today", "this month" and the charts.
 
 ## Tech stack
 
@@ -45,13 +97,7 @@ npm run dev
 
 Open http://localhost:3000.
 
-### Run the whole stack with Docker
-
-```bash
-docker compose up -d --build   # Postgres, migrations, then the app on http://localhost:3000
-```
-
-For production, including HTTPS, secrets, managed hosting (Vercel and hosted Postgres) and creating the first account, see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+To run the whole stack in Docker instead, see the [quick start](#quick-start-with-docker). For production, including HTTPS, secrets, managed hosting (Vercel and hosted Postgres) and creating the first account, see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
 ## Scripts
 
@@ -235,7 +281,7 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. It then lists, resets and signs out that account with `npm run user`. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, and that migrations and the CLI work in the tools image. The `secrets` job scans the full Git history for credentials with gitleaks.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. It then lists, resets and signs out that account with `npm run user`. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, that migrations and the CLI work in the tools image, and that the quick start loads prices and demo data. The `database` job also screenshots the dashboard with demo data in light and dark mode and uploads them as an artifact, which is where the README images come from (`scripts/screenshots.mjs`). The `secrets` job scans the full Git history for credentials with gitleaks.
 
 ## Contributing
 

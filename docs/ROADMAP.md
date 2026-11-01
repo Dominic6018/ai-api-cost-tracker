@@ -38,7 +38,7 @@ Milestones are delivered in order, and items within a milestone can be worked in
 - [x] Budget utilization per project for the current month (#11)
 - [x] Threshold alerts (e.g. 80% / 100%) surfaced in the UI (#12)
 
-## Milestone 5: Ship it
+## Milestone 5: Ship it ✅
 
 Portfolio and production basics: deployable, demonstrable and safe to expose.
 
@@ -46,7 +46,7 @@ Portfolio and production basics: deployable, demonstrable and safe to expose.
 - [x] Demo data generator for a public demo (#30)
 - [x] Rate limiting for sign-in and API key authentication (#31)
 - [x] Password reset and session revocation from the CLI (#32)
-- [ ] README showcase: screenshots, positioning and quick start (#33)
+- [x] README showcase: screenshots, positioning and quick start (#33)
 - [x] Prepare the repository for public release (#34)
 
 ## Milestone 6: Automatic usage capture
