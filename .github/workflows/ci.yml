@@ -62,6 +62,17 @@ jobs:
           tar -xzf "$archive" gitleaks
           ./gitleaks git --log-opts="--all" --redact --no-banner --verbose .
 
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The oldest Python the client supports.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Python client tests
+        run: python -m unittest discover -s clients/python -v
+
   database:
     runs-on: ubuntu-latest
     services:
@@ -206,6 +217,7 @@ jobs:
           # The TypeScript client: an Anthropic response with cache traffic,
           # reported through track(), priced and replayed safely.
           COST_TRACKER_API_KEY="$API_KEY_2" node scripts/smoke-client.mjs http://localhost:3000
+          COST_TRACKER_API_KEY="$API_KEY_2" python3 scripts/smoke_client.py http://localhost:3000
       - name: Demo data loads, refuses production, and removes cleanly
         run: |
           npm run db:demo | tee demo.log
