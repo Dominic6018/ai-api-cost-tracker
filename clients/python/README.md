@@ -1,6 +1,6 @@
 # Python client
 
-Reports token usage from OpenAI, Anthropic and Gemini responses to your AI API Cost Tracker, without hand-written API calls. It's a single file, [cost_tracker.py](cost_tracker.py), using only the standard library (Python 3.9+). Only token counts are sent, never prompts or responses.
+Reports token usage from OpenAI, Anthropic and Gemini responses to your AI API Cost Tracker, without hand-written API calls. It's a single file, [cost_tracker.py](cost_tracker.py), using only the standard library (Python 3.10+). Only token counts are sent, never prompts or responses.
 
 ## Install
 
