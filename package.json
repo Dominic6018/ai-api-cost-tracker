@@ -20,6 +20,7 @@
     "db:demo": "tsx src/db/scripts/demo.ts",
     "api-key": "tsx src/db/scripts/api-key.ts",
     "user": "tsx src/db/scripts/user.ts",
+    "reconcile": "tsx src/db/scripts/reconcile.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },
