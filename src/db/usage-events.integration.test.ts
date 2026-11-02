@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
-import { inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -202,5 +202,76 @@ describe("listUsageEvents", () => {
     });
     const text = plan.map((row) => Object.values(row)[0]).join("\n");
     expect(text).toContain(index);
+  });
+});
+
+describe("listUsageEvents attribution filters", () => {
+  // A separate project and window, so the fixtures above are unaffected.
+  const day = { from: "2034-02-01", to: "2034-02-01" };
+  let projectId: string;
+
+  beforeAll(async () => {
+    const [project] = await db
+      .insert(projects)
+      .values({ name: "Attribution", slug: `it-${randomUUID()}` })
+      .returning({ id: projects.id });
+    projectId = project.id;
+    const event = (
+      hour: number,
+      attribution: {
+        customerId?: string;
+        userId?: string;
+        feature?: string;
+        runId?: string;
+      },
+    ) => ({
+      projectId,
+      provider: "openai" as const,
+      model: "m-attr",
+      inputTokens: 1,
+      outputTokens: 1,
+      costUsd: "0.000001",
+      occurredAt: new Date(
+        `2034-02-01T${String(hour).padStart(2, "0")}:00:00Z`,
+      ),
+      ...attribution,
+    });
+    await db
+      .insert(usageEvents)
+      .values([
+        event(1, { customerId: "acme", feature: "chat", runId: "r1" }),
+        event(2, { customerId: "acme", feature: "search", runId: "r1" }),
+        event(3, { customerId: "globex", feature: "chat", userId: "u1" }),
+        event(4, {}),
+      ]);
+  });
+
+  afterAll(async () => {
+    await db.delete(projects).where(eq(projects.id, projectId));
+  });
+
+  const hours = async (filters: UsageFilters) =>
+    (await listUsageEvents(db, { projectId, ...day, ...filters })).rows.map(
+      (row) => row.occurredAt.getUTCHours(),
+    );
+
+  it("returns the attribution with each row", async () => {
+    const { rows } = await listUsageEvents(db, { projectId, ...day });
+    expect(rows.find((r) => r.occurredAt.getUTCHours() === 3)).toMatchObject({
+      customerId: "globex",
+      userId: "u1",
+      feature: "chat",
+      runId: null,
+    });
+  });
+
+  it("filters by each field, and by several together", async () => {
+    expect(await hours({ customerId: "acme" })).toEqual([2, 1]);
+    expect(await hours({ feature: "chat" })).toEqual([3, 1]);
+    expect(await hours({ runId: "r1" })).toEqual([2, 1]);
+    expect(await hours({ userId: "u1" })).toEqual([3]);
+    expect(await hours({ customerId: "acme", feature: "chat" })).toEqual([1]);
+    expect(await hours({ customerId: "nobody" })).toEqual([]);
+    expect(await hours({})).toEqual([4, 3, 2, 1]);
   });
 });

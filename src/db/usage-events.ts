@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { ATTRIBUTION_FIELDS } from "@/lib/attribution";
 import {
   dateBounds,
   USAGE_PAGE_SIZE,
@@ -23,6 +24,10 @@ export interface UsageEventRow {
   outputTokens: number;
   costUsd: string;
   requestId: string | null;
+  customerId: string | null;
+  userId: string | null;
+  feature: string | null;
+  runId: string | null;
 }
 
 export interface UsageEventsPage {
@@ -65,6 +70,10 @@ export function usageEventsQuery(
         outputTokens: usageEvents.outputTokens,
         costUsd: usageEvents.costUsd,
         requestId: usageEvents.requestId,
+        customerId: usageEvents.customerId,
+        userId: usageEvents.userId,
+        feature: usageEvents.feature,
+        runId: usageEvents.runId,
       })
       .from(usageEvents)
       .innerJoin(projects, eq(projects.id, usageEvents.projectId))
@@ -77,6 +86,10 @@ export function usageEventsQuery(
             ? eq(usageEvents.provider, filters.provider)
             : undefined,
           filters.model ? eq(usageEvents.model, filters.model) : undefined,
+          ...ATTRIBUTION_FIELDS.map(({ key }) => {
+            const value = filters[key];
+            return value ? eq(usageEvents[key], value) : undefined;
+          }),
           start ? gte(usageEvents.occurredAt, start) : undefined,
           end ? lt(usageEvents.occurredAt, end) : undefined,
           // Row comparison: strictly older than the cursor, ties broken by id.

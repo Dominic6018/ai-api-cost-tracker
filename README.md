@@ -261,13 +261,19 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
     "cacheWriteInputTokens": 0,
     "requestId": "req_abc123",
     "occurredAt": "2026-11-01T12:00:00Z",
+    "customerId": "cus_42",
+    "userId": "user_7",
+    "feature": "support-chat",
+    "runId": "run_9f2c",
     "metadata": { "route": "/chat" }
   }'
 ```
 
-`cachedInputTokens` (read from the prompt cache), `cacheWriteInputTokens` (written to it, Anthropic's `cache_creation_input_tokens`), `requestId`, `occurredAt` (ISO 8601 with a time zone; defaults to now, and can't be in the future), and `metadata` (an object of at most 8 KB) are optional. Cached and cache-write tokens are part of `inputTokens`, so together they can't exceed it. Unknown fields, including `projectId`, are rejected. The cost is computed on the server with the price in effect at `occurredAt`.
+`cachedInputTokens` (read from the prompt cache), `cacheWriteInputTokens` (written to it, Anthropic's `cache_creation_input_tokens`), `requestId`, `occurredAt` (ISO 8601 with a time zone; defaults to now, and can't be in the future), and `metadata` (an object of at most 8 KB) are optional.
 
-**Retries are safe when you send `requestId`** (the provider's request ID, such as OpenAI's `x-request-id`). Repeating a request returns the original event with status 200 instead of storing it twice. The stored cost is kept, even if prices have changed since. The retry must come from the same project and have the same `model` and token counts. `occurredAt` and `metadata` aren't compared. Otherwise it gets a 409. Events without a `requestId` are always stored.
+**Attribution** is optional too: `customerId`, `userId` (the end user in your app, not a dashboard account), `feature` and `runId` (one agent run or workflow), each a string of up to 200 characters that you choose. Unlike `metadata`, they're stored in indexed columns, and the usage events page filters by each of them. Cached and cache-write tokens are part of `inputTokens`, so together they can't exceed it. Unknown fields, including `projectId`, are rejected. The cost is computed on the server with the price in effect at `occurredAt`.
+
+**Retries are safe when you send `requestId`** (the provider's request ID, such as OpenAI's `x-request-id`). Repeating a request returns the original event with status 200 instead of storing it twice. The stored cost is kept, even if prices have changed since. The retry must come from the same project and have the same `model` and token counts. `occurredAt`, `metadata` and attribution aren't compared. Otherwise it gets a 409. Events without a `requestId` are always stored.
 
 | Status | `error.code`          | Meaning                                                                                      |
 | ------ | --------------------- | -------------------------------------------------------------------------------------------- |

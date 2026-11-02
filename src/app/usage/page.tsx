@@ -3,10 +3,19 @@ import Link from "next/link";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
 import { providerEnum } from "@/db/schema";
-import { listUsageEvents, listUsageModels } from "@/db/usage-events";
+import {
+  listUsageEvents,
+  listUsageModels,
+  type UsageEventRow,
+} from "@/db/usage-events";
+import { ATTRIBUTION_FIELDS, MAX_ATTRIBUTION_LENGTH } from "@/lib/attribution";
 import { requireUser } from "@/lib/auth";
 import { formatUsd } from "@/lib/cost";
-import { parseUsageFilters, usageQuery } from "@/lib/usage-filters";
+import {
+  parseUsageFilters,
+  usageQuery,
+  type UsageFilters,
+} from "@/lib/usage-filters";
 import { logoutAction } from "../login/actions";
 
 export const metadata: Metadata = {
@@ -37,6 +46,36 @@ const utcTime = new Intl.DateTimeFormat("en-US", {
 const count = (n: number) => n.toLocaleString("en-US");
 const fieldClass =
   "rounded-md border border-foreground/20 bg-background px-2 py-1 text-sm";
+
+/** Each attribution value links to the events that share it. */
+function AttributionCell({
+  event,
+  filters,
+}: {
+  event: UsageEventRow;
+  filters: Omit<UsageFilters, "cursor">;
+}) {
+  const values = ATTRIBUTION_FIELDS.filter(({ key }) => event[key]);
+  if (values.length === 0) return <span className="text-foreground/50">—</span>;
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-2">
+      {values.map(({ key, label }) => (
+        <div key={key} className="contents">
+          <dt className="text-foreground/60">{label}</dt>
+          <dd className="max-w-40 truncate font-mono">
+            <Link
+              href={`/usage${usageQuery({ ...filters, [key]: event[key] })}`}
+              title={`Show events for this ${label.toLowerCase()}`}
+              className="underline decoration-foreground/30"
+            >
+              {event[key]}
+            </Link>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 export default async function UsagePage({
   searchParams,
@@ -134,6 +173,19 @@ export default async function UsagePage({
             ))}
           </datalist>
         </label>
+        {ATTRIBUTION_FIELDS.map(({ key, param, label }) => (
+          <label key={key} className="flex flex-col gap-1">
+            <span className="text-foreground/70">{label}</span>
+            <input
+              name={param}
+              defaultValue={filters[key] ?? ""}
+              placeholder={`Any ${label.toLowerCase()}`}
+              autoComplete="off"
+              maxLength={MAX_ATTRIBUTION_LENGTH}
+              className={`${fieldClass} w-32`}
+            />
+          </label>
+        ))}
         <label className="flex flex-col gap-1">
           <span className="text-foreground/70">From (UTC)</span>
           <input
@@ -176,7 +228,7 @@ export default async function UsagePage({
       ) : (
         <div className="overflow-x-auto rounded-lg border border-foreground/10">
           <table
-            className="w-full min-w-[60rem] text-left text-sm"
+            className="w-full min-w-[72rem] text-left text-sm"
             data-testid="usage-events"
           >
             <thead className="border-b border-foreground/10 text-foreground/60">
@@ -190,6 +242,7 @@ export default async function UsagePage({
                   "Cached",
                   "Output",
                   "Cost",
+                  "Attribution",
                   "Request ID",
                 ].map((heading, i) => (
                   <th
@@ -229,6 +282,9 @@ export default async function UsagePage({
                   </td>
                   <td className="px-3 py-2 text-right font-medium">
                     {formatUsd(Number(event.costUsd))}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    <AttributionCell event={event} filters={withoutCursor} />
                   </td>
                   <td className="max-w-48 truncate px-3 py-2 font-mono text-xs text-foreground/70">
                     {event.requestId ?? "—"}
