@@ -218,6 +218,46 @@ jobs:
           # reported through track(), priced and replayed safely.
           COST_TRACKER_API_KEY="$API_KEY_2" node scripts/smoke-client.mjs http://localhost:3000
           COST_TRACKER_API_KEY="$API_KEY_2" python3 scripts/smoke_client.py http://localhost:3000
+
+          # OpenTelemetry: an OTLP/HTTP JSON export with an Anthropic chat span
+          # (cache traffic included in input_tokens, as the GenAI conventions
+          # specify), an HTTP span to ignore and a span with an unpriced model.
+          otel() { curl -s -o otel.json -w '%{http_code}' -X POST http://localhost:3000/api/otel/v1/traces -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/json' --data @otlp.json; }
+          SPAN_ID=$(openssl rand -hex 8)
+          NOW_NS=$(date +%s%N)
+          cat > otlp.json <<JSON
+          {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"ci-smoke"}}]},"scopeSpans":[{"spans":[
+            {"traceId":"$GITHUB_RUN_ID","spanId":"$SPAN_ID","name":"chat claude-sonnet-5-5","endTimeUnixNano":"$NOW_NS","attributes":[
+              {"key":"gen_ai.operation.name","value":{"stringValue":"chat"}},
+              {"key":"gen_ai.provider.name","value":{"stringValue":"anthropic"}},
+              {"key":"gen_ai.request.model","value":{"stringValue":"claude-sonnet-5-5"}},
+              {"key":"gen_ai.usage.input_tokens","value":{"intValue":"10050"}},
+              {"key":"gen_ai.usage.cache_read.input_tokens","value":{"intValue":"8000"}},
+              {"key":"gen_ai.usage.cache_creation.input_tokens","value":{"intValue":"2000"}},
+              {"key":"gen_ai.usage.output_tokens","value":{"intValue":"400"}}]},
+            {"traceId":"$GITHUB_RUN_ID","spanId":"http-span","name":"POST","attributes":[{"key":"http.request.method","value":{"stringValue":"POST"}}]},
+            {"traceId":"$GITHUB_RUN_ID","spanId":"unpriced","name":"chat","endTimeUnixNano":"$NOW_NS","attributes":[
+              {"key":"gen_ai.provider.name","value":{"stringValue":"openai"}},
+              {"key":"gen_ai.request.model","value":{"stringValue":"not-a-real-model"}},
+              {"key":"gen_ai.usage.input_tokens","value":{"intValue":"10"}},
+              {"key":"gen_ai.usage.output_tokens","value":{"intValue":"5"}}]}
+          ]}]}]}
+          JSON
+          STATUS=$(otel); cat otel.json; echo
+          test "$STATUS" = 200
+          grep -q '"rejectedSpans":1' otel.json
+          grep -q 'no price for openai/not-a-real-model' otel.json
+          # Same Sonnet 5.5 cost as the client checks: $0.009900
+          OTEL_ID="otel:$GITHUB_RUN_ID:$SPAN_ID"
+          test "$(psql "$DATABASE_URL" -tAc "SELECT cost_usd FROM usage_events WHERE request_id = '$OTEL_ID'")" = 0.009900
+          # A collector retrying the export, gzipped as the Collector sends
+          # it by default, doesn't store the span twice
+          STATUS=$(gzip -c otlp.json | curl -s -o otel.json -w '%{http_code}' -X POST http://localhost:3000/api/otel/v1/traces -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/json' -H 'content-encoding: gzip' --data-binary @-)
+          cat otel.json; echo; test "$STATUS" = 200
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id = '$OTEL_ID'")" = 1
+          # Protobuf isn't supported; the error says how to configure JSON
+          STATUS=$(curl -s -o otel.json -w '%{http_code}' -X POST http://localhost:3000/api/otel/v1/traces -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/x-protobuf' --data-binary 'x')
+          cat otel.json; echo; test "$STATUS" = 415
       - name: Demo data loads, refuses production, and removes cleanly
         run: |
           npm run db:demo | tee demo.log
