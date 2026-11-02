@@ -56,7 +56,8 @@ Recording usage shouldn't require hand-written API calls.
 - [x] TypeScript client that reports usage from OpenAI, Anthropic and Gemini responses, including cached and cache-write tokens (#43)
 - [x] Python client with the same usage mappings (#44)
 - [x] OpenTelemetry intake that reads the standard GenAI token attributes (`gen_ai.usage.*`) (#45)
-- [ ] Import from provider usage and cost APIs, to reconcile recorded costs with provider invoices
+- [x] Reconcile recorded costs with Anthropic's cost report (#49)
+- [ ] The same for OpenAI's costs API and Google Cloud billing
 
 ## Milestone 7: Cost by customer, feature and agent run
 

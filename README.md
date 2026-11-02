@@ -116,6 +116,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 | `npm run db:demo`          | Load demo projects and 90 days of usage (`-- --remove` deletes them)  |
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
+| `npm run reconcile`        | Compare recorded costs with Anthropic's billed costs (see below)      |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
 
 ## Project structure
@@ -141,7 +142,7 @@ src/
     usage-events.ts  Keyset-paginated usage event listing
     auth.ts       Users, password checks and sessions
     accounts.ts   Password reset, session revocation and account list
-    scripts/      `npm run api-key` and `npm run user` commands
+    scripts/      `npm run api-key`, `user`, `db:demo` and `reconcile` commands
     seed/         Sample project and dated model prices (`npm run db:seed`)
     demo/         Deterministic demo data generator and loader (`npm run db:demo`)
   lib/
@@ -280,6 +281,21 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 | 413    | `payload_too_large`   | Body is over 64 KB                                                                           |
 | 422    | `no_pricing`          | No price for the model at `occurredAt`                                                       |
 | 429    | `rate_limited`        | Over 30 invalid API keys from this IP in 15 minutes; wait for the `Retry-After` seconds      |
+
+## Reconciling with provider bills
+
+Recorded costs are calculated from token counts and the stored prices. To check them against what Anthropic actually billed, compare them with Anthropic's [cost report](https://platform.claude.com/docs/en/manage-claude/usage-cost-api):
+
+```bash
+ANTHROPIC_ADMIN_KEY=sk-ant-admin01-... npm run reconcile -- --provider anthropic --from 2026-10-01 --to 2026-11-01
+```
+
+It prints billed, recorded and the difference per UTC day and model, flags rows that differ by more than 2% (`--tolerance`) and at least a cent, and lists billed costs the tracker doesn't record, such as web search. Typical causes of a flagged row: requests that weren't reported, a price that changed without a new dated price row, or another app using the same Anthropic organization.
+
+- It needs an **Admin API key** (`sk-ant-admin...`); regular API keys are rejected. The key is used for this one request and never stored.
+- The cost report covers the **whole Anthropic organization**, so compare it with all projects' Anthropic usage, which is what the command does.
+- It **only reads**: nothing is written to the database. `--report-file` compares a saved report (JSON from the API) instead of fetching one.
+- Anthropic's report omits Priority Tier costs, and its data can lag by a few minutes. Only Anthropic is supported so far.
 
 ## Testing
 
