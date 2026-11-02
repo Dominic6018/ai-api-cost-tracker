@@ -194,13 +194,33 @@ describe("listUsageEvents", () => {
       cursor: { occurredAt: "2033-06-02T12:00:00.000000Z", id: ids[0] },
     };
     const query = usageEventsQuery(db, filters, 50).toSQL();
-    // Tiny test tables make a sequential scan cheapest; turning it off
-    // shows whether this query shape can use the index at all.
-    const plan = await client.begin(async (tx) => {
-      await tx.unsafe("set local enable_seqscan = off");
-      return tx.unsafe(`explain ${query.sql}`, query.params as never[]);
-    });
-    const text = plan.map((row) => Object.values(row)[0]).join("\n");
+    // Tiny test tables make a sequential scan cheapest, and which of several
+    // usable indexes looks cheapest depends on statistics that other tests
+    // keep changing. So, in a transaction that's rolled back, turn off
+    // sequential scans and drop the other non-unique indexes: the plan then
+    // shows whether this query shape can use the expected index at all.
+    const rollback = new Error("rollback");
+    let text = "";
+    await client
+      .begin(async (tx) => {
+        await tx.unsafe("set local enable_seqscan = off");
+        const others = await tx<{ indexname: string }[]>`
+          select indexname from pg_indexes
+          where tablename = 'usage_events' and indexname <> ${index}
+            and indexdef not like 'CREATE UNIQUE%'`;
+        for (const { indexname } of others) {
+          await tx.unsafe(`drop index "${indexname}"`);
+        }
+        const plan = await tx.unsafe(
+          `explain ${query.sql}`,
+          query.params as never[],
+        );
+        text = plan.map((row) => Object.values(row)[0]).join("\n");
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) throw error;
+      });
     expect(text).toContain(index);
   });
 });
