@@ -30,6 +30,10 @@ const storedEvent: UsageEvent = {
   requestId: "req_1",
   occurredAt: now,
   metadata: null,
+  customerId: null,
+  userId: null,
+  feature: null,
+  runId: null,
   createdAt: now,
 };
 
@@ -96,6 +100,10 @@ describe("POST /api/usage handler", () => {
         cacheWriteInputTokens: 0,
         costUsd: "0.006000",
         requestId: "req_1",
+        customerId: null,
+        userId: null,
+        feature: null,
+        runId: null,
         occurredAt: "2026-11-01T12:00:00.000Z",
       },
       replayed: false,
@@ -161,6 +169,55 @@ describe("POST /api/usage handler", () => {
     const { handler } = setup({ auth: { ok: false } });
     const response = await handler(post("{not json"));
     expect(response.status).toBe(401);
+  });
+
+  it("passes customer, user, feature and run through, trimmed", async () => {
+    const { handler, recordUsage } = setup({
+      result: {
+        ok: true,
+        event: {
+          ...storedEvent,
+          customerId: "cus_42",
+          userId: "u_7",
+          feature: "support-chat",
+          runId: "run_9",
+        },
+        replayed: false,
+      },
+    });
+    const response = await handler(
+      post({
+        ...body,
+        customerId: " cus_42 ",
+        userId: "u_7",
+        feature: "support-chat",
+        runId: "run_9",
+      }),
+    );
+    expect(response.status).toBe(201);
+    expect(recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: "cus_42",
+        userId: "u_7",
+        feature: "support-chat",
+        runId: "run_9",
+      }),
+    );
+    expect((await response.json()).event).toMatchObject({
+      customerId: "cus_42",
+      feature: "support-chat",
+    });
+  });
+
+  it.each([
+    ["an empty customerId", { customerId: "  " }],
+    ["a feature over 200 characters", { feature: "f".repeat(201) }],
+    ["a non-string runId", { runId: 42 }],
+  ])("returns 400 for %s", async (_, extra) => {
+    const { handler, recordUsage } = setup();
+    const response = await handler(post({ ...body, ...extra }));
+    expect(response.status).toBe(400);
+    expect(recordUsage).not.toHaveBeenCalled();
   });
 
   it("rejects a projectId in the body; the key decides the project", async () => {

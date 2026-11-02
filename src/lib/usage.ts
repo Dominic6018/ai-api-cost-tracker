@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { providerEnum } from "@/db/schema";
+import { MAX_ATTRIBUTION_LENGTH } from "./attribution";
 
 /** Largest accepted `metadata` object, measured as serialized JSON. */
 export const MAX_METADATA_BYTES = 8 * 1024;
@@ -8,6 +9,12 @@ export const MAX_METADATA_BYTES = 8 * 1024;
 export const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 const tokenCount = z.number().int().nonnegative().max(2_147_483_647);
+const attribution = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_ATTRIBUTION_LENGTH)
+  .optional();
 
 /**
  * Body of `POST /api/usage`. The project comes from the API key, not the
@@ -24,6 +31,10 @@ export const usagePayloadSchema = z
     // tokens, they're part of inputTokens.
     cacheWriteInputTokens: tokenCount.default(0),
     requestId: z.string().trim().min(1).max(200).optional(),
+    customerId: attribution,
+    userId: attribution,
+    feature: attribution,
+    runId: attribution,
     occurredAt: z.iso.datetime({ offset: true }).optional(),
     metadata: z
       .record(z.string(), z.unknown())

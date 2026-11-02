@@ -182,6 +182,29 @@ describe("recordUsage idempotency", () => {
     expect(await countEvents(requestId)).toBe(1);
   });
 
+  it("stores attribution, and replays a retry whatever attribution it sends", async () => {
+    const requestId = `req-${randomUUID()}`;
+    const attribution = {
+      customerId: "cus_42",
+      userId: "u_7",
+      feature: "support-chat",
+      runId: `run-${randomUUID()}`,
+    };
+    const first = await recordUsage(db, usage({ requestId, ...attribution }));
+    if (!first.ok) throw new Error(`expected success, got ${first.error}`);
+    expect(first.event).toMatchObject(attribution);
+
+    // Like metadata, attribution isn't part of what makes usage the same.
+    const retry = await recordUsage(
+      db,
+      usage({ requestId, customerId: "someone-else" }),
+    );
+    if (!retry.ok) throw new Error(`expected replay, got ${retry.error}`);
+    expect(retry.replayed).toBe(true);
+    expect(retry.event.customerId).toBe("cus_42");
+    expect(await countEvents(requestId)).toBe(1);
+  });
+
   it("replays even when occurredAt differs between attempts", async () => {
     const requestId = `req-${randomUUID()}`;
     await recordUsage(db, usage({ requestId }));
