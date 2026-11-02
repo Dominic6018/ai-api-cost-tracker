@@ -214,6 +214,15 @@ jobs:
           grep -q '"costUsd":"0.083750"' response.json
           grep -q '"cacheWriteInputTokens":50000' response.json
 
+          # Attribution is stored in its own columns and returned
+          BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":100,"outputTokens":10,"customerId":" cus_ci ","userId":"u_ci","feature":"ci-smoke","runId":"run_ci"}'
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"customerId":"cus_ci"' response.json
+          test "$(psql "$DATABASE_URL" -tAc "SELECT concat_ws('|', customer_id, user_id, feature, run_id) FROM usage_events WHERE run_id = 'run_ci'")" = "cus_ci|u_ci|ci-smoke|run_ci"
+          BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":1,"outputTokens":1,"feature":""}'
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
+
           # The TypeScript client: an Anthropic response with cache traffic,
           # reported through track(), priced and replayed safely.
           COST_TRACKER_API_KEY="$API_KEY_2" node scripts/smoke-client.mjs http://localhost:3000

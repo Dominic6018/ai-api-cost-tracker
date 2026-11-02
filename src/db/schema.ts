@@ -151,10 +151,28 @@ export const usageEvents = pgTable(
       .notNull()
       .defaultNow(),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    // Optional attribution chosen by the caller (see src/lib/attribution.ts).
+    customerId: text("customer_id"),
+    // The end user in the caller's app, not a dashboard account.
+    userId: text("user_id"),
+    feature: text("feature"),
+    runId: text("run_id"),
     createdAt: timestamps.createdAt,
   },
   (t) => [
     index("usage_events_project_occurred_idx").on(t.projectId, t.occurredAt),
+    // Cost by customer, feature or run, within a project and time range.
+    index("usage_events_project_customer_idx").on(
+      t.projectId,
+      t.customerId,
+      t.occurredAt,
+    ),
+    index("usage_events_project_feature_idx").on(
+      t.projectId,
+      t.feature,
+      t.occurredAt,
+    ),
+    index("usage_events_project_run_idx").on(t.projectId, t.runId),
     // Spend totals across all projects filter by time alone.
     index("usage_events_occurred_idx").on(t.occurredAt),
     index("usage_events_provider_model_idx").on(t.provider, t.model),

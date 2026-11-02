@@ -110,3 +110,36 @@ describe("usageQuery", () => {
     expect(usageQuery({})).toBe("");
   });
 });
+
+describe("attribution filters", () => {
+  it("reads customer, user, feature and run from the URL, trimmed", () => {
+    expect(
+      parseUsageFilters({
+        customer: " cus_42 ",
+        user: "u_7",
+        feature: ["support-chat", "ignored"],
+        run: "run_9",
+      }),
+    ).toEqual({
+      customerId: "cus_42",
+      userId: "u_7",
+      feature: "support-chat",
+      runId: "run_9",
+    });
+  });
+
+  it("drops empty and over-long values", () => {
+    expect(parseUsageFilters({ customer: "  ", run: "r".repeat(201) })).toEqual(
+      {},
+    );
+  });
+
+  it("round-trips through the query string", () => {
+    const filters = { customerId: "cus 42/a", feature: "chat", runId: "r1" };
+    const query = usageQuery(filters);
+    expect(query).toBe("?customer=cus+42%2Fa&feature=chat&run=r1");
+    expect(
+      parseUsageFilters(Object.fromEntries(new URLSearchParams(query))),
+    ).toEqual(filters);
+  });
+});

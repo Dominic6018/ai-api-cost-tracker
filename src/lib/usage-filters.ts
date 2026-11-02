@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { providerEnum, type Provider } from "@/db/schema";
+import {
+  ATTRIBUTION_FIELDS,
+  MAX_ATTRIBUTION_LENGTH,
+  type Attribution,
+} from "./attribution";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const USAGE_PAGE_SIZE = 50;
@@ -11,7 +16,7 @@ export interface UsageCursor {
   id: string;
 }
 
-export interface UsageFilters {
+export interface UsageFilters extends Attribution {
   projectId?: string;
   provider?: Provider;
   model?: string;
@@ -63,6 +68,11 @@ export function parseUsageFilters(
   const model = text(params.model);
   if (model && model.length <= 200) filters.model = model;
 
+  for (const { key, param } of ATTRIBUTION_FIELDS) {
+    const value = text(params[param]);
+    if (value && value.length <= MAX_ATTRIBUTION_LENGTH) filters[key] = value;
+  }
+
   let from = text(params.from);
   let to = text(params.to);
   if (!isoDay.safeParse(from).success) from = "";
@@ -98,6 +108,10 @@ export function usageQuery(
   if (filters.projectId) params.set("project", filters.projectId);
   if (filters.provider) params.set("provider", filters.provider);
   if (filters.model) params.set("model", filters.model);
+  for (const { key, param } of ATTRIBUTION_FIELDS) {
+    const value = filters[key];
+    if (value) params.set(param, value);
+  }
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
   if (cursor) params.set("cursor", encodeCursor(cursor));

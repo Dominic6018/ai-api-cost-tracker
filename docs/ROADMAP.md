@@ -62,7 +62,9 @@ Recording usage shouldn't require hand-written API calls.
 
 ## Milestone 7: Cost by customer, feature and agent run
 
-- [ ] Customer, user, feature and run as indexed, filterable fields, plus free-form tags
+- [x] Customer, user, feature and run as indexed, filterable fields (#53)
+- [ ] Send them from the clients and OpenTelemetry (#54)
+- [ ] Free-form tags
 - [ ] Cost per customer and per feature, and unit costs (e.g. cost per resolved ticket)
 - [ ] CSV and FOCUS exports, and a read-only reporting API
 
