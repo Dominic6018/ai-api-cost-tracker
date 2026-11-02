@@ -116,7 +116,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 | `npm run db:demo`          | Load demo projects and 90 days of usage (`-- --remove` deletes them)  |
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
-| `npm run reconcile`        | Compare recorded costs with Anthropic's billed costs (see below)      |
+| `npm run reconcile`        | Compare recorded costs with Anthropic's or OpenAI's bill (see below)  |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
 
 ## Project structure
@@ -284,18 +284,20 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 
 ## Reconciling with provider bills
 
-Recorded costs are calculated from token counts and the stored prices. To check them against what Anthropic actually billed, compare them with Anthropic's [cost report](https://platform.claude.com/docs/en/manage-claude/usage-cost-api):
+Recorded costs are calculated from token counts and the stored prices. To check them against what Anthropic or OpenAI actually billed, compare them with the provider's cost report: Anthropic's [cost report](https://platform.claude.com/docs/en/manage-claude/usage-cost-api) or OpenAI's [costs API](https://platform.openai.com/docs/api-reference/usage/costs).
 
 ```bash
 ANTHROPIC_ADMIN_KEY=sk-ant-admin01-... npm run reconcile -- --provider anthropic --from 2026-10-01 --to 2026-11-01
+OPENAI_ADMIN_KEY=sk-admin-... npm run reconcile -- --provider openai --from 2026-10-01 --to 2026-11-01
 ```
 
-It prints billed, recorded and the difference per UTC day and model, flags rows that differ by more than 2% (`--tolerance`) and at least a cent, and lists billed costs the tracker doesn't record, such as web search. Typical causes of a flagged row: requests that weren't reported, a price that changed without a new dated price row, or another app using the same Anthropic organization.
+It prints billed, recorded and the difference per UTC day (and per model for Anthropic), flags rows that differ by more than 2% (`--tolerance`) and at least a cent, and lists billed costs the tracker doesn't record, such as web search. Typical causes of a flagged row: requests that weren't reported, a price that changed without a new dated price row, or another app using the same Anthropic organization.
 
-- It needs an **Admin API key** (`sk-ant-admin...`); regular API keys are rejected. The key is used for this one request and never stored.
-- The cost report covers the **whole Anthropic organization**, so compare it with all projects' Anthropic usage, which is what the command does.
+- It needs an **Admin key** (Anthropic `sk-ant-admin...`, OpenAI `sk-admin-...`); regular API keys are rejected. The key is used for this one request and never stored.
+- Both reports cover the **whole provider organization**, so they're compared with all projects' usage of that provider.
+- **OpenAI is compared per day, not per model.** Its costs API has no model field; costs are grouped by `line_item`, a free-text billing label, so the command lists each day's line items under the table instead of guessing models from them. OpenAI's totals also include charges the tracker doesn't record, such as images, tools, storage and fine-tuning, which the line items make visible.
 - It **only reads**: nothing is written to the database. `--report-file` compares a saved report (JSON from the API) instead of fetching one.
-- Anthropic's report omits Priority Tier costs, and its data can lag by a few minutes. Only Anthropic is supported so far.
+- Anthropic's report omits Priority Tier costs, and its data can lag by a few minutes. Gemini isn't supported: Google Cloud exports billing to BigQuery rather than serving it from an API.
 
 ## Testing
 
