@@ -1,39 +1,15 @@
-import type { AuthenticateResult } from "@/db/api-keys";
-import type { RateLimitResult } from "@/db/rate-limits";
 import type { RecordUsageResult } from "@/db/usage";
-import { parseBearerToken } from "@/lib/api-keys";
-import { clientIp, retryAfterSeconds } from "@/lib/rate-limit";
 import { parseUsagePayload, type UsageInput } from "@/lib/usage";
+import { authorizeApiKey, errorResponse, type ApiKeyDeps } from "../authorize";
 
 /** Largest accepted request body. */
 export const MAX_BODY_BYTES = 64 * 1024;
 
-export interface UsageHandlerDeps {
-  authenticate: (apiKey: string) => Promise<AuthenticateResult>;
-  /** Counts a rejected key from this client IP against its rate limit. */
-  recordAuthFailure: (clientIp: string) => Promise<RateLimitResult>;
+export interface UsageHandlerDeps extends ApiKeyDeps {
   recordUsage: (usage: UsageInput) => Promise<RecordUsageResult>;
-  now?: () => Date;
 }
-
-type ErrorCode =
-  | "unauthorized"
-  | "rate_limited"
-  | "payload_too_large"
-  | "invalid_json"
-  | "invalid_payload"
-  | RecordUsageError;
 
 type RecordUsageError = Extract<RecordUsageResult, { ok: false }>["error"];
-
-function errorResponse(
-  status: number,
-  code: ErrorCode,
-  message: string,
-  extra: Record<string, unknown> = {},
-): Response {
-  return Response.json({ error: { code, message, ...extra } }, { status });
-}
 
 const RECORD_ERRORS: Record<
   RecordUsageError,
@@ -55,34 +31,8 @@ const RECORD_ERRORS: Record<
 export function createUsageHandler(deps: UsageHandlerDeps) {
   const now = () => deps.now?.() ?? new Date();
   return async function handleUsage(request: Request): Promise<Response> {
-    const apiKey = parseBearerToken(request.headers.get("authorization"));
-    const auth = apiKey
-      ? await deps.authenticate(apiKey)
-      : ({ ok: false } as const);
-    // Only rejected keys are counted, so valid requests cost no extra query.
-    // Requests without a key aren't guessing one, and never reach the database.
-    if (!auth.ok && apiKey) {
-      const limit = await deps.recordAuthFailure(clientIp(request.headers));
-      if (limit.limited) {
-        const retryAfter = retryAfterSeconds(limit.resetAt, now());
-        const response = errorResponse(
-          429,
-          "rate_limited",
-          `Too many invalid API keys from this address. Retry in ${retryAfter} seconds.`,
-        );
-        response.headers.set("Retry-After", String(retryAfter));
-        return response;
-      }
-    }
-    if (!auth.ok) {
-      const response = errorResponse(
-        401,
-        "unauthorized",
-        "A valid API key is required: Authorization: Bearer <key>",
-      );
-      response.headers.set("WWW-Authenticate", 'Bearer realm="api"');
-      return response;
-    }
+    const auth = await authorizeApiKey(request, deps);
+    if (!auth.ok) return auth.response;
 
     const declaredLength = Number(request.headers.get("content-length"));
     if (declaredLength > MAX_BODY_BYTES) {
