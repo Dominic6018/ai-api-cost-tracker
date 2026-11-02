@@ -283,6 +283,25 @@ jobs:
           # Without a report file it needs an Admin API key, and says so
           if npm run --silent reconcile -- --provider anthropic --from "$TODAY" 2> reconcile-err.log; then exit 1; fi
           grep -q ANTHROPIC_ADMIN_KEY reconcile-err.log
+
+          # OpenAI, compared per day across all models, from a saved costs
+          # page (dollars as numbers, Unix-second buckets). The only OpenAI
+          # usage recorded today is the $0.006 gpt-4.1 smoke event above.
+          START=$(date -u -d "$TODAY" +%s)
+          openai_costs() {
+            echo "{\"object\":\"page\",\"data\":[{\"object\":\"bucket\",\"start_time\":$START,\"end_time\":$((START + 86400)),\"results\":[$1]}],\"has_more\":false,\"next_page\":null}" > openai-costs.json
+          }
+          ITEM() { echo "{\"object\":\"organization.costs.result\",\"amount\":{\"value\":$1,\"currency\":\"usd\"},\"line_item\":\"$2\",\"project_id\":null}"; }
+          openai_costs "$(ITEM 0.002 'gpt-4.1, input'),$(ITEM 0.004 'gpt-4.1, output')"
+          npm run --silent reconcile -- --provider openai --from "$TODAY" --report-file openai-costs.json | tee openai-reconcile.log
+          grep -E 'all models.*\$0\.006000.*\$0\.006000.*\$0\.000000' openai-reconcile.log | grep -v CHECK
+          grep -qF 'gpt-4.1, output' openai-reconcile.log
+          # An untracked charge (images) makes the day differ, and it's flagged
+          openai_costs "$(ITEM 0.002 'gpt-4.1, input'),$(ITEM 0.004 'gpt-4.1, output'),$(ITEM 0.04 'Image models')"
+          npm run --silent reconcile -- --provider openai --from "$TODAY" --report-file openai-costs.json | tee openai-reconcile.log
+          grep -E 'all models.*\$0\.046000.*\$0\.006000.*-\$0\.040000.*CHECK' openai-reconcile.log
+          if npm run --silent reconcile -- --provider openai --from "$TODAY" 2> reconcile-err.log; then exit 1; fi
+          grep -q OPENAI_ADMIN_KEY reconcile-err.log
       - name: Demo data loads, refuses production, and removes cleanly
         run: |
           npm run db:demo | tee demo.log
