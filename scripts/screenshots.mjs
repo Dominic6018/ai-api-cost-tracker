@@ -23,6 +23,7 @@ const PAGES = [
   ["spend", "/spend?range=90"],
   ["usage", "/usage"],
   ["projects", "/projects"],
+  ["breakdown", "/breakdown?range=90"],
 ];
 const VIEWPORT = { width: 1280, height: 900, deviceScaleFactor: 1 };
 
