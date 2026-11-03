@@ -48,6 +48,17 @@ Change [src/db/schema.ts](src/db/schema.ts), then run `npm run db:generate` and 
 | `python`   | The Python client's tests on Python 3.10, the oldest version it supports                                        |
 | `secrets`  | The full Git history scanned for credentials with [gitleaks](https://github.com/gitleaks/gitleaks)              |
 
+## Dependency overrides
+
+`package.json` forces patched versions of two packages that development tools pull in, to clear their security advisories. Neither is part of the running app or the Docker image.
+
+| Override                                           | Forced by                                                                | Why                                                                               | Remove when                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `esbuild` ^0.25.12 under `@esbuild-kit/core-utils` | `drizzle-kit` 0.31, through its deprecated loader pinned to esbuild 0.18 | GHSA-67mh-4wv8-2f99 (esbuild's dev server can be read by any website)             | `drizzle-kit` no longer depends on `@esbuild-kit`      |
+| `minimatch` ^11.0.1                                | ESLint 9 and its plugins, which depend on minimatch 3                    | GHSA-g3hv-75wg-m249 (slow matching of crafted patterns), patched only from 11.0.1 | ESLint and its plugins depend on minimatch 11 or later |
+
+If an upgrade breaks linting or migrations, check these first: CI runs both, and `npm ls esbuild minimatch` shows which versions each tool gets.
+
 ## Guidelines
 
 - Never commit secrets, real API keys or real usage data. `.env` is ignored; copy `.env.example`.
