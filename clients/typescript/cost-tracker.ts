@@ -56,6 +56,28 @@ export interface Usage extends Attribution {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * A business result, such as a resolved ticket, for cost per outcome on
+ * the dashboard. Attribute it like usage, so a customer's cost is divided
+ * by that customer's outcomes.
+ */
+export interface Outcome extends Attribution {
+  /** Lowercase words joined by _ . or -, e.g. "ticket_resolved". */
+  name: string;
+  /** Defaults to 1; up to 1,000,000 for a batch. */
+  count?: number;
+  /** Your ID for the outcome; makes retries safe. */
+  outcomeId?: string;
+  occurredAt?: string | Date;
+}
+
+export interface OutcomeResult {
+  /** The stored outcome's ID. */
+  id: string;
+  /** True when this outcome ID was already recorded. */
+  replayed: boolean;
+}
+
 export interface RecordResult {
   /** The stored cost in USD, as an exact decimal string. */
   costUsd: string;
@@ -92,6 +114,11 @@ export interface TrackOptions extends Attribution {
 export interface CostTracker {
   /** Sends one usage record. Throws CostTrackerError if it isn't stored. */
   record(usage: Usage): Promise<RecordResult>;
+  /**
+   * Records one outcome. Throws CostTrackerError if it isn't stored.
+   * Retried after network errors, 429s and 5xx only with an outcomeId.
+   */
+  recordOutcome(outcome: Outcome): Promise<OutcomeResult>;
   /**
    * Awaits a provider response, reports its usage in the background and
    * returns the response unchanged. Provider errors propagate as usual;
@@ -225,7 +252,7 @@ export function usageFromResponse(response: unknown): Usage | null {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function createCostTracker(options: CostTrackerOptions): CostTracker {
-  const endpoint = new URL("/api/usage", options.baseUrl).toString();
+  const url = (path: string) => new URL(path, options.baseUrl).toString();
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
   const retries = options.retries ?? 2;
@@ -235,22 +262,30 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       console.warn("[cost-tracker] usage not recorded:", error));
   const pending = new Set<Promise<void>>();
 
-  async function send(usage: Usage): Promise<RecordResult> {
+  /**
+   * POSTs a JSON body and returns the parsed response. Network errors, 429s
+   * and 5xx are retried only when `retryable`, i.e. when the body carries
+   * an ID that keeps a retry from being stored twice.
+   */
+  async function post(
+    path: string,
+    payload: { occurredAt?: string | Date },
+    retryable: boolean,
+  ): Promise<Record<string, unknown>> {
     const body = JSON.stringify({
-      ...usage,
+      ...payload,
       occurredAt:
-        usage.occurredAt instanceof Date
-          ? usage.occurredAt.toISOString()
-          : usage.occurredAt,
+        payload.occurredAt instanceof Date
+          ? payload.occurredAt.toISOString()
+          : payload.occurredAt,
     });
-    // Without a request ID a retry could store the usage twice.
-    const attempts = usage.requestId ? retries + 1 : 1;
+    const attempts = retryable ? retries + 1 : 1;
     let lastError: unknown;
     for (let attempt = 0; attempt < attempts; attempt++) {
       if (attempt > 0) await sleep(250 * 4 ** (attempt - 1));
       let response: Response;
       try {
-        response = await fetchImpl(endpoint, {
+        response = await fetchImpl(url(path), {
           method: "POST",
           headers: {
             authorization: `Bearer ${options.apiKey}`,
@@ -263,21 +298,16 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
         lastError = error;
         continue;
       }
-      const json = (await response.json().catch(() => null)) as {
-        event?: { costUsd: string };
-        replayed?: boolean;
-        error?: { code?: string; message?: string };
-      } | null;
-      if (response.ok && json?.event) {
-        return {
-          costUsd: json.event.costUsd,
-          replayed: Boolean(json.replayed),
-        };
-      }
+      const json = (await response.json().catch(() => null)) as Record<
+        string,
+        unknown
+      > | null;
+      if (response.ok && json) return json;
+      const error = (json?.error ?? {}) as { code?: string; message?: string };
       lastError = new CostTrackerError(
-        json?.error?.message ?? `HTTP ${response.status}`,
+        error.message ?? `HTTP ${response.status}`,
         response.status,
-        json?.error?.code ?? null,
+        error.code ?? null,
       );
       if (response.status !== 429 && response.status < 500) break;
     }
@@ -288,6 +318,29 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
           null,
           null,
         );
+  }
+
+  async function send(usage: Usage): Promise<RecordResult> {
+    // Without a request ID a retry could store the usage twice.
+    const json = await post("/api/usage", usage, Boolean(usage.requestId));
+    const event = json.event as { costUsd?: string } | undefined;
+    if (!event?.costUsd) {
+      throw new CostTrackerError("Unexpected response", null, null);
+    }
+    return { costUsd: event.costUsd, replayed: Boolean(json.replayed) };
+  }
+
+  async function sendOutcome(outcome: Outcome): Promise<OutcomeResult> {
+    const json = await post(
+      "/api/outcomes",
+      outcome,
+      Boolean(outcome.outcomeId),
+    );
+    const stored = json.outcome as { id?: string } | undefined;
+    if (!stored?.id) {
+      throw new CostTrackerError("Unexpected response", null, null);
+    }
+    return { id: stored.id, replayed: Boolean(json.replayed) };
   }
 
   async function track<T>(
@@ -329,6 +382,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
   function scoped(defaults: Attribution): CostTracker {
     return {
       record: (usage) => send(withDefaults(usage, defaults)),
+      recordOutcome: (outcome) => sendOutcome(withDefaults(outcome, defaults)),
       track: (responseOrPromise, trackOptions = {}) =>
         track(responseOrPromise, trackOptions, defaults),
       flush,
