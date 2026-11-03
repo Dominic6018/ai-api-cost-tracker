@@ -35,7 +35,13 @@ const tracker = createCostTracker({
   apiKey,
   onError: (error) => errors.push(error),
 });
-assert.equal(await tracker.track(Promise.resolve(message)), message);
+// Attributed through a scoped tracker; CI checks the stored columns.
+assert.equal(
+  await tracker
+    .with({ customerId: "cus_ts", feature: "ci-ts" })
+    .track(Promise.resolve(message), { runId: `run_ts_${message.id}` }),
+  message,
+);
 await tracker.flush();
 assert.deepEqual(errors, []);
 

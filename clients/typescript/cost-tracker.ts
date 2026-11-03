@@ -12,8 +12,37 @@
 
 export type Provider = "openai" | "anthropic" | "google" | "mistral" | "other";
 
+/**
+ * Who and what the usage is for, beyond the API key's project. Each is an
+ * ID you choose, up to 200 characters; the dashboard filters by them.
+ */
+export interface Attribution {
+  customerId?: string;
+  /** The end user in your app. */
+  userId?: string;
+  feature?: string;
+  /** One agent run or workflow. */
+  runId?: string;
+}
+
+const ATTRIBUTION_KEYS = ["customerId", "userId", "feature", "runId"] as const;
+
+/** `usage`'s own attribution, with `defaults` filling the gaps. */
+function withDefaults<T extends Attribution>(
+  usage: T,
+  defaults: Attribution,
+): T {
+  const merged = { ...usage };
+  for (const key of ATTRIBUTION_KEYS) {
+    const value = usage[key] ?? defaults[key];
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+  return merged;
+}
+
 /** One request's usage, as `POST /api/usage` takes it. */
-export interface Usage {
+export interface Usage extends Attribution {
   provider: Provider;
   model: string;
   /** All input tokens, including cached and cache-write tokens. */
@@ -48,7 +77,7 @@ export interface CostTrackerOptions {
   fetch?: typeof fetch;
 }
 
-export interface TrackOptions {
+export interface TrackOptions extends Attribution {
   /**
    * The model to price, when the response names a different one. OpenAI
    * responses name dated snapshots (gpt-4.1-2025-04-14), which need their
@@ -58,6 +87,28 @@ export interface TrackOptions {
   /** For OpenAI-compatible APIs, such as Mistral's. */
   provider?: Provider;
   metadata?: Record<string, unknown>;
+}
+
+export interface CostTracker {
+  /** Sends one usage record. Throws CostTrackerError if it isn't stored. */
+  record(usage: Usage): Promise<RecordResult>;
+  /**
+   * Awaits a provider response, reports its usage in the background and
+   * returns the response unchanged. Provider errors propagate as usual;
+   * reporting errors go to `onError` and never reach the caller.
+   */
+  track<T>(
+    responseOrPromise: T | Promise<T>,
+    options?: TrackOptions,
+  ): Promise<T>;
+  /** Waits for every background report, e.g. before a function exits. */
+  flush(): Promise<void>;
+  /**
+   * A tracker that adds this attribution to everything it records, e.g.
+   * `tracker.with({ customerId })` once per request. Values passed to
+   * `record` or `track` win; `flush` waits for every tracker's reports.
+   */
+  with(attribution: Attribution): CostTracker;
 }
 
 /** A rejected or failed `POST /api/usage`. */
@@ -173,7 +224,7 @@ export function usageFromResponse(response: unknown): Usage | null {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createCostTracker(options: CostTrackerOptions) {
+export function createCostTracker(options: CostTrackerOptions): CostTracker {
   const endpoint = new URL("/api/usage", options.baseUrl).toString();
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
@@ -184,8 +235,7 @@ export function createCostTracker(options: CostTrackerOptions) {
       console.warn("[cost-tracker] usage not recorded:", error));
   const pending = new Set<Promise<void>>();
 
-  /** Sends one usage record. Throws CostTrackerError if it isn't stored. */
-  async function record(usage: Usage): Promise<RecordResult> {
+  async function send(usage: Usage): Promise<RecordResult> {
     const body = JSON.stringify({
       ...usage,
       occurredAt:
@@ -240,14 +290,10 @@ export function createCostTracker(options: CostTrackerOptions) {
         );
   }
 
-  /**
-   * Awaits a provider response, reports its usage in the background and
-   * returns the response unchanged. Provider errors propagate as usual;
-   * reporting errors go to `onError` and never reach the caller.
-   */
   async function track<T>(
     responseOrPromise: T | Promise<T>,
-    trackOptions: TrackOptions = {},
+    trackOptions: TrackOptions,
+    defaults: Attribution,
   ): Promise<T> {
     const response = await responseOrPromise;
     const usage = usageFromResponse(response);
@@ -255,13 +301,18 @@ export function createCostTracker(options: CostTrackerOptions) {
       onError(new CostTrackerError("No usage in response", null, null), null);
       return response;
     }
-    const tracked: Usage = {
-      ...usage,
-      model: trackOptions.model ?? usage.model,
-      provider: trackOptions.provider ?? usage.provider,
-      metadata: trackOptions.metadata,
-    };
-    const report = record(tracked).then(
+    const { model, provider, metadata, ...attribution } = trackOptions;
+    const tracked = withDefaults(
+      {
+        ...usage,
+        ...attribution,
+        model: model ?? usage.model,
+        provider: provider ?? usage.provider,
+        metadata,
+      },
+      defaults,
+    );
+    const report = send(tracked).then(
       () => {},
       (error: unknown) => onError(error, tracked),
     );
@@ -270,12 +321,20 @@ export function createCostTracker(options: CostTrackerOptions) {
     return response;
   }
 
-  /** Waits for every background report, e.g. before a function exits. */
   async function flush(): Promise<void> {
     await Promise.all(pending);
   }
 
-  return { record, track, flush };
-}
+  // Every scoped tracker shares one connection setup and pending set.
+  function scoped(defaults: Attribution): CostTracker {
+    return {
+      record: (usage) => send(withDefaults(usage, defaults)),
+      track: (responseOrPromise, trackOptions = {}) =>
+        track(responseOrPromise, trackOptions, defaults),
+      flush,
+      with: (attribution) => scoped(withDefaults(attribution, defaults)),
+    };
+  }
 
-export type CostTracker = ReturnType<typeof createCostTracker>;
+  return scoped({});
+}
