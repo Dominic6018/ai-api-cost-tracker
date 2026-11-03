@@ -66,6 +66,7 @@ Recording usage shouldn't require hand-written API calls.
 - [x] Send them from the clients and OpenTelemetry (#54)
 - [ ] Free-form tags
 - [x] Cost per customer, user, feature and run (#57)
+- [x] Demo data with customers, users, features and agent runs (#62)
 - [ ] Unit costs: cost per outcome, such as per resolved ticket (#58)
 - [ ] CSV and FOCUS exports, and a read-only reporting API
 
