@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { getSpendByAttribution } from "@/db/attribution-spend";
+import { listOutcomeNames, outcomeCountsByAttribution } from "@/db/outcomes";
 import { listProjects } from "@/db/projects";
 import { ATTRIBUTION_FIELDS } from "@/lib/attribution";
 import { requireUser } from "@/lib/auth";
 import { microsToUsd } from "@/lib/budget";
 import {
   BREAKDOWN_LIMIT,
+  costPerOutcome,
   breakdownRows,
   formatShare,
   parseBreakdownDimension,
@@ -32,6 +34,7 @@ const plural = (n: number, word: string) =>
 type SearchParams = Promise<{
   by?: string | string[];
   range?: string | string[];
+  outcome?: string | string[];
   project?: string | string[];
 }>;
 
@@ -58,7 +61,24 @@ export default async function BreakdownPage({
     projectId: project?.id,
     limit: BREAKDOWN_LIMIT,
   });
-  const rows = breakdownRows(top, totals);
+  // Cost per outcome, when one of the recorded outcome names is chosen.
+  const outcomeNames = await listOutcomeNames(db, {
+    start,
+    projectId: project?.id,
+  });
+  const requestedOutcome = Array.isArray(params.outcome)
+    ? params.outcome[0]
+    : params.outcome;
+  const outcome = outcomeNames.find((name) => name === requestedOutcome);
+  const outcomeCounts = outcome
+    ? await outcomeCountsByAttribution(db, {
+        key: dimension.key,
+        name: outcome,
+        start,
+        projectId: project?.id,
+      })
+    : undefined;
+  const rows = breakdownRows(top, totals, outcomeCounts);
   const totalMicros = rows.reduce((sum, row) => sum + row.costMicros, 0n);
   const hasUnset = rows.some((row) => row.kind === "unset");
   const attributedGroups = totals.groups - (hasUnset ? 1 : 0);
@@ -71,6 +91,7 @@ export default async function BreakdownPage({
       range: String(change.range ?? range),
     });
     if (project) query.set("project", project.id);
+    if (outcome) query.set("outcome", outcome);
     return `/breakdown?${query}`;
   };
   // The usage events behind a row, over the same days and project.
@@ -173,6 +194,26 @@ export default async function BreakdownPage({
               </option>
             ))}
           </select>
+          {outcomeNames.length > 0 && (
+            <>
+              <label htmlFor="outcome" className="text-foreground/70">
+                Cost per
+              </label>
+              <select
+                id="outcome"
+                name="outcome"
+                defaultValue={outcome ?? ""}
+                className="rounded-md border border-foreground/20 bg-background px-2 py-1"
+              >
+                <option value="">No outcome</option>
+                {outcomeNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           <button
             type="submit"
             className="rounded-md border border-foreground/20 px-3 py-1"
@@ -185,6 +226,17 @@ export default async function BreakdownPage({
       <p className="text-sm text-foreground/70" data-testid="breakdown-summary">
         {scope} · last {range} days (UTC) · {usd(totalMicros)} across{" "}
         {plural(totals.events, "request")} · {plural(attributedGroups, label)}
+        {outcomeCounts && (
+          <>
+            {" "}
+            · {count(outcomeCounts.total)} {outcome} ·{" "}
+            <span data-testid="cost-per-outcome">
+              {outcomeCounts.total > 0
+                ? `${usd(costPerOutcome(totalMicros, outcomeCounts.total)!)} per ${outcome}`
+                : `no ${outcome} in this range`}
+            </span>
+          </>
+        )}
       </p>
 
       {rows.length === 0 ? (
@@ -202,7 +254,13 @@ export default async function BreakdownPage({
                 <th scope="col" className="px-3 py-3 font-medium">
                   {dimension.label}
                 </th>
-                {["Cost", "Share", "Requests", "Per request"].map((heading) => (
+                {[
+                  "Cost",
+                  "Share",
+                  "Requests",
+                  "Per request",
+                  ...(outcome ? [outcome, `Per ${outcome}`] : []),
+                ].map((heading) => (
                   <th
                     key={heading}
                     scope="col"
@@ -249,6 +307,21 @@ export default async function BreakdownPage({
                   <td className="px-3 py-2 text-right">
                     {usd(row.averageMicros)}
                   </td>
+                  {outcome && (
+                    <>
+                      <td className="px-3 py-2 text-right">
+                        {count(row.outcomes ?? 0)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right font-medium"
+                        data-testid="row-cost-per-outcome"
+                      >
+                        {row.perOutcomeMicros === null
+                          ? "—"
+                          : usd(row.perOutcomeMicros)}
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>

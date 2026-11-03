@@ -1,12 +1,12 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
-import { count, eq, like } from "drizzle-orm";
+import { count, eq, like, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { budgetStatus, budgetUtilization } from "@/lib/budget";
 import { parseEnv } from "@/lib/env";
-import { projects, usageEvents } from "../schema";
+import { outcomes, projects, usageEvents } from "../schema";
 import { getSpendOverview } from "../spend";
 import { generateDemoData } from "./generate";
 import { loadDemoData, removeDemoData } from "./load";
@@ -50,6 +50,14 @@ describe("loadDemoData", () => {
 
     expect(await loadDemoData(db, data)).toEqual(expected);
     expect(await demoCounts()).toEqual(expected);
+
+    // Outcomes load with the events, and re-loading replaces them too.
+    const [stored] = await db
+      .select({ n: sql<number>`sum(${outcomes.count})::int` })
+      .from(outcomes)
+      .innerJoin(projects, eq(projects.id, outcomes.projectId))
+      .where(like(projects.slug, "demo-%"));
+    expect(stored.n).toBe(data.outcomes.reduce((sum, o) => sum + o.count, 0));
   });
 
   it("stores the generated costs and budgets exactly", async () => {

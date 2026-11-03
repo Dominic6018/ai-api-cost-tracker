@@ -200,6 +200,8 @@ The usage is attributed too, so the [cost breakdown](#dashboard) has something t
 - **Checkout Assistant** serves shoppers, so it has users but no customer accounts.
 - **Batch Summaries** sets only a feature, so its customer, user and run are **Not set**.
 
+The Support Bot also records a `ticket_resolved` outcome per customer, one per three ticket replies, so the breakdown can show [cost per resolved ticket](#recording-outcomes).
+
 - **Deterministic:** the same `--seed` (default 2026) on the same day gives the same data. Attribution uses its own random stream, so adding it changed no token count, cost or timestamp. Budgets are set from this month's spend, so the four budget states hold on any day.
 - **Priced at today's seed prices** using the app's real cost code, since history before the prices' check date has no stored price.
 - **Safe to re-run:** it replaces earlier demo data in one transaction. Demo projects have slugs starting with `demo-`, and only those are touched. `npm run db:demo -- --remove` deletes them and their usage.
@@ -234,7 +236,7 @@ npm run user -- revoke-sessions --email you@example.com     # sign out everywher
   Each project's row also shows **this month's spend against its monthly budget**: the amount, the percentage used (rounded down, so it never shows 100% early), a meter, and how much is left or how far over it is. Projects without a budget show spend only. The budget arithmetic uses whole micro-dollars, so it's exact.
 - **Budget alerts.** A project at or above **80%** of its monthly budget shows **Nearing budget**. At or above **100%** it shows **Over budget**, or **Budget used up** when spend equals the budget exactly. A zero budget with any spend is over. Alerts appear as a summary at the top of the overview and the projects list, and next to each project's meter and spend. The thresholds are set once, in `BUDGET_THRESHOLDS` in `src/lib/budget.ts`. Status colors are reserved for alerts, and every alert shows an icon and a label, so it never relies on color alone.
 - `/spend` charts daily spend over the last **7, 30 or 90** days (UTC days, ending today) for all projects or one project. Hover or focus a bar to see its value, or open the table view. Below the chart, tables break spend down **by provider** and **by model**, with input, cached input and output tokens and request counts. The range and project filters apply to everything on the page and are kept in the URL (`?range=30&project=<id>`).
-- `/breakdown` groups spend **by customer, user, feature or run** over the last 7, 30 or 90 UTC days, for all projects or one. Each group shows its cost, share of the total, requests and average cost per request; grouped by run, that's the cost of a typical agent run. Usage sent without the field shows as **Not set**, and groups beyond the top 50 are summed into one **Other** row, so shares add up. Each group links to its usage events.
+- `/breakdown` groups spend **by customer, user, feature or run** over the last 7, 30 or 90 UTC days, for all projects or one. Each group shows its cost, share of the total, requests and average cost per request; grouped by run, that's the cost of a typical agent run. Usage sent without the field shows as **Not set**, and groups beyond the top 50 are summed into one **Other** row, so shares add up. Each group links to its usage events. Choose an outcome under **Cost per** (e.g. `ticket_resolved`) to add each group's outcome count and cost per outcome, and the overall cost per outcome; see [Recording outcomes](#recording-outcomes).
 - `/usage` lists individual usage events, newest first: time, project, provider, model, token counts, cost, attribution and request ID. Filter by project, provider, model, customer, user, feature, run and a UTC date range (both ends inclusive). Filters are kept in the URL. Pages hold 50 events. Paging uses `(occurred_at, id)` keysets with microsecond-precise cursors, so events are never skipped or repeated, even when they share a timestamp.
 - `/projects` lists projects with their slug and monthly budget.
 - `/projects/new` and `/projects/<id>/edit` create and edit projects. Slugs must be unique lowercase words joined by hyphens, and a duplicate slug is shown as an error on the field. The budget accepts an amount with up to two decimal places, or nothing for no budget. Forms also work without JavaScript.
@@ -295,6 +297,21 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 | 413    | `payload_too_large`   | Body is over 64 KB                                                                           |
 | 422    | `no_pricing`          | No price for the model at `occurredAt`                                                       |
 | 429    | `rate_limited`        | Over 30 invalid API keys from this IP in 15 minutes; wait for the `Retry-After` seconds      |
+
+## Recording outcomes
+
+Cost per request is a start, but what you usually want is cost per result: per resolved ticket, per document summarized, per order completed. Record those results as outcomes, with the same API key and attribution as usage:
+
+```bash
+curl -X POST http://localhost:3000/api/outcomes   -H "authorization: Bearer $API_KEY" -H 'content-type: application/json'   -d '{ "name": "ticket_resolved", "outcomeId": "ticket-881", "customerId": "cus_42", "feature": "support-chat" }'
+```
+
+- `name` is lowercase letters and digits joined by `_`, `.` or `-`, such as `ticket_resolved`. Cost per outcome is per name.
+- `count` (default 1, up to 1,000,000) records a batch at once. `occurredAt` defaults to now, as for usage.
+- `customerId`, `userId`, `feature` and `runId` match usage: on the breakdown page, a customer's cost is divided by that customer's outcomes. Outcomes without the field count towards **Not set**.
+- **Retries are safe with `outcomeId`** (your ID for the outcome, unique per project): a repeat returns the stored outcome with status 200, and the same `outcomeId` with a different name or count is a 409.
+
+The response is 201 with the stored `outcome`, 200 for a replay, 400 for an invalid body, 401 or 429 for keys (as for usage), and 409 for an `outcomeId` conflict.
 
 ## Reconciling with provider bills
 
