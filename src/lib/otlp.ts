@@ -4,6 +4,11 @@
  */
 
 import type { Provider } from "@/db/schema";
+import {
+  MAX_ATTRIBUTION_LENGTH,
+  type Attribution,
+  type AttributionKey,
+} from "./attribution";
 
 /** A GenAI span's usage, shaped as a `POST /api/usage` body. */
 export interface OtlpSpanUsage {
@@ -47,6 +52,18 @@ const PROVIDERS: Record<string, Provider> = {
   gemini: "google",
   vertex_ai: "google",
   mistral_ai: "mistral",
+};
+
+/**
+ * Span (or resource) attributes read as attribution, first match wins.
+ * Only the user has a standard attribute; the others use this app's own
+ * namespaced names, documented in docs/OPENTELEMETRY.md.
+ */
+const ATTRIBUTION_ATTRIBUTES: Record<AttributionKey, string[]> = {
+  customerId: ["cost_tracker.customer_id"],
+  userId: ["cost_tracker.user_id", "user.id", "enduser.id"],
+  feature: ["cost_tracker.feature"],
+  runId: ["cost_tracker.run_id"],
 };
 
 type AttributeValue = string | number | boolean | undefined;
@@ -97,6 +114,26 @@ function text(attrs: Map<string, AttributeValue>, ...names: string[]) {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return undefined;
+}
+
+/**
+ * Attribution from span attributes, falling back to resource attributes,
+ * so a service can set its feature once on the resource. Values that the
+ * usage API would reject are dropped instead, so the span's usage counts.
+ */
+function attribution(
+  span: Map<string, AttributeValue>,
+  resource: Map<string, AttributeValue>,
+): Attribution {
+  const result: Attribution = {};
+  for (const [key, names] of Object.entries(ATTRIBUTION_ATTRIBUTES) as [
+    AttributionKey,
+    string[],
+  ][]) {
+    const value = text(span, ...names) ?? text(resource, ...names);
+    if (value && value.length <= MAX_ATTRIBUTION_LENGTH) result[key] = value;
+  }
+  return result;
 }
 
 /** Nanoseconds since the epoch (a decimal string or number) as ISO 8601. */
@@ -188,6 +225,7 @@ export function genAiUsageFromOtlp(body: unknown): OtlpParseResult {
             cacheWriteInputTokens: cacheWrite,
             // Collectors retry exports, so the span identifies the record.
             requestId: `otel:${traceId}:${spanId}`,
+            ...attribution(attrs, resource),
             occurredAt:
               isoFromNanos(span.endTimeUnixNano) ??
               isoFromNanos(span.startTimeUnixNano),

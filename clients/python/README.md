@@ -50,6 +50,21 @@ result = tracker.record(Usage("openai", "gpt-4.1", input_tokens=1000, output_tok
 print(result.cost_usd)  # "0.006000"
 ```
 
+## Attribution
+
+Tag usage with the customer, the end user in your app, the feature and the agent run, so the dashboard can break cost down by them. Each is an ID you choose, up to 200 characters:
+
+```python
+# Per call
+tracker.track(reply, customer_id="cus_42", feature="support-chat", run_id=run.id)
+
+# Or once per request: a scoped tracker adds it to everything it records
+scoped = tracker.with_attribution(customer_id=account.id, user_id=user.id)
+scoped.track(reply, feature="summaries")
+```
+
+Values passed to `track()` or `record()` win over a scoped tracker's. A scoped tracker shares its parent's background threads, so `flush()` and `close()` on either cover both. `Usage` has `customer_id`, `user_id`, `feature` and `run_id` fields for `record()`.
+
 ## How usage is read
 
 The same mappings as the [TypeScript client](../typescript/README.md#how-usage-is-read):
