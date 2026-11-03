@@ -50,6 +50,13 @@
       "when": 1793628856349,
       "tag": "0006_usage_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793714374355,
+      "tag": "0007_outcomes",
+      "breakpoints": true
     }
   ]
 }

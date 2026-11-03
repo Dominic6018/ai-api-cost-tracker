@@ -248,6 +248,42 @@ export const sessions = pgTable(
 );
 
 /**
+ * Business outcomes, such as a resolved ticket or a completed order, so
+ * cost can be divided by what it achieved. Attributed like usage events.
+ */
+export const outcomes = pgTable(
+  "outcomes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    // e.g. "ticket_resolved"; cost per outcome is per name.
+    name: text("name").notNull(),
+    count: integer("count").notNull().default(1),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // The caller's ID for the outcome, so retries don't count it twice.
+    outcomeId: text("outcome_id"),
+    customerId: text("customer_id"),
+    userId: text("user_id"),
+    feature: text("feature"),
+    runId: text("run_id"),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    index("outcomes_project_name_occurred_idx").on(
+      t.projectId,
+      t.name,
+      t.occurredAt,
+    ),
+    uniqueIndex("outcomes_project_outcome_id_idx").on(t.projectId, t.outcomeId),
+    check("outcomes_count_positive", sql`${t.count} > 0`),
+  ],
+);
+
+/**
  * Fixed-window counters for rate limiting sign-in and API-key checks. Keys
  * hold a SHA-256 hash, so attempted emails and client IPs aren't stored.
  */
@@ -269,4 +305,5 @@ export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;
 export type NewModelPricing = typeof modelPricing.$inferInsert;
 export type UsageEvent = typeof usageEvents.$inferSelect;
+export type Outcome = typeof outcomes.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;

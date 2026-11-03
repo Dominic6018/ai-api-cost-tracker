@@ -67,7 +67,7 @@ Recording usage shouldn't require hand-written API calls.
 - [ ] Free-form tags
 - [x] Cost per customer, user, feature and run (#57)
 - [x] Demo data with customers, users, features and agent runs (#62)
-- [ ] Unit costs: cost per outcome, such as per resolved ticket (#58)
+- [x] Unit costs: cost per outcome, such as per resolved ticket (#58)
 - [ ] CSV and FOCUS exports, and a read-only reporting API
 
 ## Milestone 8: Guardrails

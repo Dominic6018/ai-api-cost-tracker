@@ -36,12 +36,29 @@ export interface BreakdownRow {
   sharePermille: number;
   /** Cost per request in micro-dollars, rounded half up. */
   averageMicros: bigint;
+  /** The selected outcome's count for this row; null with no outcome selected. */
+  outcomes: number | null;
+  /** Cost per outcome in micro-dollars; null without outcomes to divide by. */
+  perOutcomeMicros: bigint | null;
+}
+
+/** One outcome's counts by attribution value (see outcomeCountsByAttribution). */
+export interface OutcomeCounts {
+  byValue: Map<string | null, number>;
+  total: number;
 }
 
 const permille = (part: bigint, total: bigint) =>
   total > 0n ? Number((part * 1000n) / total) : 0;
 const average = (micros: bigint, events: number) =>
   events > 0 ? (micros * 2n + BigInt(events)) / (BigInt(events) * 2n) : 0n;
+const perOutcome = (micros: bigint, outcomes: number | null) =>
+  outcomes ? average(micros, outcomes) : null;
+
+/** Cost per outcome overall, or null without outcomes. */
+export function costPerOutcome(costMicros: bigint, outcomes: number) {
+  return perOutcome(costMicros, outcomes);
+}
 
 /**
  * Turns the top groups and the overall totals into rows whose costs add up
@@ -50,6 +67,7 @@ const average = (micros: bigint, events: number) =>
 export function breakdownRows(
   top: readonly BreakdownGroup[],
   totals: { costUsd: string; events: number; groups: number },
+  outcomeCounts?: OutcomeCounts,
 ): BreakdownRow[] {
   const totalMicros = toMicros(totals.costUsd);
   const row = (
@@ -58,6 +76,7 @@ export function breakdownRows(
     costMicros: bigint,
     events: number,
     groups: number,
+    outcomes: number | null,
   ): BreakdownRow => ({
     value,
     kind,
@@ -66,7 +85,11 @@ export function breakdownRows(
     groups,
     sharePermille: permille(costMicros, totalMicros),
     averageMicros: average(costMicros, events),
+    outcomes,
+    perOutcomeMicros: perOutcome(costMicros, outcomes),
   });
+  const outcomesFor = (value: string | null) =>
+    outcomeCounts ? (outcomeCounts.byValue.get(value) ?? 0) : null;
 
   const rows = top.map((group) =>
     row(
@@ -75,6 +98,7 @@ export function breakdownRows(
       toMicros(group.costUsd),
       group.events,
       1,
+      outcomesFor(group.value),
     ),
   );
   const shownMicros = rows.reduce((sum, r) => sum + r.costMicros, 0n);
@@ -88,6 +112,11 @@ export function breakdownRows(
         totalMicros - shownMicros,
         totals.events - shownEvents,
         restGroups,
+        // Whatever the shown groups don't account for.
+        outcomeCounts
+          ? outcomeCounts.total -
+              rows.reduce((sum, r) => sum + (r.outcomes ?? 0), 0)
+          : null,
       ),
     );
   }

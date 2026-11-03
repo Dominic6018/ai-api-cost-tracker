@@ -13,6 +13,7 @@ import {
   DEMO_SLUG_PREFIX,
   demoBudgetStates,
   generateDemoData,
+  REPLIES_PER_RESOLVED_TICKET,
 } from "./generate";
 
 const now = new Date("2026-10-31T15:30:00Z");
@@ -300,5 +301,33 @@ describe("attribution", () => {
     expect([...days.get(top[0])!]).toEqual(["2026-10-17"]);
     // About 2.5x the next most expensive run for this seed and day.
     expect(top[1]).toBeGreaterThan(second[1] * 2n);
+  });
+});
+
+describe("demo outcomes", () => {
+  it("resolves about one ticket per few replies, per customer and day", () => {
+    const replies = data.events.filter(
+      (e) => e.feature === "ticket-reply" && e.customerId,
+    ).length;
+    const resolved = data.outcomes.reduce((sum, o) => sum + o.count, 0);
+    expect(data.outcomes.length).toBeGreaterThan(0);
+    expect(data.outcomes.every((o) => o.name === "ticket_resolved")).toBe(true);
+    // Each customer-day rounds down, so the total is at most replies / 3.
+    expect(resolved).toBeLessThanOrEqual(replies / REPLIES_PER_RESOLVED_TICKET);
+    expect(resolved).toBeGreaterThan(replies / REPLIES_PER_RESOLVED_TICKET / 2);
+  });
+
+  it("attributes each outcome to a Support Bot customer, never in the future", () => {
+    const customers = new Set(
+      data.events
+        .filter((e) => e.projectSlug === "demo-support-bot")
+        .map((e) => e.customerId),
+    );
+    for (const outcome of data.outcomes) {
+      expect(outcome.projectSlug).toBe("demo-support-bot");
+      expect(customers.has(outcome.customerId)).toBe(true);
+      expect(outcome.count).toBeGreaterThan(0);
+      expect(outcome.occurredAt.getTime()).toBeLessThanOrEqual(now.getTime());
+    }
   });
 });
