@@ -65,7 +65,8 @@ Recording usage shouldn't require hand-written API calls.
 - [x] Customer, user, feature and run as indexed, filterable fields (#53)
 - [x] Send them from the clients and OpenTelemetry (#54)
 - [ ] Free-form tags
-- [ ] Cost per customer and per feature, and unit costs (e.g. cost per resolved ticket)
+- [x] Cost per customer, user, feature and run (#57)
+- [ ] Unit costs: cost per outcome, such as per resolved ticket (#58)
 - [ ] CSV and FOCUS exports, and a read-only reporting API
 
 ## Milestone 8: Guardrails

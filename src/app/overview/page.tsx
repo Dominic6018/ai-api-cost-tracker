@@ -55,6 +55,9 @@ export default async function OverviewPage() {
           <Link href="/usage" className="underline">
             Usage events
           </Link>
+          <Link href="/breakdown" className="underline">
+            Cost breakdown
+          </Link>
           <Link href="/projects" className="underline">
             Projects
           </Link>

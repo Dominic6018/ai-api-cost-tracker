@@ -110,6 +110,9 @@ export default async function UsagePage({
           <Link href="/spend" className="underline">
             Spend over time
           </Link>
+          <Link href="/breakdown" className="underline">
+            Cost breakdown
+          </Link>
           <Link href="/projects" className="underline">
             Projects
           </Link>
