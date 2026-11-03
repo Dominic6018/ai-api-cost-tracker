@@ -62,6 +62,19 @@ describe("loadDemoData", () => {
     expect(stored.cacheWriteInputTokens).toBe(sample.cacheWriteInputTokens);
     expect(stored.metadata).toEqual({ demo: true });
 
+    // Attribution is stored in its columns, unset fields as null.
+    const runEvent = data.events.find((e) => e.runId)!;
+    const [storedRun] = await db
+      .select()
+      .from(usageEvents)
+      .where(eq(usageEvents.requestId, runEvent.requestId));
+    expect(storedRun).toMatchObject({
+      customerId: runEvent.customerId,
+      feature: runEvent.feature,
+      runId: runEvent.runId,
+      userId: null,
+    });
+
     const [support] = await db
       .select()
       .from(projects)
