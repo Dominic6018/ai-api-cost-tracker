@@ -23,7 +23,12 @@ const PAGES = [
   ["spend", "/spend?range=90"],
   ["usage", "/usage"],
   ["projects", "/projects"],
-  ["breakdown", "/breakdown?range=90&outcome=ticket_resolved"],
+  // Cost per resolved ticket within the project that resolves tickets;
+  // across all projects, a customer's other spend would count too.
+  [
+    "breakdown",
+    "/breakdown?range=90&outcome=ticket_resolved&project={Support Bot}",
+  ],
 ];
 const VIEWPORT = { width: 1280, height: 900, deviceScaleFactor: 1 };
 
@@ -141,13 +146,27 @@ try {
   })()`);
   await waitFor(`location.pathname === "/overview"`, "sign-in");
 
+  // Paths name projects as {Name}; the pages take generated IDs, so read
+  // them from the project selector.
+  await open("/breakdown");
+  const projectIds = await evaluate(`Object.fromEntries(
+    [...document.querySelectorAll("#project option")]
+      .filter((option) => option.value)
+      .map((option) => [option.textContent, option.value]),
+  )`);
+  const resolve = (pathname) =>
+    pathname.replace(/\{([^}]+)\}/g, (_, name) => {
+      assert.ok(projectIds[name], `no project named ${name}`);
+      return encodeURIComponent(projectIds[name]);
+    });
+
   await mkdir(outDir, { recursive: true });
   for (const scheme of ["light", "dark"]) {
     await page("Emulation.setEmulatedMedia", {
       features: [{ name: "prefers-color-scheme", value: scheme }],
     });
     for (const [name, pathname] of PAGES) {
-      await open(pathname);
+      await open(resolve(pathname));
       await evaluate(`document.fonts.ready.then(() => true)`);
       // The dev server's floating indicator isn't part of the app.
       await evaluate(
