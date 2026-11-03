@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { toMicros } from "@/lib/budget";
 import { calculateCostUsd } from "@/lib/cost";
@@ -186,5 +187,118 @@ describe("budgetForShare", () => {
     // Over budget rounds the budget down, never above the spend
     expect(budgetForShare(130_000_001n, 1.3)).toBe("100.00");
     expect(budgetForShare(1n, 0.5)).toBe("0.01");
+  });
+});
+
+describe("attribution", () => {
+  const bySlug = (slug: string) =>
+    data.events.filter((e) => e.projectSlug === slug);
+
+  it("leaves every token count, cost and timestamp as before attribution", () => {
+    // Fingerprint of the data generated before attribution was added, for
+    // the same seed and time. Attribution has its own random stream.
+    const core = data.events.map((e) => [
+      e.projectSlug,
+      e.provider,
+      e.model,
+      e.inputTokens,
+      e.cachedInputTokens,
+      e.cacheWriteInputTokens,
+      e.outputTokens,
+      e.costUsd,
+      e.requestId,
+      e.occurredAt.toISOString(),
+    ]);
+    expect(data.events).toHaveLength(13_727);
+    expect(
+      createHash("sha256").update(JSON.stringify(core)).digest("hex"),
+    ).toBe("1186b1fe14ec255f2a3262add93c606343cc6acbe8ed37fe63c80466d99be606");
+    expect(data.projects.map((p) => p.monthlyBudgetUsd)).toEqual([
+      "15.04",
+      "104.91",
+      "21.25",
+      null,
+    ]);
+  });
+
+  it("gives each project its own mix, leaving some fields unset", () => {
+    const fields = (slug: string) => {
+      const events = bySlug(slug);
+      return {
+        customer: events.every((e) => e.customerId),
+        user: events.every((e) => e.userId),
+        feature: events.every((e) => e.feature),
+        run: events.every((e) => e.runId),
+        noCustomer: events.every((e) => e.customerId === undefined),
+        noUser: events.every((e) => e.userId === undefined),
+        noRun: events.every((e) => e.runId === undefined),
+      };
+    };
+    expect(fields("demo-support-bot")).toMatchObject({
+      customer: true,
+      user: true,
+      feature: true,
+      noRun: true,
+    });
+    expect(fields("demo-research-agent")).toMatchObject({
+      customer: true,
+      feature: true,
+      run: true,
+      noUser: true,
+    });
+    // Consumer shoppers: users, but no customer accounts.
+    expect(fields("demo-checkout-assistant")).toMatchObject({
+      user: true,
+      feature: true,
+      noCustomer: true,
+      noRun: true,
+    });
+    expect(fields("demo-batch-summaries")).toMatchObject({
+      feature: true,
+      noCustomer: true,
+      noUser: true,
+      noRun: true,
+    });
+  });
+
+  it("weights customers towards a few large accounts", () => {
+    const counts = new Map<string, number>();
+    for (const e of bySlug("demo-support-bot")) {
+      counts.set(e.customerId!, (counts.get(e.customerId!) ?? 0) + 1);
+    }
+    const ranked = [...counts.values()].sort((a, b) => b - a);
+    expect(counts.size).toBe(8);
+    expect(ranked[0]).toBeGreaterThan(ranked.at(-1)! * 4);
+  });
+
+  it("groups research requests into short runs, one customer each", () => {
+    const runs = new Map<string, { size: number; customers: Set<string> }>();
+    for (const e of bySlug("demo-research-agent")) {
+      const run = runs.get(e.runId!) ?? { size: 0, customers: new Set() };
+      run.size++;
+      run.customers.add(e.customerId!);
+      runs.set(e.runId!, run);
+    }
+    expect([...runs.values()].every((r) => r.customers.size === 1)).toBe(true);
+    const sizes = [...runs.values()].map((r) => r.size).sort((a, b) => a - b);
+    // All but the runaway run (and a day's last, shorter run) are 4-12.
+    expect(sizes[Math.floor(sizes.length / 2)]).toBeGreaterThanOrEqual(4);
+    expect(sizes.at(-2)).toBeLessThanOrEqual(12);
+  });
+
+  it("turns the spike into one runaway run that costs the most", () => {
+    const cost = new Map<string, bigint>();
+    const days = new Map<string, Set<string>>();
+    for (const e of bySlug("demo-research-agent")) {
+      cost.set(e.runId!, (cost.get(e.runId!) ?? 0n) + toMicros(e.costUsd));
+      const day = e.occurredAt.toISOString().slice(0, 10);
+      days.set(e.runId!, (days.get(e.runId!) ?? new Set()).add(day));
+    }
+    const [top, second] = [...cost].sort((a, b) =>
+      b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0,
+    );
+    expect([...days.get(top[0])!]).toEqual(["2026-10-17"]);
+    // About 2.5x the next most expensive run for this seed and day.
+    expect(top[1]).toBeGreaterThan(second[1] * 2n);
   });
 });

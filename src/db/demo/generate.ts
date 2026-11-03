@@ -39,6 +39,15 @@ interface ProjectProfile {
   longPromptChance: number;
   /** Budget state this project should land in for the current month. */
   budget: { usedShare: number } | null;
+  /** Who and what the usage is for; a field left out stays "Not set". */
+  attribution: {
+    /** Most active first; a few large accounts carry most of the spend. */
+    customers?: readonly string[];
+    users?: { prefix: string; count: number };
+    features: readonly { name: string; weight: number }[];
+    /** Consecutive requests grouped into agent runs of this many. */
+    runs?: { minRequests: number; maxRequests: number };
+  };
 }
 
 /**
@@ -63,6 +72,23 @@ export const DEMO_PROFILES: readonly ProjectProfile[] = [
     outputShare: 0.12,
     longPromptChance: 0.04,
     budget: { usedShare: 0.88 },
+    attribution: {
+      customers: [
+        "cus_northwind",
+        "cus_contoso",
+        "cus_fabrikam",
+        "cus_tailspin",
+        "cus_wingtip",
+        "cus_litware",
+        "cus_proseware",
+        "cus_adatum",
+      ],
+      users: { prefix: "agent", count: 12 },
+      features: [
+        { name: "ticket-reply", weight: 7 },
+        { name: "ticket-summary", weight: 3 },
+      ],
+    },
   },
   {
     slug: "demo-research-agent",
@@ -80,6 +106,11 @@ export const DEMO_PROFILES: readonly ProjectProfile[] = [
     outputShare: 0.05,
     longPromptChance: 0.2,
     budget: { usedShare: 1.3 },
+    attribution: {
+      customers: ["cus_contoso", "cus_northwind", "cus_fabrikam"],
+      features: [{ name: "deep-research", weight: 1 }],
+      runs: { minRequests: 4, maxRequests: 12 },
+    },
   },
   {
     slug: "demo-checkout-assistant",
@@ -97,6 +128,15 @@ export const DEMO_PROFILES: readonly ProjectProfile[] = [
     outputShare: 0.3,
     longPromptChance: 0,
     budget: { usedShare: 0.42 },
+    // Consumer shoppers: users but no customer accounts.
+    attribution: {
+      users: { prefix: "shopper", count: 400 },
+      features: [
+        { name: "product-questions", weight: 6 },
+        { name: "order-status", weight: 3 },
+        { name: "returns", weight: 1 },
+      ],
+    },
   },
   {
     slug: "demo-batch-summaries",
@@ -114,11 +154,16 @@ export const DEMO_PROFILES: readonly ProjectProfile[] = [
     outputShare: 0.08,
     longPromptChance: 0.02,
     budget: null,
+    attribution: { features: [{ name: "nightly-digest", weight: 1 }] },
   },
 ];
 
 export interface DemoEvent {
   projectSlug: string;
+  customerId?: string;
+  userId?: string;
+  feature?: string;
+  runId?: string;
   provider: Provider;
   model: string;
   inputTokens: number;
@@ -208,6 +253,61 @@ const spread = (r: number) => 0.4 + 2.1 * r * r;
 
 const isWeekend = (date: Date) => [0, 6].includes(date.getUTCDay());
 
+/** A customer, weighted towards the first: index i has weight 1 / (i + 1). */
+function pickCustomer(customers: readonly string[], r: number): string {
+  return pick(
+    customers.map((id, i) => ({ id, weight: 1 / (i + 1) })),
+    r,
+  ).id;
+}
+
+/**
+ * Sets one day's attribution on a profile's events, in place. Runs are
+ * consecutive requests in time order, each for one customer. Returns the
+ * number of runs so far, so run IDs keep counting across days.
+ */
+function attribute(
+  day: DemoEvent[],
+  profile: ProjectProfile,
+  random: () => number,
+  { runaway, runs }: { runaway: boolean; runs: number },
+): number {
+  const { customers, users, features, runs: runSize } = profile.attribution;
+  const short = profile.slug.slice(DEMO_SLUG_PREFIX.length);
+  let left = 0;
+  let runId = "";
+  let runCustomer: string | undefined;
+  const inTimeOrder = [...day].sort(
+    (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime(),
+  );
+  for (const event of inTimeOrder) {
+    event.feature = pick(features, random()).name;
+    if (users) {
+      const n = 1 + Math.floor(random() * users.count);
+      event.userId = `${users.prefix}_${String(n).padStart(3, "0")}`;
+    }
+    if (runSize) {
+      if (left === 0) {
+        runs++;
+        runId = `run_${short}_${String(runs).padStart(5, "0")}`;
+        runCustomer = customers && pickCustomer(customers, random());
+        left = runaway
+          ? Infinity
+          : runSize.minRequests +
+            Math.floor(
+              random() * (runSize.maxRequests - runSize.minRequests + 1),
+            );
+      }
+      left--;
+      event.runId = runId;
+      if (runCustomer) event.customerId = runCustomer;
+    } else if (customers) {
+      event.customerId = pickCustomer(customers, random());
+    }
+  }
+  return runs;
+}
+
 /**
  * Builds deterministic demo data ending at `now`. The same `seed` and `now`
  * always produce the same projects, events and budgets. Budgets are set
@@ -224,6 +324,9 @@ export function generateDemoData({
   seed?: number;
 }): DemoData {
   const random = createRandom(seed);
+  // Attribution draws from its own stream, so adding it left every token
+  // count, cost and timestamp exactly as before.
+  const attributionRandom = createRandom(seed ^ 0x5bd1e995);
   const today = Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth(),
@@ -238,6 +341,7 @@ export function generateDemoData({
       profile.models.map((m) => [m.model, currentPricing(m, now)]),
     );
     let sequence = 0;
+    let runs = 0;
     let monthSpendMicros = 0n;
     // A runaway agent loop two weeks ago, for the research agent only.
     const spikeDay = profile.slug === "demo-research-agent" ? 14 : -1;
@@ -255,6 +359,7 @@ export function generateDemoData({
       // Today only has the hours that have passed.
       const dayEnd = back === 0 ? now.getTime() : dayStart + DAY_MS;
       const count = Math.round(volume * ((dayEnd - dayStart) / DAY_MS));
+      const firstOfDay = events.length;
 
       for (let i = 0; i < count; i++) {
         const mix = pick(profile.models, random());
@@ -298,6 +403,13 @@ export function generateDemoData({
           occurredAt,
         });
       }
+      runs = attribute(
+        events.slice(firstOfDay),
+        profile,
+        attributionRandom,
+        // The spike: one agent run looping all day.
+        { runaway: back === spikeDay, runs },
+      );
     }
 
     projects.push({
