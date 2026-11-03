@@ -9,13 +9,18 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
   <img alt="Spend overview: two projects need attention, spend today, this month and over the last 30 days, and each project's monthly budget meter" src="docs/screenshots/overview-light.png">
 </picture>
 
-| Spend over time                                                                                                                                                                                                                        | Usage events                                                                                                                                                                                                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/spend-dark.png"><img alt="Daily spend over 90 days as a bar chart, with spend and tokens by provider" src="docs/screenshots/spend-light.png"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/usage-dark.png"><img alt="Filterable table of usage events with tokens, cost and request ID" src="docs/screenshots/usage-light.png"></picture> |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/breakdown-dark.png">
+  <img alt="Cost by customer for the Support Bot over 90 days: each customer's cost, share, requests, resolved tickets and cost per resolved ticket, $0.0607 overall" src="docs/screenshots/breakdown-light.png">
+</picture>
 
-<sub>Demo data from `npm run db:demo`, captured by CI on 1 November 2026, and shown in your GitHub theme. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
+| Spend over time                                                                                                                                                                                                                        | Usage events                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/spend-dark.png"><img alt="Daily spend over 90 days as a bar chart, with spend and tokens by provider" src="docs/screenshots/spend-light.png"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/usage-dark.png"><img alt="Filterable table of usage events with tokens, cost, customer, user, feature and run" src="docs/screenshots/usage-light.png"></picture> |
 
-> **Status:** Milestones 0–5 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting and the public release. Next is automatic usage capture; see [docs/ROADMAP.md](docs/ROADMAP.md).
+<sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
+
+> **Status:** Milestones 0–5 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting and the public release. Milestone 6 added the TypeScript and Python clients, OpenTelemetry intake and bill reconciliation (Gemini billing aside). Milestone 7, cost by customer, feature and agent run, is under way; see [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Features
 
