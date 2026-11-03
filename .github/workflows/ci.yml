@@ -235,11 +235,13 @@ jobs:
           SPAN_ID=$(openssl rand -hex 8)
           NOW_NS=$(date +%s%N)
           cat > otlp.json <<JSON
-          {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"ci-smoke"}}]},"scopeSpans":[{"spans":[
+          {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"ci-smoke"}},{"key":"cost_tracker.feature","value":{"stringValue":"ci-otel"}}]},"scopeSpans":[{"spans":[
             {"traceId":"$GITHUB_RUN_ID","spanId":"$SPAN_ID","name":"chat claude-sonnet-5-5","endTimeUnixNano":"$NOW_NS","attributes":[
               {"key":"gen_ai.operation.name","value":{"stringValue":"chat"}},
               {"key":"gen_ai.provider.name","value":{"stringValue":"anthropic"}},
               {"key":"gen_ai.request.model","value":{"stringValue":"claude-sonnet-5-5"}},
+              {"key":"cost_tracker.customer_id","value":{"stringValue":"cus_otel"}},
+              {"key":"user.id","value":{"stringValue":"u_otel"}},
               {"key":"gen_ai.usage.input_tokens","value":{"intValue":"10050"}},
               {"key":"gen_ai.usage.cache_read.input_tokens","value":{"intValue":"8000"}},
               {"key":"gen_ai.usage.cache_creation.input_tokens","value":{"intValue":"2000"}},
@@ -258,6 +260,11 @@ jobs:
           grep -q 'no price for openai/not-a-real-model' otel.json
           # Same Sonnet 5.5 cost as the client checks: $0.009900
           OTEL_ID="otel:$GITHUB_RUN_ID:$SPAN_ID"
+          # Attribution: span attributes, plus the feature set once on the resource
+          test "$(psql "$DATABASE_URL" -tAc "SELECT concat_ws('|', customer_id, user_id, feature) FROM usage_events WHERE request_id = '$OTEL_ID'")" = "cus_otel|u_otel|ci-otel"
+          # ...and from both clients, through their scoped trackers
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE customer_id = 'cus_ts' AND feature = 'ci-ts' AND run_id LIKE 'run_ts_msg_smoke_%'")" = 1
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE customer_id = 'cus_py' AND feature = 'ci-py' AND run_id LIKE 'run_py_msg_py_smoke_%'")" = 1
           test "$(psql "$DATABASE_URL" -tAc "SELECT cost_usd FROM usage_events WHERE request_id = '$OTEL_ID'")" = 0.009900
           # A collector retrying the export, gzipped as the Collector sends
           # it by default, doesn't store the span twice

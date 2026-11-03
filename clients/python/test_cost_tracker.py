@@ -295,5 +295,66 @@ class TrackTest(unittest.TestCase):
         self.assertEqual(tracker._pending, set())
 
 
+
+class AttributionTest(unittest.TestCase):
+    def test_track_sends_attribution(self):
+        tracker, transport, _ = make(stored())
+        tracker.track(ANTHROPIC, customer_id="cus_42", user_id="u_7", feature="support-chat", run_id="run_9")
+        tracker.flush()
+        body = transport.calls[0][1]
+        self.assertEqual(
+            (body["customerId"], body["userId"], body["feature"], body["runId"]),
+            ("cus_42", "u_7", "support-chat", "run_9"),
+        )
+
+    def test_scoped_tracker_adds_attribution_and_explicit_values_win(self):
+        tracker, transport, _ = make(stored(), stored(), stored())
+        for_customer = tracker.with_attribution(customer_id="cus_42", feature="chat")
+        for_customer.track(OPENAI_CHAT)
+        for_customer.track(OPENAI_CHAT, feature="search", run_id="r1")
+        for_customer.with_attribution(user_id="u_7").record(USAGE)
+        # The parent's flush waits for its scoped trackers' reports too.
+        tracker.flush()
+        # Reports run on background threads, so compare them in any order.
+        bodies = sorted(
+            (
+                (body["customerId"], body["feature"], body.get("runId"), body.get("userId"))
+                for body in (call[1] for call in transport.calls)
+            ),
+            key=repr,
+        )
+        self.assertEqual(
+            bodies,
+            sorted(
+                [
+                    ("cus_42", "chat", None, None),
+                    ("cus_42", "search", "r1", None),
+                    ("cus_42", "chat", None, "u_7"),
+                ],
+                key=repr,
+            ),
+        )
+
+    def test_record_with_a_dict_keeps_its_own_values(self):
+        tracker, transport, _ = make(stored())
+        tracker.with_attribution(customer_id="cus_42").record(
+            {"provider": "openai", "model": "gpt-4.1", "inputTokens": 1, "outputTokens": 1, "customerId": "mine"}
+        )
+        self.assertEqual(transport.calls[0][1]["customerId"], "mine")
+
+    def test_scoped_tracker_leaves_the_parent_unchanged(self):
+        tracker, transport, _ = make(stored())
+        tracker.with_attribution(customer_id="cus_42")
+        tracker.record(USAGE)
+        self.assertNotIn("customerId", transport.calls[0][1])
+
+    def test_usage_payload_names(self):
+        usage = Usage("openai", "gpt-4.1", 1, 1, customer_id="c", user_id="u", feature="f", run_id="r")
+        payload = usage.to_payload()
+        self.assertEqual(
+            {key: payload[key] for key in ("customerId", "userId", "feature", "runId")},
+            {"customerId": "c", "userId": "u", "feature": "f", "runId": "r"},
+        )
+
 if __name__ == "__main__":
     unittest.main()

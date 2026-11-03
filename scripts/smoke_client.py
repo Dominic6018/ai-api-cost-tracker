@@ -33,7 +33,9 @@ message = {
 print("- track() returns the response and reports it in the background")
 errors = []
 with CostTracker(base_url, api_key, on_error=lambda error, usage: errors.append(error)) as tracker:
-    assert tracker.track(message) is message
+    # Attributed through a scoped tracker; CI checks the stored columns.
+    scoped = tracker.with_attribution(customer_id="cus_py", feature="ci-py")
+    assert scoped.track(message, run_id=f"run_py_{message['id']}") is message
     tracker.flush()
     assert errors == [], errors
 

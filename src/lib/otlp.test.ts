@@ -232,3 +232,94 @@ describe("genAiUsageFromOtlp", () => {
     ).toEqual({ ok: true, spans: [], skipped: 0 });
   });
 });
+
+describe("attribution from span and resource attributes", () => {
+  const withResource = (resource: Attr[], ...spans: unknown[]) => ({
+    resourceSpans: [
+      {
+        resource: { attributes: attrs(...resource) },
+        scopeSpans: [{ spans }],
+      },
+    ],
+  });
+  const usage: Attr[] = [
+    ["gen_ai.provider.name", "openai"],
+    ["gen_ai.request.model", "gpt-4.1"],
+    ["gen_ai.usage.input_tokens", 10],
+    ["gen_ai.usage.output_tokens", 5],
+  ];
+  const payloadOf = (body: unknown) => {
+    const result = genAiUsageFromOtlp(body);
+    if (!result.ok) throw new Error("expected ok");
+    return result.spans[0].payload;
+  };
+
+  it("reads the cost_tracker.* attributes and the standard user.id", () => {
+    expect(
+      payloadOf(
+        exportOf(
+          span(
+            "g1",
+            ...usage,
+            ["cost_tracker.customer_id", "cus_42"],
+            ["cost_tracker.feature", "support-chat"],
+            ["cost_tracker.run_id", "run_9"],
+            ["user.id", "u_7"],
+          ),
+        ),
+      ),
+    ).toMatchObject({
+      customerId: "cus_42",
+      feature: "support-chat",
+      runId: "run_9",
+      userId: "u_7",
+    });
+  });
+
+  it("falls back to resource attributes; the span wins", () => {
+    const payload = payloadOf(
+      withResource(
+        [
+          ["cost_tracker.feature", "summaries"],
+          ["cost_tracker.customer_id", "from-resource"],
+        ],
+        span("g2", ...usage, ["cost_tracker.customer_id", "cus_42"]),
+      ),
+    );
+    expect(payload).toMatchObject({
+      feature: "summaries",
+      customerId: "cus_42",
+    });
+  });
+
+  it("prefers cost_tracker.user_id, then user.id, then the deprecated enduser.id", () => {
+    const userOf = (...pairs: Attr[]) =>
+      payloadOf(exportOf(span("g3", ...usage, ...pairs))).userId;
+    expect(userOf(["enduser.id", "old"])).toBe("old");
+    expect(userOf(["enduser.id", "old"], ["user.id", "new"])).toBe("new");
+    expect(
+      userOf(["user.id", "new"], ["cost_tracker.user_id", "explicit"]),
+    ).toBe("explicit");
+  });
+
+  it("drops values the API would reject but keeps the span's usage", () => {
+    const payload = payloadOf(
+      exportOf(
+        span(
+          "g4",
+          ...usage,
+          ["cost_tracker.customer_id", "c".repeat(201)],
+          ["cost_tracker.feature", "   "],
+          ["cost_tracker.run_id", 42],
+        ),
+      ),
+    );
+    expect(payload).not.toHaveProperty("customerId");
+    expect(payload).not.toHaveProperty("feature");
+    expect(payload).not.toHaveProperty("runId");
+    expect(payload.inputTokens).toBe(10);
+    expect(
+      parseUsagePayload(payload, new Date("2026-11-02T12:00:00Z")).ok,
+    ).toBe(true);
+  });
+});

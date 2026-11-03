@@ -13,6 +13,7 @@ plain JSON dicts the REST APIs return.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import threading
@@ -55,6 +56,13 @@ class Usage:
     request_id: Optional[str] = None
     occurred_at: Optional[Union[str, datetime]] = None
     metadata: Optional[Dict[str, Any]] = field(default=None)
+    #: Attribution: IDs you choose, up to 200 characters each.
+    customer_id: Optional[str] = None
+    #: The end user in your app.
+    user_id: Optional[str] = None
+    feature: Optional[str] = None
+    #: One agent run or workflow.
+    run_id: Optional[str] = None
 
     def to_payload(self) -> Dict[str, Any]:
         occurred_at = self.occurred_at
@@ -72,6 +80,10 @@ class Usage:
             "requestId": self.request_id,
             "occurredAt": occurred_at,
             "metadata": self.metadata,
+            "customerId": self.customer_id,
+            "userId": self.user_id,
+            "feature": self.feature,
+            "runId": self.run_id,
         }
         return {key: value for key, value in payload.items() if value is not None}
 
@@ -194,6 +206,14 @@ def usage_from_response(response: Any) -> Optional[Usage]:
     return None
 
 
+def _attribution(
+    customer_id: Optional[str], user_id: Optional[str], feature: Optional[str], run_id: Optional[str]
+) -> Dict[str, str]:
+    """The given attribution, keyed by API field name, without unset values."""
+    values = {"customerId": customer_id, "userId": user_id, "feature": feature, "runId": run_id}
+    return {key: value for key, value in values.items() if value is not None}
+
+
 #: Sends one POST and returns (status, body). Replaceable for tests.
 Transport = Callable[[str, bytes, Dict[str, str], float], Tuple[int, bytes]]
 
@@ -231,11 +251,34 @@ class CostTracker:
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cost-tracker")
         self._pending: "set[Future[None]]" = set()
         self._lock = threading.Lock()
+        #: Attribution added by with_attribution(), as API field names.
+        self._defaults: Dict[str, str] = {}
+
+    def with_attribution(
+        self,
+        *,
+        customer_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        feature: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> "CostTracker":
+        """A tracker that adds this attribution to everything it records,
+        e.g. once per request. Values passed to record() or track() win.
+        It shares this tracker's background threads, so flush() and close()
+        on either cover both."""
+        scoped = copy.copy(self)
+        scoped._defaults = {
+            **self._defaults,
+            **_attribution(customer_id, user_id, feature, run_id),
+        }
+        return scoped
 
     def record(self, usage: Union[Usage, Dict[str, Any]]) -> RecordResult:
         """Sends one usage record and returns the stored cost.
         Raises CostTrackerError if it isn't stored."""
         payload = usage.to_payload() if isinstance(usage, Usage) else dict(usage)
+        for key, value in self._defaults.items():
+            payload.setdefault(key, value)
         body = json.dumps(payload).encode("utf-8")
         headers = {
             "authorization": f"Bearer {self._api_key}",
@@ -276,6 +319,10 @@ class CostTracker:
         model: Optional[str] = None,
         provider: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        customer_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        feature: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> Any:
         """Reports a provider response's usage in the background and returns
         the response unchanged. Reporting errors go to ``on_error`` and never
@@ -283,6 +330,7 @@ class CostTracker:
 
         ``model`` overrides the model to price (OpenAI responses name dated
         snapshots); ``provider`` is for OpenAI-compatible APIs such as Mistral's.
+        ``customer_id``, ``user_id``, ``feature`` and ``run_id`` attribute the usage.
         """
         usage = usage_from_response(response)
         if usage is None:
@@ -293,6 +341,10 @@ class CostTracker:
         if provider:
             usage.provider = provider
         usage.metadata = metadata
+        usage.customer_id = customer_id
+        usage.user_id = user_id
+        usage.feature = feature
+        usage.run_id = run_id
 
         def report() -> None:
             try:

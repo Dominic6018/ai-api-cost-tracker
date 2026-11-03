@@ -59,8 +59,13 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=authorization=Bearer%20act_your_key
 | Cache writes  | `gen_ai.usage.cache_creation.input_tokens`                                                                                                                                        |
 | Time          | The span's end time                                                                                                                                                               |
 | Request ID    | `otel:<traceId>:<spanId>`, so a Collector retrying an export doesn't store a span twice                                                                                           |
+| Customer      | `cost_tracker.customer_id`                                                                                                                                                        |
+| User          | `cost_tracker.user_id`, else the standard `user.id`, else the deprecated `enduser.id`                                                                                             |
+| Feature       | `cost_tracker.feature`                                                                                                                                                            |
+| Run           | `cost_tracker.run_id`                                                                                                                                                             |
 | Metadata      | `source: "otel"`, `service.name`, the operation, trace and span IDs                                                                                                               |
 
+- **Attribution** is read from the span's attributes, falling back to the resource's, so a service can set `cost_tracker.feature` once as a resource attribute. Only the user has a standard attribute; the others use these `cost_tracker.*` names. A value the usage API would reject (empty, or over 200 characters) is dropped, and the span's usage is still recorded.
 - **Only model calls are counted.** Spans whose `gen_ai.operation.name` is `invoke_agent`, `create_agent`, `invoke_workflow`, `execute_tool` or `retrieval` are skipped, because their usage sums up the model calls inside them.
 - **Cache traffic is part of input**, as the conventions specify. If an instrumentation reports cache reads and writes outside `input_tokens` (more cache tokens than input), they're added back.
 - **The requested model is priced**, because responses often name dated snapshots (`gpt-4.1-2025-04-14`) that have no price of their own.
