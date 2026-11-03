@@ -80,6 +80,17 @@ await scoped.track(anthropic.messages.create({ ... }), { feature: "summaries" })
 
 Values passed to `track()` or `record()` win over a scoped tracker's, and scoped trackers can be nested. They share the parent's background reports, so `tracker.flush()` waits for all of them.
 
+## Outcomes
+
+Record business results, such as a resolved ticket, so the dashboard can show cost per outcome. Attribute them like usage; a scoped tracker adds its attribution:
+
+```ts
+const scoped = tracker.with({ customerId: account.id });
+await scoped.recordOutcome({ name: "ticket_resolved", outcomeId: ticket.id });
+```
+
+`recordOutcome()` returns `{ id, replayed }` and throws a `CostTrackerError` if the outcome isn't stored. With an `outcomeId`, network errors, 429s and 5xx are retried and a repeat isn't counted twice; without one, it isn't retried. `count` (default 1) records a batch.
+
 ## How usage is read
 
 | API                      | Input tokens                                                                    | Cached / cache writes                                     | Output tokens                                 | `requestId`  |

@@ -55,4 +55,12 @@ assert len(rejected) == 1 and isinstance(rejected[0], CostTrackerError), rejecte
 # 401, or 429 if earlier CI steps already used up this address's limit.
 assert rejected[0].status in (401, 429), rejected[0].status
 
+print("- record_outcome() stores an outcome once, with scoped attribution")
+with CostTracker(base_url, api_key) as tracker:
+    scoped = tracker.with_attribution(customer_id="cus_py", feature="ci-py")
+    first = scoped.record_outcome("ticket_resolved", count=2, outcome_id=f"py-{message['id']}")
+    assert not first.replayed, first
+    again = scoped.record_outcome("ticket_resolved", count=2, outcome_id=f"py-{message['id']}")
+    assert again.replayed and again.id == first.id, again
+
 print("Python client smoke test passed.")

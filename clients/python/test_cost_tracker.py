@@ -10,6 +10,7 @@ from unittest import mock
 from cost_tracker import (
     CostTracker,
     CostTrackerError,
+    OutcomeResult,
     RecordResult,
     Usage,
     usage_from_response,
@@ -355,6 +356,61 @@ class AttributionTest(unittest.TestCase):
             {key: payload[key] for key in ("customerId", "userId", "feature", "runId")},
             {"customerId": "c", "userId": "u", "feature": "f", "runId": "r"},
         )
+
+
+def stored_outcome(replayed=False, status=201):
+    return status, json.dumps({"outcome": {"id": "out-1", "name": "ticket_resolved"}, "replayed": replayed}).encode()
+
+
+@mock.patch("cost_tracker.time.sleep", lambda seconds: None)
+class RecordOutcomeTest(unittest.TestCase):
+    def test_posts_to_the_outcomes_endpoint(self):
+        tracker, transport, _ = make(stored_outcome())
+        result = tracker.record_outcome(
+            "ticket_resolved",
+            outcome_id="ticket-881",
+            count=2,
+            occurred_at=datetime(2026, 11, 4, 9, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(result, OutcomeResult("out-1", False))
+        url, body, _ = transport.calls[0]
+        self.assertEqual(url, "https://costs.example.com/api/outcomes")
+        self.assertEqual(
+            body,
+            {"name": "ticket_resolved", "count": 2, "outcomeId": "ticket-881", "occurredAt": "2026-11-04T09:00:00+00:00"},
+        )
+
+    def test_scoped_attribution_is_added_and_explicit_values_win(self):
+        tracker, transport, _ = make(stored_outcome())
+        tracker.with_attribution(customer_id="cus_42", feature="chat").record_outcome("ticket_resolved", feature="email")
+        self.assertEqual(
+            transport.calls[0][1],
+            {"name": "ticket_resolved", "customerId": "cus_42", "feature": "email"},
+        )
+
+    def test_retries_with_an_outcome_id(self):
+        tracker, transport, _ = make(failed(503, "unavailable"), stored_outcome(True, 200))
+        self.assertEqual(tracker.record_outcome("ticket_resolved", outcome_id="t-1"), OutcomeResult("out-1", True))
+        self.assertEqual(len(transport.calls), 2)
+
+    def test_no_retry_without_an_outcome_id(self):
+        tracker, transport, _ = make(failed(503, "unavailable"))
+        with self.assertRaises(CostTrackerError) as caught:
+            tracker.record_outcome("ticket_resolved")
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(len(transport.calls), 1)
+
+    def test_raises_the_api_code_for_a_conflict(self):
+        tracker, _, _ = make(failed(409, "outcome_id_conflict"))
+        with self.assertRaises(CostTrackerError) as caught:
+            tracker.record_outcome("ticket_resolved", outcome_id="t-1")
+        self.assertEqual((caught.exception.status, caught.exception.code), (409, "outcome_id_conflict"))
+
+    def test_rejects_a_naive_occurred_at(self):
+        tracker, transport, _ = make()
+        with self.assertRaises(ValueError):
+            tracker.record_outcome("ticket_resolved", occurred_at=datetime(2026, 11, 4, 9, 0))
+        self.assertEqual(transport.calls, [])
 
 if __name__ == "__main__":
     unittest.main()

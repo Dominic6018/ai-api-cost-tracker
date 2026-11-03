@@ -65,6 +65,17 @@ scoped.track(reply, feature="summaries")
 
 Values passed to `track()` or `record()` win over a scoped tracker's. A scoped tracker shares its parent's background threads, so `flush()` and `close()` on either cover both. `Usage` has `customer_id`, `user_id`, `feature` and `run_id` fields for `record()`.
 
+## Outcomes
+
+Record business results, such as a resolved ticket, so the dashboard can show cost per outcome. Attribute them like usage; a scoped tracker adds its attribution:
+
+```python
+scoped = tracker.with_attribution(customer_id=account.id)
+scoped.record_outcome("ticket_resolved", outcome_id=ticket.id)
+```
+
+`record_outcome()` returns an `OutcomeResult(id, replayed)` and raises `CostTrackerError` if the outcome isn't stored. With an `outcome_id`, network errors, 429s and 5xx are retried and a repeat isn't counted twice; without one, it isn't retried. `count` (default 1) records a batch.
+
 ## How usage is read
 
 The same mappings as the [TypeScript client](../typescript/README.md#how-usage-is-read):
