@@ -29,6 +29,7 @@ from urllib.parse import urljoin
 __all__ = [
     "CostTracker",
     "CostTrackerError",
+    "OutcomeResult",
     "RecordResult",
     "Usage",
     "usage_from_anthropic",
@@ -86,6 +87,14 @@ class Usage:
             "runId": self.run_id,
         }
         return {key: value for key, value in payload.items() if value is not None}
+
+
+@dataclass(frozen=True)
+class OutcomeResult:
+    #: The stored outcome's ID.
+    id: str
+    #: True when this outcome ID was already recorded.
+    replayed: bool
 
 
 @dataclass(frozen=True)
@@ -242,7 +251,7 @@ class CostTracker:
         retries: int = 2,
         transport: Optional[Transport] = None,
     ) -> None:
-        self._endpoint = urljoin(base_url, "/api/usage")
+        self._base_url = base_url
         self._api_key = api_key
         self._on_error = on_error or _warn
         self._timeout = timeout
@@ -273,25 +282,22 @@ class CostTracker:
         }
         return scoped
 
-    def record(self, usage: Union[Usage, Dict[str, Any]]) -> RecordResult:
-        """Sends one usage record and returns the stored cost.
-        Raises CostTrackerError if it isn't stored."""
-        payload = usage.to_payload() if isinstance(usage, Usage) else dict(usage)
-        for key, value in self._defaults.items():
-            payload.setdefault(key, value)
+    def _post(self, path: str, payload: Dict[str, Any], retryable: bool) -> Dict[str, Any]:
+        """POSTs a JSON body and returns the parsed response. Network errors,
+        429s and 5xx are retried only when ``retryable``, i.e. when the body
+        carries an ID that keeps a retry from being stored twice."""
         body = json.dumps(payload).encode("utf-8")
         headers = {
             "authorization": f"Bearer {self._api_key}",
             "content-type": "application/json",
         }
-        # Without a request ID a retry could store the usage twice.
-        attempts = self._retries + 1 if payload.get("requestId") else 1
+        attempts = self._retries + 1 if retryable else 1
         last_error: CostTrackerError = CostTrackerError("not sent")
         for attempt in range(attempts):
             if attempt > 0:
                 time.sleep(0.25 * 4 ** (attempt - 1))
             try:
-                status, raw = self._transport(self._endpoint, body, headers, self._timeout)
+                status, raw = self._transport(urljoin(self._base_url, path), body, headers, self._timeout)
             except OSError as error:  # network errors and timeouts
                 last_error = CostTrackerError(f"Could not reach the cost tracker: {error}")
                 continue
@@ -299,18 +305,57 @@ class CostTracker:
                 data = json.loads(raw.decode("utf-8")) if raw else {}
             except ValueError:
                 data = {}
-            if 200 <= status < 300 and isinstance(data.get("event"), dict):
-                return RecordResult(
-                    cost_usd=data["event"]["costUsd"],
-                    replayed=bool(data.get("replayed")),
-                )
-            error = data.get("error") if isinstance(data.get("error"), dict) else {}
-            last_error = CostTrackerError(
-                error.get("message") or f"HTTP {status}", status, error.get("code")
-            )
+            if 200 <= status < 300 and isinstance(data, dict):
+                return data
+            error = data.get("error") if isinstance(data, dict) and isinstance(data.get("error"), dict) else {}
+            last_error = CostTrackerError(error.get("message") or f"HTTP {status}", status, error.get("code"))
             if status != 429 and status < 500:
                 break
         raise last_error
+
+    def record(self, usage: Union[Usage, Dict[str, Any]]) -> RecordResult:
+        """Sends one usage record and returns the stored cost.
+        Raises CostTrackerError if it isn't stored."""
+        payload = usage.to_payload() if isinstance(usage, Usage) else dict(usage)
+        for key, value in self._defaults.items():
+            payload.setdefault(key, value)
+        # Without a request ID a retry could store the usage twice.
+        data = self._post("/api/usage", payload, bool(payload.get("requestId")))
+        event = data.get("event")
+        if not isinstance(event, dict) or "costUsd" not in event:
+            raise CostTrackerError("Unexpected response")
+        return RecordResult(cost_usd=event["costUsd"], replayed=bool(data.get("replayed")))
+
+    def record_outcome(
+        self,
+        name: str,
+        *,
+        count: Optional[int] = None,
+        outcome_id: Optional[str] = None,
+        occurred_at: Optional[Union[str, datetime]] = None,
+        customer_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        feature: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> OutcomeResult:
+        """Records a business outcome, such as a resolved ticket, for cost
+        per outcome. Attribute it like usage; a scoped tracker's attribution
+        is added. Retried only with an ``outcome_id``. Raises CostTrackerError
+        if it isn't stored."""
+        if isinstance(occurred_at, datetime):
+            if occurred_at.tzinfo is None:
+                raise ValueError("occurred_at must be timezone-aware")
+            occurred_at = occurred_at.isoformat()
+        fields = {"name": name, "count": count, "outcomeId": outcome_id, "occurredAt": occurred_at}
+        payload = {key: value for key, value in fields.items() if value is not None}
+        payload.update(_attribution(customer_id, user_id, feature, run_id))
+        for key, value in self._defaults.items():
+            payload.setdefault(key, value)
+        data = self._post("/api/outcomes", payload, outcome_id is not None)
+        outcome = data.get("outcome")
+        if not isinstance(outcome, dict) or "id" not in outcome:
+            raise CostTrackerError("Unexpected response")
+        return OutcomeResult(id=outcome["id"], replayed=bool(data.get("replayed")))
 
     def track(
         self,

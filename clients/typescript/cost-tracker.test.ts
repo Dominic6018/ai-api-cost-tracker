@@ -392,3 +392,78 @@ describe("attribution", () => {
     expect(bodyOf(fetch)).not.toHaveProperty("customerId");
   });
 });
+
+describe("recordOutcome", () => {
+  const storedOutcome = (replayed = false, status = 201) =>
+    Response.json(
+      { outcome: { id: "out-1", name: "ticket_resolved" }, replayed },
+      { status },
+    );
+  const call = (fetch: ReturnType<typeof setup>["fetch"], n = 0) =>
+    fetch.mock.calls[n] as unknown as [string, RequestInit];
+
+  it("posts the outcome to /api/outcomes and returns its ID", async () => {
+    const { tracker, fetch } = setup([storedOutcome()]);
+    const at = new Date("2026-11-04T09:00:00Z");
+    expect(
+      await tracker.recordOutcome({
+        name: "ticket_resolved",
+        outcomeId: "ticket-881",
+        occurredAt: at,
+      }),
+    ).toEqual({ id: "out-1", replayed: false });
+    const [url, init] = call(fetch);
+    expect(url).toBe("https://costs.example.com/api/outcomes");
+    expect(JSON.parse(init.body as string)).toEqual({
+      name: "ticket_resolved",
+      outcomeId: "ticket-881",
+      occurredAt: "2026-11-04T09:00:00.000Z",
+    });
+  });
+
+  it("adds a scoped tracker's attribution; explicit values win", async () => {
+    const { tracker, fetch } = setup([storedOutcome()]);
+    await tracker
+      .with({ customerId: "cus_42", feature: "chat" })
+      .recordOutcome({ name: "ticket_resolved", feature: "email" });
+    expect(JSON.parse(call(fetch)[1].body as string)).toEqual({
+      name: "ticket_resolved",
+      customerId: "cus_42",
+      feature: "email",
+    });
+  });
+
+  it("retries with an outcomeId and reports a replay", async () => {
+    const { tracker, fetch } = setup([
+      failed(503, "unavailable"),
+      storedOutcome(true, 200),
+    ]);
+    vi.useFakeTimers();
+    try {
+      const result = tracker.recordOutcome({
+        name: "ticket_resolved",
+        outcomeId: "ticket-881",
+      });
+      await vi.runAllTimersAsync();
+      expect(await result).toEqual({ id: "out-1", replayed: true });
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("doesn't retry without an outcomeId, which could count it twice", async () => {
+    const { tracker, fetch } = setup([failed(503, "unavailable")]);
+    await expect(
+      tracker.recordOutcome({ name: "ticket_resolved" }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws the API's code for a conflict or an invalid outcome", async () => {
+    const { tracker } = setup([failed(409, "outcome_id_conflict")]);
+    await expect(
+      tracker.recordOutcome({ name: "ticket_resolved", outcomeId: "x" }),
+    ).rejects.toMatchObject({ status: 409, code: "outcome_id_conflict" });
+  });
+});
