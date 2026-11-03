@@ -223,6 +223,16 @@ jobs:
           BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":1,"outputTokens":1,"feature":""}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
 
+          # Outcomes: recorded once per outcomeId, attributed like usage
+          outcome() { curl -s -o outcome.json -w '%{http_code}' -X POST http://localhost:3000/api/outcomes -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/json' -d "$1"; }
+          STATUS=$(outcome '{"name":"ticket_resolved","count":2,"outcomeId":"ci-ticket-1","customerId":"cus_ci"}'); cat outcome.json; echo
+          test "$STATUS" = 201
+          STATUS=$(outcome '{"name":"ticket_resolved","count":2,"outcomeId":"ci-ticket-1","customerId":"cus_ci"}'); test "$STATUS" = 200
+          grep -q '"replayed":true' outcome.json
+          STATUS=$(outcome '{"name":"ticket_resolved","count":3,"outcomeId":"ci-ticket-1"}'); test "$STATUS" = 409
+          STATUS=$(outcome '{"name":"Ticket Resolved"}'); test "$STATUS" = 400
+          test "$(psql "$DATABASE_URL" -tAc "SELECT sum(count) FROM outcomes WHERE customer_id = 'cus_ci' AND name = 'ticket_resolved'")" = 2
+
           # The TypeScript client: an Anthropic response with cache traffic,
           # reported through track(), priced and replayed safely.
           COST_TRACKER_API_KEY="$API_KEY_2" node scripts/smoke-client.mjs http://localhost:3000
@@ -329,6 +339,7 @@ jobs:
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id LIKE 'demo-%' AND feature IS NULL")" = 0
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(DISTINCT customer_id) FROM usage_events WHERE request_id LIKE 'demo-support-bot-%'")" = 8
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id LIKE 'demo-checkout-assistant-%' AND customer_id IS NOT NULL")" = 0
+          test "$(psql "$DATABASE_URL" -tAc "SELECT sum(count) > 100 FROM outcomes o JOIN projects p ON p.id = o.project_id WHERE p.slug = 'demo-support-bot' AND o.name = 'ticket_resolved'")" = t
 
           if NODE_ENV=production npm run --silent db:demo; then
             echo "demo data ran in production without --allow-production"; exit 1

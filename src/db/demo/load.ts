@@ -1,6 +1,6 @@
 import { like } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { projects, usageEvents } from "../schema";
+import { outcomes, projects, usageEvents } from "../schema";
 import { DEMO_SLUG_PREFIX, type DemoData } from "./generate";
 
 /** Any Drizzle Postgres database, so the CLI and tests can pass their own. */
@@ -40,11 +40,23 @@ export async function loadDemoData(
           }),
       );
     }
+    for (let i = 0; i < data.outcomes.length; i += INSERT_BATCH) {
+      await tx.insert(outcomes).values(
+        data.outcomes
+          .slice(i, i + INSERT_BATCH)
+          .map(({ projectSlug, ...outcome }) => {
+            const projectId = idBySlug.get(projectSlug);
+            if (!projectId)
+              throw new Error(`Unknown demo project ${projectSlug}`);
+            return { ...outcome, projectId };
+          }),
+      );
+    }
     return { projects: created.length, events: data.events.length };
   });
 }
 
-/** Deletes every demo project and, by cascade, its usage events and API keys. */
+/** Deletes every demo project and, by cascade, its usage, outcomes and API keys. */
 export async function removeDemoData(db: Database): Promise<number> {
   return db.transaction(async (tx) => {
     const removed = await tx

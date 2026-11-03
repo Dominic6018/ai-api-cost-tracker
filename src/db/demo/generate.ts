@@ -181,9 +181,23 @@ export interface DemoProject {
   monthlyBudgetUsd: string | null;
 }
 
+/** A business outcome, for cost per outcome (e.g. per resolved ticket). */
+export interface DemoOutcome {
+  projectSlug: string;
+  name: string;
+  count: number;
+  customerId: string;
+  feature: string;
+  occurredAt: Date;
+}
+
+/** The Support Bot resolves about one ticket per this many replies. */
+export const REPLIES_PER_RESOLVED_TICKET = 3;
+
 export interface DemoData {
   projects: DemoProject[];
   events: DemoEvent[];
+  outcomes: DemoOutcome[];
 }
 
 /** Small, fast, seedable PRNG (mulberry32), so a seed always gives the same data. */
@@ -422,7 +436,42 @@ export function generateDemoData({
   }
 
   events.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
-  return { projects, events };
+  return { projects, events, outcomes: resolvedTickets(events) };
+}
+
+/**
+ * The Support Bot's resolved tickets: per customer and UTC day, one per
+ * few ticket replies, recorded at the day's last reply. Derived from the
+ * events without randomness, so it leaves the rest of the data as it was.
+ */
+function resolvedTickets(events: readonly DemoEvent[]): DemoOutcome[] {
+  const days = new Map<
+    string,
+    { replies: number; last: Date; customerId: string }
+  >();
+  for (const event of events) {
+    if (event.feature !== "ticket-reply" || !event.customerId) continue;
+    const key = `${event.occurredAt.toISOString().slice(0, 10)}|${event.customerId}`;
+    const day = days.get(key) ?? {
+      replies: 0,
+      last: event.occurredAt,
+      customerId: event.customerId,
+    };
+    day.replies++;
+    if (event.occurredAt > day.last) day.last = event.occurredAt;
+    days.set(key, day);
+  }
+  return [...days.values()]
+    .map((day) => ({
+      projectSlug: "demo-support-bot",
+      name: "ticket_resolved",
+      count: Math.floor(day.replies / REPLIES_PER_RESOLVED_TICKET),
+      customerId: day.customerId,
+      feature: "ticket-reply",
+      occurredAt: day.last,
+    }))
+    .filter((outcome) => outcome.count > 0)
+    .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
 }
 
 /**
