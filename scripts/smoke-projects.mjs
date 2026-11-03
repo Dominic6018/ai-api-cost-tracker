@@ -354,7 +354,8 @@ for (const by of ["customer", "user", "feature", "run"]) {
 }
 {
   const fallback = await page("/breakdown?by=nonsense");
-  assert.match(fallback.html, /Cost by customer/);
+  // React splits text with comment markers, so check the hidden input.
+  assert.match(fallback.html, /name="by" value="customer"/);
 }
 
 step("signing out ends the session, even if the old cookie is replayed");
