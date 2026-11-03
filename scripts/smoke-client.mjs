@@ -67,4 +67,20 @@ assert.ok(rejected[0] instanceof CostTrackerError);
 // 401, or 429 if earlier CI steps already used up this address's limit.
 assert.ok([401, 429].includes(rejected[0].status), `got ${rejected[0].status}`);
 
+console.log(
+  "- recordOutcome() stores an outcome once, with scoped attribution",
+);
+const scoped = tracker.with({ customerId: "cus_ts", feature: "ci-ts" });
+const outcome = {
+  name: "ticket_resolved",
+  count: 2,
+  outcomeId: `ts-${message.id}`,
+};
+const first = await scoped.recordOutcome(outcome);
+assert.equal(first.replayed, false);
+assert.deepEqual(await scoped.recordOutcome(outcome), {
+  id: first.id,
+  replayed: true,
+});
+
 console.log("TypeScript client smoke test passed.");

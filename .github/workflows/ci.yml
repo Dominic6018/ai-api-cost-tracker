@@ -275,6 +275,10 @@ jobs:
           # ...and from both clients, through their scoped trackers
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE customer_id = 'cus_ts' AND feature = 'ci-ts' AND run_id LIKE 'run_ts_msg_smoke_%'")" = 1
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE customer_id = 'cus_py' AND feature = 'ci-py' AND run_id LIKE 'run_py_msg_py_smoke_%'")" = 1
+          # Each client's outcome was stored once, with its scoped attribution
+          for client in ts py; do
+            test "$(psql "$DATABASE_URL" -tAc "SELECT concat_ws('|', count(*), sum(count)) FROM outcomes WHERE customer_id = 'cus_$client' AND feature = 'ci-$client' AND outcome_id LIKE '$client-msg_%'")" = "1|2"
+          done
           test "$(psql "$DATABASE_URL" -tAc "SELECT cost_usd FROM usage_events WHERE request_id = '$OTEL_ID'")" = 0.009900
           # A collector retrying the export, gzipped as the Collector sends
           # it by default, doesn't store the span twice
