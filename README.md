@@ -193,7 +193,14 @@ npm run db:demo    # demo projects and 90 days of synthetic usage
 
 Loads four projects with about 14,000 usage events across the seeded Anthropic, OpenAI and Google models. The data includes cache reads and writes, long prompts that hit pricing tiers, weekday patterns, growth, and a runaway-agent spike. Each project tells one story: **Support Bot** is nearing its budget, **Research Agent** is over it, **Checkout Assistant** is comfortably within it, and **Batch Summaries** has no budget.
 
-- **Deterministic:** the same `--seed` (default 2026) on the same day gives the same data. Budgets are set from this month's spend, so the four budget states hold on any day.
+The usage is attributed too, so the [cost breakdown](#dashboard) has something to show:
+
+- **Support Bot** serves eight customer accounts, a few of them large, through twelve support agents, split between ticket replies and summaries.
+- **Research Agent** works in agent runs of 4–12 requests, each for one customer. Its spike is a single runaway run, the most expensive of all.
+- **Checkout Assistant** serves shoppers, so it has users but no customer accounts.
+- **Batch Summaries** sets only a feature, so its customer, user and run are **Not set**.
+
+- **Deterministic:** the same `--seed` (default 2026) on the same day gives the same data. Attribution uses its own random stream, so adding it changed no token count, cost or timestamp. Budgets are set from this month's spend, so the four budget states hold on any day.
 - **Priced at today's seed prices** using the app's real cost code, since history before the prices' check date has no stored price.
 - **Safe to re-run:** it replaces earlier demo data in one transaction. Demo projects have slugs starting with `demo-`, and only those are touched. `npm run db:demo -- --remove` deletes them and their usage.
 - **Refuses to run when `NODE_ENV=production`** unless you pass `--allow-production` (see [Deployment](docs/DEPLOYMENT.md) for a public demo).
