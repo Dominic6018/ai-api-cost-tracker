@@ -60,7 +60,7 @@ What it doesn't do yet, and where that's planned:
 
 | Layer      | Choice                                        |
 | ---------- | --------------------------------------------- |
-| Framework  | Next.js 15 (App Router), React 19             |
+| Framework  | Next.js 16 (App Router), React 19             |
 | Language   | TypeScript (strict)                           |
 | Styling    | Tailwind CSS v4                               |
 | Database   | PostgreSQL 17                                 |
