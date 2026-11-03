@@ -325,3 +325,70 @@ describe("track", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("attribution", () => {
+  const bodyOf = (fetch: ReturnType<typeof setup>["fetch"], call = 0) =>
+    JSON.parse(
+      (fetch.mock.calls[call] as unknown as [string, RequestInit])[1]
+        .body as string,
+    );
+
+  it("sends customer, user, feature and run from track() options", async () => {
+    const { tracker, fetch } = setup([stored()]);
+    await tracker.track(anthropic, {
+      customerId: "cus_42",
+      userId: "u_7",
+      feature: "support-chat",
+      runId: "run_9",
+    });
+    await tracker.flush();
+    expect(bodyOf(fetch)).toMatchObject({
+      customerId: "cus_42",
+      userId: "u_7",
+      feature: "support-chat",
+      runId: "run_9",
+    });
+  });
+
+  it("adds a scoped tracker's attribution; explicit values win", async () => {
+    const { tracker, fetch } = setup([stored(), stored(), stored()]);
+    const forCustomer = tracker.with({ customerId: "cus_42", feature: "chat" });
+    await forCustomer.track(openAIChat);
+    await forCustomer.track(openAIChat, { feature: "search", runId: "r1" });
+    await forCustomer.with({ userId: "u_7" }).record(usage);
+    // The parent's flush waits for its scoped trackers' reports too.
+    await tracker.flush();
+
+    expect(bodyOf(fetch, 0)).toMatchObject({
+      customerId: "cus_42",
+      feature: "chat",
+    });
+    expect(bodyOf(fetch, 1)).toMatchObject({
+      customerId: "cus_42",
+      feature: "search",
+      runId: "r1",
+    });
+    expect(bodyOf(fetch, 2)).toMatchObject({
+      customerId: "cus_42",
+      feature: "chat",
+      userId: "u_7",
+      requestId: "req_1",
+    });
+  });
+
+  it("leaves attribution out entirely when there is none", async () => {
+    const { tracker, fetch } = setup([stored()]);
+    await tracker.with({}).record(usage);
+    const body = bodyOf(fetch);
+    for (const key of ["customerId", "userId", "feature", "runId"]) {
+      expect(body).not.toHaveProperty(key);
+    }
+  });
+
+  it("doesn't let a scoped tracker change the parent", async () => {
+    const { tracker, fetch } = setup([stored()]);
+    tracker.with({ customerId: "cus_42" });
+    await tracker.record(usage);
+    expect(bodyOf(fetch)).not.toHaveProperty("customerId");
+  });
+});

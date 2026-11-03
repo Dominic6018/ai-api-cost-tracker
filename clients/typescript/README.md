@@ -61,6 +61,25 @@ const { costUsd } = await tracker.record({
 });
 ```
 
+## Attribution
+
+Tag usage with the customer, the end user in your app, the feature and the agent run, so the dashboard can break cost down by them. Each is an ID you choose, up to 200 characters:
+
+```ts
+// Per call
+await tracker.track(openai.responses.create({ ... }), {
+  customerId: "cus_42",
+  feature: "support-chat",
+  runId: run.id,
+});
+
+// Or once per request: a scoped tracker adds it to everything it records
+const scoped = tracker.with({ customerId: account.id, userId: user.id });
+await scoped.track(anthropic.messages.create({ ... }), { feature: "summaries" });
+```
+
+Values passed to `track()` or `record()` win over a scoped tracker's, and scoped trackers can be nested. They share the parent's background reports, so `tracker.flush()` waits for all of them.
+
 ## How usage is read
 
 | API                      | Input tokens                                                                    | Cached / cache writes                                     | Output tokens                                 | `requestId`  |
