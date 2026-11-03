@@ -83,6 +83,7 @@ function step(name) {
 step("signed-out visitors are sent to the sign-in page");
 for (const path of [
   "/overview",
+  "/breakdown",
   "/spend",
   "/usage",
   "/projects",
@@ -341,6 +342,20 @@ if (process.env.EXPECT_TODAY_SPEND) {
   const restored = await page("/overview");
   assert.doesNotMatch(restored.html, /data-testid="budget-alerts"/);
   assert.match(sampleRow(restored.html), /data-budget-state="ok"/);
+}
+
+step("the cost breakdown groups spend by each attribution field");
+for (const by of ["customer", "user", "feature", "run"]) {
+  const result = await page(`/breakdown?by=${by}&range=7`);
+  assert.equal(result.status, 200, `GET /breakdown?by=${by}`);
+  assert.match(result.html, /data-testid="breakdown-summary"/);
+  // Usage recorded so far has no attribution, so it's all "Not set".
+  assert.match(result.html, /data-kind="unset"/);
+}
+{
+  const fallback = await page("/breakdown?by=nonsense");
+  // React splits text with comment markers, so check the hidden input.
+  assert.match(fallback.html, /name="by" value="customer"/);
 }
 
 step("signing out ends the session, even if the old cookie is replayed");
