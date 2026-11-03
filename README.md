@@ -308,7 +308,7 @@ curl -X POST http://localhost:3000/api/outcomes   -H "authorization: Bearer $API
 
 - `name` is lowercase letters and digits joined by `_`, `.` or `-`, such as `ticket_resolved`. Cost per outcome is per name.
 - `count` (default 1, up to 1,000,000) records a batch at once. `occurredAt` defaults to now, as for usage.
-- `customerId`, `userId`, `feature` and `runId` match usage: on the breakdown page, a customer's cost is divided by that customer's outcomes. Outcomes without the field count towards **Not set**.
+- `customerId`, `userId`, `feature` and `runId` match usage: on the breakdown page, a customer's cost is divided by that customer's outcomes. Outcomes without the field count towards **Not set**. Choose the project an outcome belongs to: across all projects, a customer's cost also includes their spend in other projects, which produced none of these outcomes.
 - **Retries are safe with `outcomeId`** (your ID for the outcome, unique per project): a repeat returns the stored outcome with status 200, and the same `outcomeId` with a different name or count is a 409.
 
 The response is 201 with the stored `outcome`, 200 for a replay, 400 for an invalid body, 401 or 429 for keys (as for usage), and 409 for an `outcomeId` conflict.
