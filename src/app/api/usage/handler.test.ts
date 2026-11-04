@@ -34,6 +34,7 @@ const storedEvent: UsageEvent = {
   userId: null,
   feature: null,
   runId: null,
+  tags: null,
   createdAt: now,
 };
 
@@ -105,6 +106,7 @@ describe("POST /api/usage handler", () => {
         userId: null,
         feature: null,
         runId: null,
+        tags: null,
         occurredAt: "2026-11-01T12:00:00.000Z",
       },
       replayed: false,
@@ -221,8 +223,32 @@ describe("POST /api/usage handler", () => {
     });
   });
 
+  it("passes tags through and returns them", async () => {
+    const { handler, recordUsage } = setup({
+      result: {
+        ok: true,
+        event: { ...storedEvent, tags: { env: "prod", team: "search" } },
+        replayed: false,
+      },
+    });
+    const response = await handler(
+      post({ ...body, tags: { env: "prod", team: " search " } }),
+    );
+    expect(response.status).toBe(201);
+    expect(recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ tags: { env: "prod", team: "search" } }),
+    );
+    expect((await response.json()).event.tags).toEqual({
+      env: "prod",
+      team: "search",
+    });
+  });
+
   it.each([
     ["an empty customerId", { customerId: "  " }],
+    ["a tag named like attribution", { tags: { feature: "x" } }],
+    ["a tag with a colon in its key", { tags: { "a:b": "x" } }],
+    ["a tag with a number value", { tags: { env: 1 } }],
     ["a feature over 200 characters", { feature: "f".repeat(201) }],
     ["a non-string runId", { runId: 42 }],
   ])("returns 400 for %s", async (_, extra) => {

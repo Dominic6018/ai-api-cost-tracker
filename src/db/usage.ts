@@ -51,7 +51,7 @@ async function findByRequestId(
  * A stored event is only replayed to the project that recorded it, and only
  * when the retry describes the same usage. Anything else is a conflict:
  * returning it would leak another project's data or hide a client bug.
- * `occurredAt`, `metadata` and attribution aren't compared, since retries
+ * `occurredAt`, `metadata`, attribution and tags aren't compared, since retries
  * that omit `occurredAt` default it to the time of each attempt.
  */
 function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
@@ -112,6 +112,7 @@ export async function recordUsage(
         userId: usage.userId ?? null,
         feature: usage.feature ?? null,
         runId: usage.runId ?? null,
+        tags: usage.tags ?? null,
       })
       .returning();
     return { ok: true, event, replayed: false };

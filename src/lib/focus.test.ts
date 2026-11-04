@@ -42,6 +42,7 @@ const usage: FocusUsage = {
   userId: null,
   feature: "support-chat",
   runId: null,
+  tags: null,
 };
 
 /** Sum of ListCost in micro-dollars, rounded half up like stored costs. */
@@ -165,6 +166,17 @@ describe("focusRows", () => {
       pricing,
     )[0];
     expect(bare.Tags).toBeNull();
+    // Free-form tags join attribution in the one object.
+    const tagged = focusRows(
+      { ...usage, tags: { env: "prod", team: "search" } },
+      pricing,
+    )[0];
+    expect(JSON.parse(tagged.Tags!)).toEqual({
+      env: "prod",
+      team: "search",
+      customerId: "cus_42",
+      feature: "support-chat",
+    });
   });
 
   it("leaves out token types with no tokens", () => {

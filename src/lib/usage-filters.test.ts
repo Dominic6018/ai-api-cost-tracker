@@ -143,3 +143,15 @@ describe("attribution filters", () => {
     ).toEqual(filters);
   });
 });
+
+describe("tag filter", () => {
+  it("reads key:value and round-trips through the query string", () => {
+    const filters = parseUsageFilters({ tag: "team:search" });
+    expect(filters).toEqual({ tag: { key: "team", value: "search" } });
+    expect(usageQuery(filters)).toBe("?tag=team%3Asearch");
+  });
+
+  it("drops a malformed tag filter", () => {
+    expect(parseUsageFilters({ tag: "nocolon" })).toEqual({});
+  });
+});

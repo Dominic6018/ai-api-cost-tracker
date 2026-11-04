@@ -38,6 +38,7 @@ beforeAll(async () => {
       requestId: `exp-${i}`,
       customerId: i === 0 ? "=cmd|' /C calc'!A0" : `cus_${i % 2}`,
       feature: "chat",
+      tags: i === 6 ? { env: "prod", team: "search" } : null,
       occurredAt: new Date(`2038-04-01T0${i}:00:00Z`),
     })),
   );
@@ -75,7 +76,7 @@ describe("usageCsv", () => {
   it("writes exact costs, cache writes, quoted names and attribution", async () => {
     const lines = (await exportText(day)).trimEnd().split("\r\n");
     expect(lines[1]).toBe(
-      '2038-04-01T06:00:00.000Z,"Export, Inc.",anthropic,claude-haiku-5-5,1006,100,50,10,0.000006,cus_0,,chat,,exp-6',
+      '2038-04-01T06:00:00.000Z,"Export, Inc.",anthropic,claude-haiku-5-5,1006,100,50,10,0.000006,cus_0,,chat,,"{""env"":""prod"",""team"":""search""}",exp-6',
     );
   });
 

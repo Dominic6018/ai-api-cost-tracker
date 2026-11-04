@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { providerEnum, type Provider } from "@/db/schema";
+import { formatTagFilter, parseTagFilter, type TagFilter } from "./tags";
 import {
   ATTRIBUTION_FIELDS,
   MAX_ATTRIBUTION_LENGTH,
@@ -17,6 +18,8 @@ export interface UsageCursor {
 }
 
 export interface UsageFilters extends Attribution {
+  /** One tag the events must have. */
+  tag?: TagFilter;
   projectId?: string;
   provider?: Provider;
   model?: string;
@@ -73,6 +76,9 @@ export function parseUsageFilters(
     if (value && value.length <= MAX_ATTRIBUTION_LENGTH) filters[key] = value;
   }
 
+  const tag = parseTagFilter(text(params.tag));
+  if (tag) filters.tag = tag;
+
   let from = text(params.from);
   let to = text(params.to);
   if (!isoDay.safeParse(from).success) from = "";
@@ -112,6 +118,7 @@ export function usageQuery(
     const value = filters[key];
     if (value) params.set(param, value);
   }
+  if (filters.tag) params.set("tag", formatTagFilter(filters.tag));
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
   if (cursor) params.set("cursor", encodeCursor(cursor));

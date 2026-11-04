@@ -157,10 +157,14 @@ export const usageEvents = pgTable(
     userId: text("user_id"),
     feature: text("feature"),
     runId: text("run_id"),
+    // Free-form string labels (see src/lib/tags.ts); filterable, unlike metadata.
+    tags: jsonb("tags").$type<Record<string, string>>(),
     createdAt: timestamps.createdAt,
   },
   (t) => [
     index("usage_events_project_occurred_idx").on(t.projectId, t.occurredAt),
+    // Serves tag filters, which use jsonb containment (@>).
+    index("usage_events_tags_idx").using("gin", t.tags.op("jsonb_path_ops")),
     // Cost by customer, feature or run, within a project and time range.
     index("usage_events_project_customer_idx").on(
       t.projectId,

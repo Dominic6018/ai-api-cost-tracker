@@ -20,6 +20,7 @@ export const USAGE_CSV_COLUMNS = [
   "user_id",
   "feature",
   "run_id",
+  "tags",
   "request_id",
 ] as const;
 
@@ -42,6 +43,8 @@ function line(row: UsageEventRow): string {
     row.userId,
     row.feature,
     row.runId,
+    // A JSON object, quoted as one cell.
+    row.tags ? JSON.stringify(row.tags) : null,
     row.requestId,
   ]);
 }
