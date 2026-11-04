@@ -21,6 +21,7 @@ export interface UsageEventRow {
   model: string;
   inputTokens: number;
   cachedInputTokens: number;
+  cacheWriteInputTokens: number;
   outputTokens: number;
   costUsd: string;
   requestId: string | null;
@@ -67,6 +68,7 @@ export function usageEventsQuery(
         model: usageEvents.model,
         inputTokens: usageEvents.inputTokens,
         cachedInputTokens: usageEvents.cachedInputTokens,
+        cacheWriteInputTokens: usageEvents.cacheWriteInputTokens,
         outputTokens: usageEvents.outputTokens,
         costUsd: usageEvents.costUsd,
         requestId: usageEvents.requestId,
