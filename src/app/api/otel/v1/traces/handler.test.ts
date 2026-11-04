@@ -44,7 +44,12 @@ const exportOf = (...spans: unknown[]) => ({
 const stored = { ok: true, event: {} as UsageEvent, replayed: false } as const;
 
 function setup({
-  auth = { ok: true, projectId, apiKeyId: "key-1" } as AuthenticateResult,
+  auth = {
+    ok: true,
+    projectId,
+    apiKeyId: "key-1",
+    scope: "ingest",
+  } as AuthenticateResult,
   results = [] as RecordUsageResult[],
 } = {}) {
   const authenticate = vi.fn().mockResolvedValue(auth);
