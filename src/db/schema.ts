@@ -305,6 +305,54 @@ export const rateLimits = pgTable(
   (t) => [index("rate_limits_reset_at_idx").on(t.resetAt)],
 );
 
+export const ALERT_CHANNELS = ["webhook", "slack"] as const;
+export type AlertChannel = (typeof ALERT_CHANNELS)[number];
+
+/**
+ * Budget notifications sent, at most one per project, month, threshold and
+ * channel. A row is claimed before sending and removed if delivery fails,
+ * so overlapping runs don't both send and a failure is retried.
+ */
+export const budgetNotifications = pgTable(
+  "budget_notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    // The UTC month, e.g. "2026-11".
+    period: text("period").notNull(),
+    thresholdPercent: integer("threshold_percent").notNull(),
+    channel: text("channel").$type<AlertChannel>().notNull(),
+    // What the message said, for the record.
+    spentUsd: numeric("spent_usd", { precision: 14, scale: 6 }).notNull(),
+    budgetUsd: numeric("budget_usd", { precision: 12, scale: 2 }).notNull(),
+    notifiedAt: timestamp("notified_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("budget_notifications_once_idx").on(
+      t.projectId,
+      t.period,
+      t.thresholdPercent,
+      t.channel,
+    ),
+    check(
+      "budget_notifications_period_valid",
+      sql`${t.period} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`,
+    ),
+    check(
+      "budget_notifications_threshold_valid",
+      sql`${t.thresholdPercent} in (80, 100)`,
+    ),
+    check(
+      "budget_notifications_channel_valid",
+      sql`${t.channel} in ('webhook', 'slack')`,
+    ),
+  ],
+);
+
 export const API_KEY_SCOPES = ["ingest", "read"] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
