@@ -71,6 +71,13 @@
       "when": 1793810169655,
       "tag": "0009_usage_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793812262367,
+      "tag": "0010_budget_notifications",
+      "breakpoints": true
     }
   ]
 }

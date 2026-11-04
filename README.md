@@ -20,7 +20,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 
 <sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
 
-> **Status:** Milestones 0–5 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting and the public release. Milestone 6 added the TypeScript and Python clients, OpenTelemetry intake and bill reconciliation (Gemini billing aside). Milestone 7, cost by customer, feature and agent run, is under way; see [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status:** Milestones 0–5 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting and the public release. Milestone 6 added the TypeScript and Python clients, OpenTelemetry intake and bill reconciliation (Gemini billing aside). Milestone 7 added cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports and a reporting API. Milestone 8, guardrails, is under way, starting with budget notifications; see [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Features
 
@@ -28,7 +28,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 - **Dated prices.** A price change never rewrites history. Seed prices for Anthropic, OpenAI and Google models record their official source and the date they were checked.
 - **One small API.** `POST /api/usage` with a per-project API key, or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, which read usage from OpenAI, Anthropic and Gemini responses, or [OpenTelemetry traces](docs/OPENTELEMETRY.md) with GenAI token attributes. Retries with the same `requestId` are safe.
 - **Dashboard.** Spend today, this month and over 30 days; a daily chart over 7, 30 or 90 days with spend by provider and model; a filterable history of every request; light and dark mode.
-- **Budgets.** A monthly budget per project, with alerts at 80% and 100%.
+- **Budgets.** A monthly budget per project, with alerts at 80% and 100%, also sent to a webhook or Slack.
 - **Secure by default.** API keys and sessions are stored only as hashes, passwords with scrypt, and sign-in and API keys are rate limited.
 - **Self-hosted.** Docker Compose or Vercel with hosted Postgres, under the MIT license.
 
@@ -122,6 +122,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
 | `npm run reconcile`        | Compare recorded costs with Anthropic's or OpenAI's bill (see below)  |
+| `npm run budget-alerts`    | Send budget notifications to a webhook or Slack (see below)           |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
 
 ## Project structure
@@ -147,7 +148,8 @@ src/
     usage-events.ts  Keyset-paginated usage event listing
     auth.ts       Users, password checks and sessions
     accounts.ts   Password reset, session revocation and account list
-    scripts/      `npm run api-key`, `user`, `db:demo` and `reconcile` commands
+    budget-notifications.ts  Sends each budget notification once, retrying failures
+    scripts/      `npm run api-key`, `user`, `db:demo`, `reconcile` and `budget-alerts` commands
     seed/         Sample project and dated model prices (`npm run db:seed`)
     demo/         Deterministic demo data generator and loader (`npm run db:demo`)
   lib/
@@ -164,6 +166,7 @@ src/
     spend.ts      UTC spend window boundaries
     spend-series.ts  Chart ranges, day filling and axis ticks
     budget.ts     Exact budget use, alert thresholds and statuses
+    budget-notifications.ts  Alert planning, webhook and Slack payloads, signing
     usage-filters.ts Usage filter parsing, date bounds and cursors
     projects.ts   Project form validation
 drizzle/          Generated SQL migrations
@@ -182,6 +185,7 @@ docs/ROADMAP.md   Development roadmap
 - **model_pricing**: USD-per-million-token prices per provider/model, versioned by `effective_from`/`effective_to` so historical costs stay accurate when prices change. Optional columns hold a cache-write rate, and a **prompt-length tier**: a token threshold plus a second set of rates. A request with more input tokens than the threshold (counting cached and cache-write tokens) pays the long rates for every token, including output. A database check makes sure a threshold always comes with long input and output rates.
 - **usage_events**: individual requests with token counts (including cached and cache-write input tokens), computed `cost_usd`, and an optional provider `request_id` for de-duplication.
 - **rate_limits**: fixed-window attempt counters for sign-in and API keys. Keys are SHA-256 hashes, so attempted emails and client IPs aren't stored. Ended windows are deleted as new attempts arrive.
+- **budget_notifications**: budget notifications sent, unique per project, month, threshold and destination, with the spend and budget the message reported.
 
 Monetary values use Postgres `numeric` rather than floating-point columns.
 
@@ -367,6 +371,43 @@ The [TypeScript](clients/typescript/README.md#outcomes) and [Python](clients/pyt
 
 The response is 201 with the stored `outcome`, 200 for a replay, 400 for an invalid body, 401 or 429 for keys (as for usage), and 409 for an `outcomeId` conflict.
 
+## Budget notifications
+
+The dashboard shows budget alerts; `npm run budget-alerts` also sends them. It checks this month's (UTC) spend against each project's budget, and when a project reaches 80% or 100% it notifies a webhook, Slack, or both:
+
+```bash
+BUDGET_ALERT_WEBHOOK_URL=https://hooks.example.com/budget \
+BUDGET_ALERT_WEBHOOK_SECRET=<16+ random characters> \
+BUDGET_ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/... \
+npm run budget-alerts                 # add -- --dry-run to see what would be sent
+```
+
+Run it on a schedule, for example every 15 minutes from cron or a Kubernetes CronJob (`docker compose run --rm migrate npm run budget-alerts` with Docker). The app doesn't schedule it.
+
+- **Once per threshold:** each project, month, threshold and destination is notified once, so running it again sends nothing new. A project that goes straight past 100% gets one "over budget" message, not two, and after "over budget" no 80% message follows, even if a raised budget brings it back under. Notifications start again each month. Sent notifications are recorded in `budget_notifications`.
+- **Failures are retried:** a failed delivery (a network error, a timeout after 10 seconds, or a non-2xx response, redirects included) isn't recorded, so the next run tries again. The other destinations and projects still go out, and the command exits with status 1.
+- **Overlapping runs** don't send twice: each notification is claimed in the database before it's sent. If the process dies between claiming and sending, that one notification is lost rather than repeated.
+- **Slack** gets a one-line message, e.g. ":warning: _Support Bot_ has used 81.2% of its $100.00 monthly budget for 2026-11: $81.23 spent." It must be an `https` incoming webhook URL.
+- **The webhook** gets a JSON POST with an `x-cost-tracker-event: budget.threshold_reached` header:
+
+  ```json
+  {
+    "type": "budget.threshold_reached",
+    "project": { "id": "…", "name": "Support Bot", "slug": "support-bot" },
+    "period": "2026-11",
+    "thresholdPercent": 80,
+    "status": "warning",
+    "spentUsd": "81.234567",
+    "budgetUsd": "100.00",
+    "usedPercent": "81.2%",
+    "sentAt": "2026-11-05T09:30:00.000Z"
+  }
+  ```
+
+  `status` is `warning` at 80% and `over` at 100%. Amounts are exact decimal strings, and `usedPercent` is `null` for spend against a zero budget. With `BUDGET_ALERT_WEBHOOK_SECRET` set, an `x-cost-tracker-signature: t=<unix seconds>,v1=<hex>` header carries an HMAC-SHA256 of `<t>.<raw body>` under the secret. Compare it in constant time, and reject old timestamps to stop replays.
+
+Email notifications aren't supported yet.
+
 ## Reconciling with provider bills
 
 Recorded costs are calculated from token counts and the stored prices. To check them against what Anthropic or OpenAI actually billed, compare them with the provider's cost report: Anthropic's [cost report](https://platform.claude.com/docs/en/manage-claude/usage-cost-api) or OpenAI's [costs API](https://platform.openai.com/docs/api-reference/usage/costs).
@@ -389,7 +430,7 @@ It prints billed, recorded and the difference per UTC day (and per model for Ant
 - **Unit tests** (`npm test`) need no database.
 - **Integration tests** (`npm run test:integration`) run against the database in `DATABASE_URL` and verify the migrated schema and its constraints. Run `npm run db:migrate` first. Tests create rows with unique identifiers and delete them afterwards, but use a development database, never production.
 
-CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. It then lists, resets and signs out that account with `npm run user`. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, that migrations and the CLI work in the tools image, and that the quick start loads prices and demo data. The `database` job also screenshots the dashboard with demo data in light and dark mode and uploads them as an artifact, which is where the README images come from (`scripts/screenshots.mjs`). The `secrets` job scans the full Git history for credentials with gitleaks.
+CI runs both. The `database` job starts a Postgres 17 service container with the same credentials as `docker-compose.yml`, fails if `src/db/schema.ts` has changes without a generated migration, applies migrations to an empty database (twice, to confirm re-running is a no-op), seeds it (twice, to confirm the second run inserts nothing), runs the integration tests, and smoke-tests `POST /api/usage` on a dev server against the seeded data, with a real API key (including 401s for missing, unknown and revoked keys, and a 429 with `Retry-After` after repeated invalid keys), then creates a test account and runs `scripts/smoke-projects.mjs`. That script signs in, creates and edits a project through the real forms, and signs out, confirming a replayed old cookie is rejected, then checks that repeated failed sign-ins are refused. It then lists, resets and signs out that account with `npm run user`. The `check` job also starts the production build and confirms dashboard pages redirect to sign-in while ingestion still requires a key. The `database` job also loads demo data with the real command, checks the budget states and row counts, confirms it refuses to run in production, and removes it again. With the demo data loaded, it runs `npm run budget-alerts` against a local webhook receiver that checks the HMAC signature: a dry run sends nothing, an unreachable destination fails the run without recording anything, the demo projects nearing and over budget each get one message at the right threshold, and a second run sends nothing new. The `docker` job builds the images with `docker compose`, waits for the app to report healthy, and checks that it serves pages, enforces authentication, runs as a non-root user, that migrations and the CLI work in the tools image, and that the quick start loads prices and demo data. The `database` job also screenshots the dashboard with demo data in light and dark mode and uploads them as an artifact, which is where the README images come from (`scripts/screenshots.mjs`). The `secrets` job scans the full Git history for credentials with gitleaks.
 
 ## Contributing
 
