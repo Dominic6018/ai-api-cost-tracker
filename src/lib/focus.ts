@@ -99,6 +99,7 @@ export interface FocusUsage {
   userId: string | null;
   feature: string | null;
   runId: string | null;
+  tags: Record<string, string> | null;
 }
 
 /** A price row with its ID, which identifies the SKU price. */
@@ -181,9 +182,13 @@ function periods(at: Date) {
   };
 }
 
-/** Attribution as a FOCUS key-value JSON object, or null without any. */
+/**
+ * Attribution and free-form tags as one FOCUS key-value JSON object, or
+ * null without any. Tag keys can't be attribution names, so none clash.
+ */
 function tags(usage: FocusUsage): string | null {
   const values = {
+    ...usage.tags,
     customerId: usage.customerId,
     userId: usage.userId,
     feature: usage.feature,

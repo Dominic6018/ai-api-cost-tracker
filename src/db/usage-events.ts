@@ -29,6 +29,7 @@ export interface UsageEventRow {
   userId: string | null;
   feature: string | null;
   runId: string | null;
+  tags: Record<string, string> | null;
 }
 
 export interface UsageEventsPage {
@@ -76,6 +77,7 @@ export function usageEventsQuery(
         userId: usageEvents.userId,
         feature: usageEvents.feature,
         runId: usageEvents.runId,
+        tags: usageEvents.tags,
       })
       .from(usageEvents)
       .innerJoin(projects, eq(projects.id, usageEvents.projectId))
@@ -92,6 +94,10 @@ export function usageEventsQuery(
             const value = filters[key];
             return value ? eq(usageEvents[key], value) : undefined;
           }),
+          // Containment, which the tags GIN index serves.
+          filters.tag
+            ? sql`${usageEvents.tags} @> ${JSON.stringify({ [filters.tag.key]: filters.tag.value })}::jsonb`
+            : undefined,
           start ? gte(usageEvents.occurredAt, start) : undefined,
           end ? lt(usageEvents.occurredAt, end) : undefined,
           // Row comparison: strictly older than the cursor, ties broken by id.

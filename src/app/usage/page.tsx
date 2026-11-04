@@ -11,6 +11,7 @@ import {
 import { ATTRIBUTION_FIELDS, MAX_ATTRIBUTION_LENGTH } from "@/lib/attribution";
 import { requireUser } from "@/lib/auth";
 import { formatUsd } from "@/lib/cost";
+import { formatTagFilter } from "@/lib/tags";
 import {
   parseUsageFilters,
   usageQuery,
@@ -56,7 +57,10 @@ function AttributionCell({
   filters: Omit<UsageFilters, "cursor">;
 }) {
   const values = ATTRIBUTION_FIELDS.filter(({ key }) => event[key]);
-  if (values.length === 0) return <span className="text-foreground/50">—</span>;
+  const tags = Object.entries(event.tags ?? {});
+  if (values.length === 0 && tags.length === 0) {
+    return <span className="text-foreground/50">—</span>;
+  }
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-2">
       {values.map(({ key, label }) => (
@@ -69,6 +73,20 @@ function AttributionCell({
               className="underline decoration-foreground/30"
             >
               {event[key]}
+            </Link>
+          </dd>
+        </div>
+      ))}
+      {tags.map(([key, value]) => (
+        <div key={`tag:${key}`} className="contents">
+          <dt className="max-w-24 truncate text-foreground/60">{key}</dt>
+          <dd className="max-w-40 truncate font-mono">
+            <Link
+              href={`/usage${usageQuery({ ...filters, tag: { key, value } })}`}
+              title="Show events with this tag"
+              className="underline decoration-foreground/30"
+            >
+              {value}
             </Link>
           </dd>
         </div>
@@ -190,6 +208,16 @@ export default async function UsagePage({
             />
           </label>
         ))}
+        <label className="flex flex-col gap-1">
+          <span className="text-foreground/70">Tag</span>
+          <input
+            name="tag"
+            defaultValue={filters.tag ? formatTagFilter(filters.tag) : ""}
+            placeholder="key:value"
+            autoComplete="off"
+            className={`${fieldClass} w-36`}
+          />
+        </label>
         <label className="flex flex-col gap-1">
           <span className="text-foreground/70">From (UTC)</span>
           <input
