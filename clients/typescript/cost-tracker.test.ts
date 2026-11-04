@@ -393,6 +393,71 @@ describe("attribution", () => {
   });
 });
 
+describe("tags", () => {
+  const bodyOf = (fetch: ReturnType<typeof setup>["fetch"], call = 0) =>
+    JSON.parse(
+      (fetch.mock.calls[call] as unknown as [string, RequestInit])[1]
+        .body as string,
+    );
+
+  it("sends tags from record() and track()", async () => {
+    const { tracker, fetch } = setup([stored(), stored()]);
+    await tracker.record({ ...usage, tags: { env: "prod" } });
+    await tracker.track(anthropic, { tags: { team: "search" } });
+    await tracker.flush();
+    expect(bodyOf(fetch, 0).tags).toEqual({ env: "prod" });
+    expect(bodyOf(fetch, 1).tags).toEqual({ team: "search" });
+  });
+
+  it("merges scoped tags key by key; the call's own values win", async () => {
+    const { tracker, fetch } = setup([stored(), stored(), stored()]);
+    const prod = tracker.with({ tags: { env: "prod", team: "core" } });
+    const search = prod.with({
+      customerId: "cus_42",
+      tags: { team: "search" },
+    });
+    await search.record(usage);
+    await search.track(openAIChat, { tags: { env: "canary", ab: "b" } });
+    await prod.record({ ...usage, tags: {} });
+    await tracker.flush();
+
+    expect(bodyOf(fetch, 0)).toMatchObject({
+      customerId: "cus_42",
+      tags: { env: "prod", team: "search" },
+    });
+    expect(bodyOf(fetch, 1).tags).toEqual({
+      env: "canary",
+      team: "search",
+      ab: "b",
+    });
+    expect(bodyOf(fetch, 2).tags).toEqual({ env: "prod", team: "core" });
+  });
+
+  it("leaves tags out when there are none, and off outcomes", async () => {
+    const { tracker, fetch } = setup([
+      stored(),
+      Response.json({ outcome: { id: "out-1" }, replayed: false }),
+    ]);
+    const scoped = tracker.with({
+      customerId: "cus_42",
+      tags: { env: "prod" },
+    });
+    await tracker.with({ tags: {} }).record(usage);
+    await scoped.recordOutcome({ name: "ticket_resolved" });
+    expect(bodyOf(fetch, 0)).not.toHaveProperty("tags");
+    // The outcomes API rejects unknown fields, so tags must stay off.
+    expect(bodyOf(fetch, 1)).toEqual({
+      name: "ticket_resolved",
+      customerId: "cus_42",
+    });
+  });
+
+  it("produces payloads the API accepts", () => {
+    const payload = { ...usage, tags: { env: "prod", "team/search": "a" } };
+    expect(usagePayloadSchema.safeParse(payload).success).toBe(true);
+  });
+});
+
 describe("recordOutcome", () => {
   const storedOutcome = (replayed = false, status = 201) =>
     Response.json(

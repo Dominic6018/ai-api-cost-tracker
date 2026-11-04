@@ -19,19 +19,45 @@ const TAG_KEY = /^[A-Za-z0-9_./-]{1,64}$/;
 /** Attribution has its own fields; FOCUS exports put both in one object. */
 const RESERVED_KEYS = new Set<string>(ATTRIBUTION_FIELDS.map((f) => f.key));
 
+/**
+ * zod's record parser silently drops a `__proto__` key, so it's rejected
+ * before parsing rather than lost.
+ */
+const PROTO_KEY = "__proto__";
+
 export const tagsSchema = z
-  .record(
-    z
-      .string()
-      .regex(TAG_KEY, "Tag keys are 1-64 letters, digits and _ . / -")
-      .refine((key) => !RESERVED_KEYS.has(key), {
-        message: "customerId, userId, feature and runId have their own fields",
-      }),
-    z.string().trim().min(1).max(MAX_TAG_VALUE_LENGTH),
+  .unknown()
+  .refine(
+    (input) =>
+      !(input && typeof input === "object" && Object.hasOwn(input, PROTO_KEY)),
+    { message: `${PROTO_KEY} can't be a tag key` },
   )
-  .refine((tags) => Object.keys(tags).length <= MAX_TAGS, {
-    message: `At most ${MAX_TAGS} tags`,
-  });
+  .pipe(
+    z
+      .record(
+        z
+          .string()
+          .regex(TAG_KEY, "Tag keys are 1-64 letters, digits and _ . / -")
+          .refine((key) => !RESERVED_KEYS.has(key), {
+            message:
+              "customerId, userId, feature and runId have their own fields",
+          }),
+        z.string().trim().min(1).max(MAX_TAG_VALUE_LENGTH),
+      )
+      .refine((tags) => Object.keys(tags).length <= MAX_TAGS, {
+        message: `At most ${MAX_TAGS} tags`,
+      }),
+  );
+
+const isTagKey = (key: string) =>
+  TAG_KEY.test(key) && key !== PROTO_KEY && !RESERVED_KEYS.has(key);
+
+/** Whether one tag would pass `tagsSchema`; `value` is already trimmed. */
+export function isValidTag(key: string, value: string): boolean {
+  return (
+    isTagKey(key) && value.length >= 1 && value.length <= MAX_TAG_VALUE_LENGTH
+  );
+}
 
 export interface TagFilter {
   key: string;

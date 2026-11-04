@@ -358,6 +358,50 @@ class AttributionTest(unittest.TestCase):
         )
 
 
+@mock.patch("cost_tracker.time.sleep", lambda seconds: None)
+class TagsTest(unittest.TestCase):
+    def test_record_and_track_send_tags(self):
+        tracker, transport, _ = make(stored(), stored())
+        tracker.record(Usage("openai", "gpt-4.1", 1, 1, tags={"env": "prod"}))
+        tracker.track(ANTHROPIC, tags={"team": "search"})
+        tracker.flush()
+        self.assertEqual(transport.calls[0][1]["tags"], {"env": "prod"})
+        self.assertEqual(transport.calls[1][1]["tags"], {"team": "search"})
+
+    def test_scoped_tags_merge_key_by_key_and_the_calls_own_win(self):
+        tracker, transport, _ = make(stored(), stored(), stored())
+        prod = tracker.with_attribution(tags={"env": "prod", "team": "core"})
+        search = prod.with_attribution(customer_id="cus_42", tags={"team": "search"})
+        search.record(USAGE)
+        search.record({**USAGE.to_payload(), "tags": {"env": "canary", "ab": "b"}})
+        prod.record(USAGE)
+        bodies = [call[1] for call in transport.calls]
+        self.assertEqual(bodies[0]["customerId"], "cus_42")
+        self.assertEqual(bodies[0]["tags"], {"env": "prod", "team": "search"})
+        self.assertEqual(bodies[1]["tags"], {"env": "canary", "team": "search", "ab": "b"})
+        self.assertEqual(bodies[2]["tags"], {"env": "prod", "team": "core"})
+
+    def test_track_merges_over_scoped_tags(self):
+        tracker, transport, _ = make(stored())
+        tracker.with_attribution(tags={"env": "prod"}).track(OPENAI_CHAT, tags={"ab": "b"})
+        tracker.flush()
+        self.assertEqual(transport.calls[0][1]["tags"], {"env": "prod", "ab": "b"})
+
+    def test_no_tags_key_without_tags_and_none_on_outcomes(self):
+        tracker, transport, _ = make(stored(), stored_outcome())
+        tracker.with_attribution(tags={}).record(USAGE)
+        tracker.with_attribution(customer_id="cus_42", tags={"env": "prod"}).record_outcome("ticket_resolved")
+        self.assertNotIn("tags", transport.calls[0][1])
+        # The outcomes API rejects unknown fields, so tags must stay off.
+        self.assertEqual(transport.calls[1][1], {"name": "ticket_resolved", "customerId": "cus_42"})
+
+    def test_record_doesnt_change_the_callers_dict(self):
+        tracker, _, _ = make(stored())
+        payload = {**USAGE.to_payload(), "tags": {"ab": "b"}}
+        tracker.with_attribution(tags={"env": "prod"}).record(payload)
+        self.assertEqual(payload["tags"], {"ab": "b"})
+
+
 def stored_outcome(replayed=False, status=201):
     return status, json.dumps({"outcome": {"id": "out-1", "name": "ticket_resolved"}, "replayed": replayed}).encode()
 

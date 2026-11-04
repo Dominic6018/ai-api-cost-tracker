@@ -323,3 +323,132 @@ describe("attribution from span and resource attributes", () => {
     ).toBe(true);
   });
 });
+
+describe("tags from cost_tracker.tag.* attributes", () => {
+  const withResource = (resource: Attr[], ...spans: unknown[]) => ({
+    resourceSpans: [
+      {
+        resource: { attributes: attrs(...resource) },
+        scopeSpans: [{ spans }],
+      },
+    ],
+  });
+  const usage: Attr[] = [
+    ["gen_ai.provider.name", "openai"],
+    ["gen_ai.request.model", "gpt-4.1"],
+    ["gen_ai.usage.input_tokens", 10],
+    ["gen_ai.usage.output_tokens", 5],
+  ];
+  const payloadOf = (body: unknown) => {
+    const result = genAiUsageFromOtlp(body);
+    if (!result.ok) throw new Error("expected ok");
+    return result.spans[0].payload;
+  };
+  const now = new Date("2026-11-02T12:00:00Z");
+
+  it("reads the prefix as tags; numbers and booleans become strings", () => {
+    const payload = payloadOf(
+      exportOf(
+        span(
+          "t1",
+          ...usage,
+          ["cost_tracker.tag.env", " prod "],
+          ["cost_tracker.tag.team.name", "search"],
+          ["cost_tracker.tag.version", 2],
+          ["cost_tracker.tag.beta", true],
+          ["cost_tracker.feature", "chat"],
+        ),
+      ),
+    );
+    expect(payload.tags).toEqual({
+      env: "prod",
+      "team.name": "search",
+      version: "2",
+      beta: "true",
+    });
+    expect(payload.feature).toBe("chat");
+    const parsed = parseUsagePayload(payload, now);
+    expect(parsed.ok && parsed.usage.tags).toEqual(payload.tags);
+  });
+
+  it("falls back to resource attributes key by key; the span wins", () => {
+    const payload = payloadOf(
+      withResource(
+        [
+          ["cost_tracker.tag.env", "prod"],
+          ["cost_tracker.tag.region", "eu"],
+        ],
+        span("t2", ...usage, ["cost_tracker.tag.env", "canary"]),
+      ),
+    );
+    expect(payload.tags).toEqual({ env: "canary", region: "eu" });
+  });
+
+  it("leaves tags out when there are none", () => {
+    expect(payloadOf(exportOf(span("t3", ...usage)))).not.toHaveProperty(
+      "tags",
+    );
+  });
+
+  it("drops tags the API would reject but keeps the span's usage", () => {
+    const payload = payloadOf(
+      exportOf(
+        span(
+          "t4",
+          ...usage,
+          ["cost_tracker.tag.", "no key"],
+          ["cost_tracker.tag.my tag", "space"],
+          ["cost_tracker.tag.k8s:ns", "colon"],
+          ["cost_tracker.tag.customerId", "reserved"],
+          ["cost_tracker.tag.empty", "  "],
+          ["cost_tracker.tag.long", "v".repeat(201)],
+          ["cost_tracker.tag.ok", "kept"],
+        ),
+      ),
+    );
+    expect(payload.tags).toEqual({ ok: "kept" });
+    expect(parseUsagePayload(payload, now).ok).toBe(true);
+  });
+
+  it("keeps a constructor tag and drops __proto__, as the API does", () => {
+    const payload = payloadOf(
+      exportOf(
+        span(
+          "t6",
+          ...usage,
+          ["cost_tracker.tag.constructor", "a"],
+          ["cost_tracker.tag.__proto__", "b"],
+        ),
+      ),
+    );
+    expect(payload.tags).toEqual({ constructor: "a" });
+    expect(Object.getPrototypeOf(payload.tags)).toBe(Object.prototype);
+    const parsed = parseUsagePayload(payload, now);
+    expect(parsed.ok && parsed.usage.tags).toEqual({ constructor: "a" });
+  });
+
+  it("keeps the first 20 valid tags, span before resource", () => {
+    const many = (prefix: string, n: number): Attr[] =>
+      Array.from({ length: n }, (_, i) => [
+        `cost_tracker.tag.${prefix}${i}`,
+        "v",
+      ]);
+    const payload = payloadOf(
+      withResource(
+        many("r", 5),
+        span(
+          "t5",
+          ...usage,
+          ["cost_tracker.tag.bad key", "x"],
+          ...many("s", 18),
+        ),
+      ),
+    );
+    const tags = payload.tags as Record<string, string>;
+    expect(Object.keys(tags)).toHaveLength(20);
+    expect(tags).toHaveProperty("s17");
+    expect(tags).toHaveProperty("r1");
+    expect(tags).not.toHaveProperty("r2");
+    expect(parseUsagePayload(payload, now).ok).toBe(true);
+  });
+});
