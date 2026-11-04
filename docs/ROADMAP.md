@@ -69,7 +69,8 @@ Recording usage shouldn't require hand-written API calls.
 - [x] Demo data with customers, users, features and agent runs (#62)
 - [x] Unit costs: cost per outcome, such as per resolved ticket (#58)
 - [x] Outcomes from the TypeScript and Python clients (#66)
-- [ ] CSV and FOCUS exports, and a read-only reporting API
+- [x] CSV export of usage events (#71)
+- [ ] FOCUS export, and a read-only reporting API
 
 ## Milestone 8: Guardrails
 
