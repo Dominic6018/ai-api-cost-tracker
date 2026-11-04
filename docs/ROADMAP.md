@@ -76,7 +76,9 @@ Recording usage shouldn't require hand-written API calls.
 
 ## Milestone 8: Guardrails
 
-- [ ] Budget notifications by email, Slack and webhook at the existing 80% / 100% thresholds
+- Budget notifications at the existing 80% / 100% thresholds:
+  - [x] Webhook (signed) and Slack, once per threshold per month (#81)
+  - [ ] Email
 - [ ] A budget check an app calls before spending (allow or deny), with per-run and per-period caps
 - [ ] Month-end spend forecast and spike detection
 
