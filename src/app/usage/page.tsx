@@ -91,6 +91,7 @@ export default async function UsagePage({
   ]);
   const { cursor, ...withoutCursor } = filters;
   const isFiltered = Object.keys(withoutCursor).length > 0;
+  const exportQuery = usageQuery(withoutCursor);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-8 px-4 py-12 sm:px-8">
@@ -221,11 +222,19 @@ export default async function UsagePage({
           )}
           {/* Every matching event, not only this page; a download, so not Link. */}
           <a
-            href={`/usage/export${usageQuery(withoutCursor)}`}
+            href={`/usage/export${exportQuery}`}
             className="text-foreground/70 underline"
             data-testid="usage-csv"
           >
             Download CSV
+          </a>
+          <a
+            href={`/usage/export${exportQuery ? `${exportQuery}&` : "?"}format=focus`}
+            className="text-foreground/70 underline"
+            title="FOCUS 1.4 cost and usage data, for FinOps tools"
+            data-testid="usage-focus"
+          >
+            Download FOCUS
           </a>
         </div>
       </form>
