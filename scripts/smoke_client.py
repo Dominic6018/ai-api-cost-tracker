@@ -34,8 +34,8 @@ print("- track() returns the response and reports it in the background")
 errors = []
 with CostTracker(base_url, api_key, on_error=lambda error, usage: errors.append(error)) as tracker:
     # Attributed through a scoped tracker; CI checks the stored columns.
-    scoped = tracker.with_attribution(customer_id="cus_py", feature="ci-py")
-    assert scoped.track(message, run_id=f"run_py_{message['id']}") is message
+    scoped = tracker.with_attribution(customer_id="cus_py", feature="ci-py", tags={"env": "smoke"})
+    assert scoped.track(message, run_id=f"run_py_{message['id']}", tags={"client": "py"}) is message
     tracker.flush()
     assert errors == [], errors
 
@@ -57,7 +57,7 @@ assert rejected[0].status in (401, 429), rejected[0].status
 
 print("- record_outcome() stores an outcome once, with scoped attribution")
 with CostTracker(base_url, api_key) as tracker:
-    scoped = tracker.with_attribution(customer_id="cus_py", feature="ci-py")
+    scoped = tracker.with_attribution(customer_id="cus_py", feature="ci-py", tags={"env": "smoke"})
     first = scoped.record_outcome("ticket_resolved", count=2, outcome_id=f"py-{message['id']}")
     assert not first.replayed, first
     again = scoped.record_outcome("ticket_resolved", count=2, outcome_id=f"py-{message['id']}")

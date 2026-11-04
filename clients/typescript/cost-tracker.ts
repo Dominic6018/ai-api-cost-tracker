@@ -41,6 +41,33 @@ function withDefaults<T extends Attribution>(
   return merged;
 }
 
+/**
+ * Free-form labels such as `{ env: "prod", team: "search" }`: up to 20,
+ * keys of letters, digits and `_ . / -` (not an attribution name), values
+ * up to 200 characters. The dashboard filters by them.
+ */
+export type Tags = Record<string, string>;
+
+/** What a scoped tracker adds: attribution, plus tags for usage. */
+export interface Scope extends Attribution {
+  tags?: Tags;
+}
+
+/** `tags` over `defaults`, key by key; undefined when both are empty. */
+function mergeTags(defaults?: Tags, tags?: Tags): Tags | undefined {
+  const merged = { ...defaults, ...tags };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+/** `usage` with a scope's attribution and tags filling the gaps. */
+function usageWithDefaults(usage: Usage, defaults: Scope): Usage {
+  const merged = withDefaults(usage, defaults);
+  const tags = mergeTags(defaults.tags, usage.tags);
+  if (tags) merged.tags = tags;
+  else delete merged.tags;
+  return merged;
+}
+
 /** One request's usage, as `POST /api/usage` takes it. */
 export interface Usage extends Attribution {
   provider: Provider;
@@ -54,6 +81,7 @@ export interface Usage extends Attribution {
   requestId?: string;
   occurredAt?: string | Date;
   metadata?: Record<string, unknown>;
+  tags?: Tags;
 }
 
 /**
@@ -109,6 +137,8 @@ export interface TrackOptions extends Attribution {
   /** For OpenAI-compatible APIs, such as Mistral's. */
   provider?: Provider;
   metadata?: Record<string, unknown>;
+  /** Merged over a scoped tracker's tags, key by key. */
+  tags?: Tags;
 }
 
 export interface CostTracker {
@@ -132,10 +162,11 @@ export interface CostTracker {
   flush(): Promise<void>;
   /**
    * A tracker that adds this attribution to everything it records, e.g.
-   * `tracker.with({ customerId })` once per request. Values passed to
-   * `record` or `track` win; `flush` waits for every tracker's reports.
+   * `tracker.with({ customerId })` once per request, and these tags to
+   * its usage (outcomes have no tags). Values passed to `record` or
+   * `track` win, tags key by key; `flush` waits for every tracker.
    */
-  with(attribution: Attribution): CostTracker;
+  with(scope: Scope): CostTracker;
 }
 
 /** A rejected or failed `POST /api/usage`. */
@@ -346,7 +377,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
   async function track<T>(
     responseOrPromise: T | Promise<T>,
     trackOptions: TrackOptions,
-    defaults: Attribution,
+    defaults: Scope,
   ): Promise<T> {
     const response = await responseOrPromise;
     const usage = usageFromResponse(response);
@@ -354,14 +385,15 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       onError(new CostTrackerError("No usage in response", null, null), null);
       return response;
     }
-    const { model, provider, metadata, ...attribution } = trackOptions;
-    const tracked = withDefaults(
+    const { model, provider, metadata, tags, ...attribution } = trackOptions;
+    const tracked = usageWithDefaults(
       {
         ...usage,
         ...attribution,
         model: model ?? usage.model,
         provider: provider ?? usage.provider,
         metadata,
+        tags,
       },
       defaults,
     );
@@ -379,14 +411,19 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
   }
 
   // Every scoped tracker shares one connection setup and pending set.
-  function scoped(defaults: Attribution): CostTracker {
+  function scoped(defaults: Scope): CostTracker {
     return {
-      record: (usage) => send(withDefaults(usage, defaults)),
+      record: (usage) => send(usageWithDefaults(usage, defaults)),
+      // Attribution only: the outcomes API takes no tags.
       recordOutcome: (outcome) => sendOutcome(withDefaults(outcome, defaults)),
       track: (responseOrPromise, trackOptions = {}) =>
         track(responseOrPromise, trackOptions, defaults),
       flush,
-      with: (attribution) => scoped(withDefaults(attribution, defaults)),
+      with: ({ tags, ...attribution }) =>
+        scoped({
+          ...withDefaults(attribution, defaults),
+          tags: mergeTags(defaults.tags, tags),
+        }),
     };
   }
 
