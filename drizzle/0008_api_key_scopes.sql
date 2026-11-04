@@ -1,0 +1,2 @@
+ALTER TABLE "api_keys" ADD COLUMN "scope" text DEFAULT 'ingest' NOT NULL;--> statement-breakpoint
+ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_scope_valid" CHECK ("api_keys"."scope" in ('ingest', 'read'));

@@ -75,6 +75,8 @@ describe("authenticateApiKey", () => {
       ok: true,
       projectId,
       apiKeyId: record.id,
+      // Keys send usage unless created for reading reports.
+      scope: "ingest",
     });
 
     const [stored] = await db
@@ -82,6 +84,20 @@ describe("authenticateApiKey", () => {
       .from(apiKeys)
       .where(eq(apiKeys.id, record.id));
     expect(stored.lastUsedAt?.toISOString()).toBe(at.toISOString());
+  });
+
+  it("reports a read key's scope", async () => {
+    const result = await createApiKey(db, {
+      projectSlug: slug,
+      name: "reports",
+      scope: "read",
+    });
+    if (!result.ok) throw new Error("expected key creation to succeed");
+    expect(result.record.scope).toBe("read");
+    expect(await authenticateApiKey(db, result.key)).toMatchObject({
+      ok: true,
+      scope: "read",
+    });
   });
 
   it("rejects an unknown but well-formed key", async () => {

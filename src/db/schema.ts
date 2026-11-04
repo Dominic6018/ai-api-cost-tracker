@@ -205,8 +205,12 @@ export const apiKeys = pgTable(
     createdAt: timestamps.createdAt,
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    // "ingest" keys send usage; "read" keys read reports. A key does one or
+    // the other, so a key leaked from an app can't read cost data.
+    scope: text("scope").$type<ApiKeyScope>().notNull().default("ingest"),
   },
   (t) => [
+    check("api_keys_scope_valid", sql`${t.scope} in ('ingest', 'read')`),
     uniqueIndex("api_keys_key_prefix_idx").on(t.keyPrefix),
     uniqueIndex("api_keys_key_hash_idx").on(t.keyHash),
     index("api_keys_project_idx").on(t.projectId),
@@ -296,6 +300,9 @@ export const rateLimits = pgTable(
   },
   (t) => [index("rate_limits_reset_at_idx").on(t.resetAt)],
 );
+
+export const API_KEY_SCOPES = ["ingest", "read"] as const;
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
 export type Provider = (typeof providerEnum.enumValues)[number];
 export type User = typeof users.$inferSelect;

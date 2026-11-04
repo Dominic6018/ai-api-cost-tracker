@@ -1,4 +1,5 @@
 import type { AuthenticateResult } from "@/db/api-keys";
+import type { ApiKeyScope } from "@/db/schema";
 import type { RateLimitResult } from "@/db/rate-limits";
 import { parseBearerToken } from "@/lib/api-keys";
 import { clientIp, retryAfterSeconds } from "@/lib/rate-limit";
@@ -23,18 +24,33 @@ export function errorResponse(
 }
 
 /**
- * Checks the request's `Authorization: Bearer <key>`. On failure, returns
- * the 401, or the 429 once this client IP has sent too many invalid keys.
+ * Checks the request's `Authorization: Bearer <key>` and that the key has
+ * `scope`. On failure, returns the 401, the 429 once this client IP has
+ * sent too many invalid keys, or a 403 for a valid key of the other scope.
  */
 export async function authorizeApiKey(
   request: Request,
   deps: ApiKeyDeps,
+  scope: ApiKeyScope = "ingest",
 ): Promise<AuthorizeResult> {
   const apiKey = parseBearerToken(request.headers.get("authorization"));
   const auth = apiKey
     ? await deps.authenticate(apiKey)
     : ({ ok: false } as const);
-  if (auth.ok) return { ok: true, projectId: auth.projectId };
+  if (auth.ok) {
+    if (auth.scope === scope) return { ok: true, projectId: auth.projectId };
+    // A genuine key used in the wrong place: not a guess, so not counted.
+    return {
+      ok: false,
+      response: errorResponse(
+        403,
+        "insufficient_scope",
+        scope === "read"
+          ? "This endpoint needs a read API key; this key can only send usage"
+          : "This endpoint needs an ingest API key; this key can only read reports",
+      ),
+    };
+  }
 
   // Only rejected keys are counted, so valid requests cost no extra query.
   // Requests without a key aren't guessing one, and never reach the database.

@@ -264,6 +264,8 @@ npm run api-key -- revoke act_AbCdEfGh
 
 Keys look like `act_` followed by 43 random characters (32 bytes from a cryptographically secure random source). Only a SHA-256 hash and the 12-character prefix are stored. A presented key is checked against the stored hash in constant time.
 
+Each key has a **scope**. `ingest`, the default, sends usage, outcomes and OpenTelemetry traces. `read` (`--scope read`) reads the [reporting API](#reporting-api) and can send nothing. A key does only one, so a key embedded in an app that sends usage can't be used to read your cost data. Using a key in the wrong place returns a 403 `insufficient_scope`.
+
 ### Request
 
 ```bash
@@ -302,6 +304,28 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 | 413    | `payload_too_large`   | Body is over 64 KB                                                                           |
 | 422    | `no_pricing`          | No price for the model at `occurredAt`                                                       |
 | 429    | `rate_limited`        | Over 30 invalid API keys from this IP in 15 minutes; wait for the `Retry-After` seconds      |
+
+## Reporting API
+
+Read a project's cost data from other tools (BI dashboards, billing jobs, scripts) with a **read** key:
+
+```bash
+npm run api-key -- create --project my-app --name finance-dashboard --scope read
+
+curl -H "authorization: Bearer $READ_KEY"   "http://localhost:3000/api/reports/spend?from=2026-10-01&to=2026-10-31&groupBy=customer"
+```
+
+The key decides the project, and both endpoints answer with `Cache-Control: no-store`.
+
+**`GET /api/reports/spend`** returns totals and groups for a UTC date range:
+
+- `from` and `to` are inclusive `YYYY-MM-DD` UTC days, the last 30 days by default, up to 366 days.
+- `groupBy` is `day` (the default, listed in date order), `provider`, `model`, `customer`, `user`, `feature` or `run` (listed by cost, highest first; `key` is `null` for usage without that field). At most 1,000 groups are returned, and `truncated` says when there were more.
+- Each total and group has `costUsd` and the token counts as exact decimal strings, plus `requests`.
+
+**`GET /api/reports/usage`** returns the project's usage events, newest first: the usage page's filters (`provider`, `model`, `customer`, `user`, `feature`, `run`, `from`, `to`), `limit` (1–500, default 100), and `cursor`. Pass each response's `nextCursor` to get the next page; it's `null` on the last one.
+
+Invalid parameters return a 400 `invalid_query` rather than being ignored, so a typo doesn't silently change a report. Keys are checked and rate limited as for ingestion.
 
 ## FOCUS export
 

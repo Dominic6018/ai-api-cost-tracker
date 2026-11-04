@@ -6,7 +6,7 @@ import {
   generateApiKey,
   isWellFormedApiKey,
 } from "@/lib/api-keys";
-import { apiKeys, projects, type ApiKey } from "./schema";
+import { apiKeys, projects, type ApiKey, type ApiKeyScope } from "./schema";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<
@@ -33,7 +33,11 @@ export type CreateApiKeyResult =
  */
 export async function createApiKey(
   db: Database,
-  { projectSlug, name }: { projectSlug: string; name: string },
+  {
+    projectSlug,
+    name,
+    scope = "ingest",
+  }: { projectSlug: string; name: string; scope?: ApiKeyScope },
 ): Promise<CreateApiKeyResult> {
   const [project] = await db
     .select({ id: projects.id })
@@ -52,6 +56,7 @@ export async function createApiKey(
           name,
           keyPrefix: generated.prefix,
           keyHash: generated.hash,
+          scope,
         })
         .returning();
       return { ok: true, key: generated.key, record };
@@ -63,7 +68,8 @@ export async function createApiKey(
 }
 
 export type AuthenticateResult =
-  { ok: true; projectId: string; apiKeyId: string } | { ok: false };
+  | { ok: true; projectId: string; apiKeyId: string; scope: ApiKeyScope }
+  | { ok: false };
 
 /**
  * Resolves a presented key to its project. Fails for malformed, unknown and
@@ -89,7 +95,12 @@ export async function authenticateApiKey(
     .set({ lastUsedAt: now })
     .where(eq(apiKeys.id, record.id));
 
-  return { ok: true, projectId: record.projectId, apiKeyId: record.id };
+  return {
+    ok: true,
+    projectId: record.projectId,
+    apiKeyId: record.id,
+    scope: record.scope,
+  };
 }
 
 /** Revokes a key by its displayed prefix. Returns false if no active key matched. */
