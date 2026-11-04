@@ -290,7 +290,7 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 
 **Attribution** is optional too: `customerId`, `userId` (the end user in your app, not a dashboard account), `feature` and `runId` (one agent run or workflow), each a string of up to 200 characters that you choose. Unlike `metadata`, they're stored in indexed columns, and the usage events page filters by each of them.
 
-**Tags** (`"tags": { "env": "prod", "team": "search" }`) are free-form string labels for anything else: up to 20 per event, keys of 1–64 letters, digits and `_ . / -` (no `:`), and values of 1–200 characters. `customerId`, `userId`, `feature` and `runId` can't be tag keys, since they have their own fields. Tags are indexed, and the usage page and reporting API filter by one with `tag=key:value`. Retries replay whatever tags they send, as for attribution.
+**Tags** (`"tags": { "env": "prod", "team": "search" }`) are free-form string labels for anything else: up to 20 per event, keys of 1–64 letters, digits and `_ . / -` (no `:`), and values of 1–200 characters. `customerId`, `userId`, `feature` and `runId` can't be tag keys, since they have their own fields, and neither can `__proto__`. Tags are indexed, and the usage page and reporting API filter by one with `tag=key:value`. Retries replay whatever tags they send, as for attribution. The TypeScript and Python clients send tags too (a scoped tracker's merge with each call's), and the OpenTelemetry intake reads them from `cost_tracker.tag.<key>` attributes.
 
 Cached and cache-write tokens are part of `inputTokens`, so together they can't exceed it. Unknown fields, including `projectId`, are rejected. The cost is computed on the server with the price in effect at `occurredAt`.
 

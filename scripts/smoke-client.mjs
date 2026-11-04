@@ -38,8 +38,11 @@ const tracker = createCostTracker({
 // Attributed through a scoped tracker; CI checks the stored columns.
 assert.equal(
   await tracker
-    .with({ customerId: "cus_ts", feature: "ci-ts" })
-    .track(Promise.resolve(message), { runId: `run_ts_${message.id}` }),
+    .with({ customerId: "cus_ts", feature: "ci-ts", tags: { env: "smoke" } })
+    .track(Promise.resolve(message), {
+      runId: `run_ts_${message.id}`,
+      tags: { client: "ts" },
+    }),
   message,
 );
 await tracker.flush();
@@ -70,7 +73,12 @@ assert.ok([401, 429].includes(rejected[0].status), `got ${rejected[0].status}`);
 console.log(
   "- recordOutcome() stores an outcome once, with scoped attribution",
 );
-const scoped = tracker.with({ customerId: "cus_ts", feature: "ci-ts" });
+// Its tags must stay off the outcome, which the API would reject.
+const scoped = tracker.with({
+  customerId: "cus_ts",
+  feature: "ci-ts",
+  tags: { env: "smoke" },
+});
 const outcome = {
   name: "ticket_resolved",
   count: 2,

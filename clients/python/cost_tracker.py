@@ -64,6 +64,9 @@ class Usage:
     feature: Optional[str] = None
     #: One agent run or workflow.
     run_id: Optional[str] = None
+    #: Free-form labels such as ``{"env": "prod"}``: up to 20, keys of
+    #: letters, digits and ``_ . / -``, values up to 200 characters.
+    tags: Optional[Dict[str, str]] = None
 
     def to_payload(self) -> Dict[str, Any]:
         occurred_at = self.occurred_at
@@ -85,6 +88,7 @@ class Usage:
             "userId": self.user_id,
             "feature": self.feature,
             "runId": self.run_id,
+            "tags": self.tags,
         }
         return {key: value for key, value in payload.items() if value is not None}
 
@@ -262,6 +266,8 @@ class CostTracker:
         self._lock = threading.Lock()
         #: Attribution added by with_attribution(), as API field names.
         self._defaults: Dict[str, str] = {}
+        #: Tags added by with_attribution(), for usage only.
+        self._default_tags: Dict[str, str] = {}
 
     def with_attribution(
         self,
@@ -270,16 +276,19 @@ class CostTracker:
         user_id: Optional[str] = None,
         feature: Optional[str] = None,
         run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
     ) -> "CostTracker":
         """A tracker that adds this attribution to everything it records,
-        e.g. once per request. Values passed to record() or track() win.
-        It shares this tracker's background threads, so flush() and close()
-        on either cover both."""
+        e.g. once per request, and these tags to its usage (outcomes have no
+        tags). Values passed to record() or track() win; tags merge key by
+        key. It shares this tracker's background threads, so flush() and
+        close() on either cover both."""
         scoped = copy.copy(self)
         scoped._defaults = {
             **self._defaults,
             **_attribution(customer_id, user_id, feature, run_id),
         }
+        scoped._default_tags = {**self._default_tags, **(tags or {})}
         return scoped
 
     def _post(self, path: str, payload: Dict[str, Any], retryable: bool) -> Dict[str, Any]:
@@ -319,6 +328,11 @@ class CostTracker:
         payload = usage.to_payload() if isinstance(usage, Usage) else dict(usage)
         for key, value in self._defaults.items():
             payload.setdefault(key, value)
+        tags = {**self._default_tags, **(payload.get("tags") or {})}
+        if tags:
+            payload["tags"] = tags
+        else:
+            payload.pop("tags", None)
         # Without a request ID a retry could store the usage twice.
         data = self._post("/api/usage", payload, bool(payload.get("requestId")))
         event = data.get("event")
@@ -368,6 +382,7 @@ class CostTracker:
         user_id: Optional[str] = None,
         feature: Optional[str] = None,
         run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
     ) -> Any:
         """Reports a provider response's usage in the background and returns
         the response unchanged. Reporting errors go to ``on_error`` and never
@@ -375,7 +390,8 @@ class CostTracker:
 
         ``model`` overrides the model to price (OpenAI responses name dated
         snapshots); ``provider`` is for OpenAI-compatible APIs such as Mistral's.
-        ``customer_id``, ``user_id``, ``feature`` and ``run_id`` attribute the usage.
+        ``customer_id``, ``user_id``, ``feature`` and ``run_id`` attribute the
+        usage; ``tags`` label it, merged over a scoped tracker's tags.
         """
         usage = usage_from_response(response)
         if usage is None:
@@ -390,6 +406,7 @@ class CostTracker:
         usage.user_id = user_id
         usage.feature = feature
         usage.run_id = run_id
+        usage.tags = tags
 
         def report() -> None:
             try:

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatTagFilter, parseTagFilter, tagsSchema } from "./tags";
+import {
+  formatTagFilter,
+  isValidTag,
+  parseTagFilter,
+  tagsSchema,
+} from "./tags";
 
 describe("tagsSchema", () => {
   it("accepts string labels and trims values", () => {
@@ -28,6 +33,40 @@ describe("tagsSchema", () => {
     ["another attribution name", { runId: "r1" }],
   ])("rejects %s", (_, tags) => {
     expect(tagsSchema.safeParse(tags).success).toBe(false);
+  });
+
+  it("rejects a __proto__ key instead of silently dropping it", () => {
+    // JSON.parse makes __proto__ an own key, as a request body would.
+    const result = tagsSchema.safeParse(
+      JSON.parse('{"__proto__": "b", "env": "prod"}'),
+    );
+    expect(result.success).toBe(false);
+    expect(tagsSchema.parse({ constructor: "a" })).toEqual({
+      constructor: "a",
+    });
+  });
+});
+
+describe("isValidTag", () => {
+  it("agrees with tagsSchema for one tag", () => {
+    const cases: [string, string][] = [
+      ["env", "prod"],
+      ["team/search.v1_x-y", "a"],
+      ["k8s:ns", "a"],
+      ["my tag", "a"],
+      ["", "a"],
+      ["k".repeat(65), "a"],
+      ["feature", "a"],
+      ["constructor", "a"],
+      ["env", ""],
+      ["env", "v".repeat(200)],
+      ["env", "v".repeat(201)],
+    ];
+    for (const [key, value] of cases) {
+      expect(isValidTag(key, value), `${key}=${value}`).toBe(
+        tagsSchema.safeParse({ [key]: value }).success,
+      );
+    }
   });
 });
 

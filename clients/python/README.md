@@ -65,6 +65,18 @@ scoped.track(reply, feature="summaries")
 
 Values passed to `track()` or `record()` win over a scoped tracker's. A scoped tracker shares its parent's background threads, so `flush()` and `close()` on either cover both. `Usage` has `customer_id`, `user_id`, `feature` and `run_id` fields for `record()`.
 
+## Tags
+
+Free-form labels for anything attribution doesn't cover: up to 20, keys of 1–64 letters, digits and `_ . / -`, values up to 200 characters. Scoped trackers and calls merge tags key by key, the call's own values winning:
+
+```python
+prod = tracker.with_attribution(tags={"env": "prod", "team": "search"})
+prod.track(reply, tags={"experiment": "b"})
+# Recorded with {"env": "prod", "team": "search", "experiment": "b"}
+```
+
+`Usage` has a `tags` field for `record()`. Outcomes have no tags, so `record_outcome()` leaves a scoped tracker's tags off.
+
 ## Outcomes
 
 Record business results, such as a resolved ticket, so the dashboard can show cost per outcome. Attribute them like usage; a scoped tracker adds its attribution:
