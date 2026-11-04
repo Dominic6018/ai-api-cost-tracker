@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { providerEnum } from "@/db/schema";
 import { MAX_ATTRIBUTION_LENGTH } from "./attribution";
+import { tagsSchema } from "./tags";
 
 /** Largest accepted `metadata` object, measured as serialized JSON. */
 export const MAX_METADATA_BYTES = 8 * 1024;
@@ -35,6 +36,7 @@ export const usagePayloadSchema = z
     userId: attribution,
     feature: attribution,
     runId: attribution,
+    tags: tagsSchema.optional(),
     occurredAt: z.iso.datetime({ offset: true }).optional(),
     metadata: z
       .record(z.string(), z.unknown())

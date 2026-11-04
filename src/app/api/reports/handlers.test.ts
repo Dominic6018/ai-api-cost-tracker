@@ -41,6 +41,7 @@ const page: UsageEventsPage = {
       userId: null,
       feature: null,
       runId: null,
+      tags: { env: "prod" },
     },
   ],
   next: {
@@ -155,6 +156,7 @@ describe("GET /api/reports/usage", () => {
       userId: null,
       feature: null,
       runId: null,
+      tags: { env: "prod" },
     });
     expect(body.nextCursor).toBe(encodeCursor(page.next!));
     // The project name stays out of an API meant for other tools.

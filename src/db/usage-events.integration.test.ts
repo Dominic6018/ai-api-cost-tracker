@@ -295,3 +295,92 @@ describe("listUsageEvents attribution filters", () => {
     expect(await hours({})).toEqual([4, 3, 2, 1]);
   });
 });
+
+describe("listUsageEvents tag filter", () => {
+  const day = { from: "2034-03-01", to: "2034-03-01" };
+  let projectId: string;
+
+  beforeAll(async () => {
+    const [project] = await db
+      .insert(projects)
+      .values({ name: "Tags", slug: `it-${randomUUID()}` })
+      .returning({ id: projects.id });
+    projectId = project.id;
+    const event = (hour: number, tags: Record<string, string> | null) => ({
+      projectId,
+      provider: "openai" as const,
+      model: "m-tags",
+      inputTokens: 1,
+      outputTokens: 1,
+      costUsd: "0.000001",
+      occurredAt: new Date(`2034-03-01T0${hour}:00:00Z`),
+      tags,
+    });
+    await db
+      .insert(usageEvents)
+      .values([
+        event(1, { env: "prod", team: "search" }),
+        event(2, { env: "prod" }),
+        event(3, { env: "dev", team: "search" }),
+        event(4, null),
+      ]);
+  });
+
+  afterAll(async () => {
+    await db.delete(projects).where(eq(projects.id, projectId));
+  });
+
+  const hours = async (key: string, value: string) =>
+    (
+      await listUsageEvents(db, { projectId, ...day, tag: { key, value } })
+    ).rows.map((row) => row.occurredAt.getUTCHours());
+
+  it("matches events that have the tag, among others", async () => {
+    expect(await hours("env", "prod")).toEqual([2, 1]);
+    expect(await hours("team", "search")).toEqual([3, 1]);
+    expect(await hours("env", "staging")).toEqual([]);
+  });
+
+  it("returns tags with each row", async () => {
+    const { rows } = await listUsageEvents(db, { projectId, ...day });
+    expect(rows.map((r) => r.tags)).toEqual([
+      null,
+      { env: "dev", team: "search" },
+      { env: "prod" },
+      { env: "prod", team: "search" },
+    ]);
+  });
+
+  it("can use the GIN index for a tag filter", async () => {
+    const query = usageEventsQuery(
+      db,
+      { ...day, tag: { key: "env", value: "prod" } },
+      50,
+    ).toSQL();
+    // As above: in a rolled-back transaction, with sequential scans off and
+    // the other non-unique indexes dropped, the plan shows the index is usable.
+    const rollback = new Error("rollback");
+    let text = "";
+    await client
+      .begin(async (tx) => {
+        await tx.unsafe("set local enable_seqscan = off");
+        const others = await tx<{ indexname: string }[]>`
+          select indexname from pg_indexes
+          where tablename = 'usage_events' and indexname <> 'usage_events_tags_idx'
+            and indexdef not like 'CREATE UNIQUE%'`;
+        for (const { indexname } of others) {
+          await tx.unsafe(`drop index "${indexname}"`);
+        }
+        const plan = await tx.unsafe(
+          `explain ${query.sql}`,
+          query.params as never[],
+        );
+        text = plan.map((row) => Object.values(row)[0]).join("\n");
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) throw error;
+      });
+    expect(text).toContain("usage_events_tags_idx");
+  });
+});

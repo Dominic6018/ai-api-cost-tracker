@@ -86,6 +86,7 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
           userId: event.userId,
           feature: event.feature,
           runId: event.runId,
+          tags: event.tags,
           occurredAt: event.occurredAt.toISOString(),
         },
         replayed,
