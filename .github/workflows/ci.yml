@@ -389,6 +389,71 @@ jobs:
 
           npm run db:demo -- --remove
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id LIKE 'demo-%'")" = 0
+      - name: Budget alerts reach a signed webhook once per threshold
+        run: |
+          # A local receiver that checks each request's HMAC signature.
+          cat > "$RUNNER_TEMP/receiver.mjs" <<'JS'
+          import { createHmac } from "node:crypto";
+          import { appendFileSync, writeFileSync } from "node:fs";
+          import { createServer } from "node:http";
+          createServer((req, res) => {
+            let body = "";
+            req.on("data", (chunk) => (body += chunk));
+            req.on("end", () => {
+              const match = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(
+                req.headers["x-cost-tracker-signature"] ?? "",
+              );
+              const valid =
+                match !== null &&
+                createHmac("sha256", process.env.SECRET)
+                  .update(`${match[1]}.${body}`)
+                  .digest("hex") === match[2];
+              const event = req.headers["x-cost-tracker-event"];
+              appendFileSync("alerts.jsonl", JSON.stringify({ valid, event, body: JSON.parse(body) }) + "\n");
+              res.writeHead(valid ? 200 : 401).end();
+            });
+          }).listen(4010, () => writeFileSync("receiver.ready", ""));
+          JS
+          SECRET=$(openssl rand -hex 24)
+          echo "::add-mask::$SECRET"
+          SECRET="$SECRET" node "$RUNNER_TEMP/receiver.mjs" &
+          RECEIVER=$!
+          for _ in $(seq 50); do [ -f receiver.ready ] && break; sleep 0.2; done
+          test -f receiver.ready
+
+          # The demo data has one project at its budget warning and one over.
+          npm run --silent db:demo > /dev/null
+          export BUDGET_ALERT_WEBHOOK_SECRET="$SECRET"
+          demo_alerts() { jq -c 'select(.body.project.slug | startswith("demo-"))' alerts.jsonl 2>/dev/null || true; }
+
+          # A dry run sends and records nothing
+          BUDGET_ALERT_WEBHOOK_URL=http://localhost:4010/budget npm run --silent budget-alerts -- --dry-run | tee alerts-dry.log
+          grep -E 'would_send +webhook +demo-support-bot: 80% threshold' alerts-dry.log
+          grep -E 'would_send +webhook +demo-research-agent: 100% threshold' alerts-dry.log
+          test -z "$(demo_alerts)"
+
+          # An unreachable destination fails the run and records nothing
+          if BUDGET_ALERT_WEBHOOK_URL=http://localhost:4011/budget npm run --silent budget-alerts > alerts-fail.log; then
+            echo "a failed delivery should exit 1"; exit 1
+          fi
+          grep -E 'failed +webhook +demo-support-bot' alerts-fail.log
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM budget_notifications n JOIN projects p ON p.id = n.project_id WHERE p.slug LIKE 'demo-%'")" = 0
+
+          # One signed message per project, at the highest threshold reached
+          BUDGET_ALERT_WEBHOOK_URL=http://localhost:4010/budget npm run --silent budget-alerts | tee alerts.log
+          demo_alerts
+          test "$(demo_alerts | wc -l)" = 2
+          test "$(demo_alerts | jq -s 'all(.valid and .event == "budget.threshold_reached")')" = true
+          test "$(demo_alerts | jq -r 'select(.body.project.slug == "demo-support-bot") | "\(.body.thresholdPercent) \(.body.status)"')" = "80 warning"
+          test "$(demo_alerts | jq -r 'select(.body.project.slug == "demo-research-agent") | "\(.body.thresholdPercent) \(.body.status)"')" = "100 over"
+
+          # Running again sends nothing new
+          BUDGET_ALERT_WEBHOOK_URL=http://localhost:4010/budget npm run --silent budget-alerts | tee alerts-again.log
+          grep -E 'already_sent +webhook +demo-support-bot' alerts-again.log
+          test "$(demo_alerts | wc -l)" = 2
+
+          kill "$RECEIVER"
+          npm run db:demo -- --remove
       - name: Screenshot the dashboard with demo data, in light and dark mode
         run: |
           # Demo projects only, as a new user would see them. This is the
