@@ -219,6 +219,14 @@ export default async function UsagePage({
               Clear
             </Link>
           )}
+          {/* Every matching event, not only this page; a download, so not Link. */}
+          <a
+            href={`/usage/export${usageQuery(withoutCursor)}`}
+            className="text-foreground/70 underline"
+            data-testid="usage-csv"
+          >
+            Download CSV
+          </a>
         </div>
       </form>
 

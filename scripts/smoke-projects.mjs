@@ -358,6 +358,36 @@ for (const by of ["customer", "user", "feature", "run"]) {
   assert.match(fallback.html, /name="by" value="customer"/);
 }
 
+step("the usage CSV export downloads the filtered events");
+{
+  const requestId = process.env.EXPECT_REQUEST_ID;
+  const query = requestId ? `?model=gpt-4.1` : "";
+  const response = await fetch(`${base}/usage/export${query}`, {
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.equal(response.status, 200, "GET /usage/export");
+  assert.match(response.headers.get("content-type") ?? "", /^text\/csv/);
+  assert.match(
+    response.headers.get("content-disposition") ?? "",
+    /attachment; filename="usage-\d{4}-\d{2}-\d{2}\.csv"/,
+  );
+  const csv = await response.text();
+  assert.ok(
+    csv.startsWith("occurred_at,project,provider,model,"),
+    "header row",
+  );
+  if (requestId)
+    assert.ok(csv.includes(requestId), "the smoke event is exported");
+
+  const signedOut = await fetch(`${base}/usage/export`, { redirect: "manual" });
+  assert.equal(signedOut.status, 307, "signed out");
+  assert.equal(
+    new URL(signedOut.headers.get("location"), base).pathname,
+    "/login",
+  );
+}
+
 step("signing out ends the session, even if the old cookie is replayed");
 {
   const signedIn = cookie;
