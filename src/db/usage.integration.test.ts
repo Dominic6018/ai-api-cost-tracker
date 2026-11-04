@@ -205,6 +205,23 @@ describe("recordUsage idempotency", () => {
     expect(await countEvents(requestId)).toBe(1);
   });
 
+  it("stores tags, and replays a retry whatever tags it sends", async () => {
+    const requestId = `req-${randomUUID()}`;
+    const first = await recordUsage(
+      db,
+      usage({ requestId, tags: { env: "prod", team: "search" } }),
+    );
+    if (!first.ok) throw new Error(`expected success, got ${first.error}`);
+    expect(first.event.tags).toEqual({ env: "prod", team: "search" });
+    const retry = await recordUsage(
+      db,
+      usage({ requestId, tags: { env: "dev" } }),
+    );
+    if (!retry.ok) throw new Error(`expected replay, got ${retry.error}`);
+    expect(retry.replayed).toBe(true);
+    expect(retry.event.tags).toEqual({ env: "prod", team: "search" });
+  });
+
   it("replays even when occurredAt differs between attempts", async () => {
     const requestId = `req-${randomUUID()}`;
     await recordUsage(db, usage({ requestId }));

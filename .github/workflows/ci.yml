@@ -246,6 +246,16 @@ jobs:
           SECOND=$(grep -oE '"id":"[^"]+"' report.json | head -1)
           test -n "$SECOND" && test "$FIRST" != "$SECOND"
 
+          # Tags: stored as sent, and filterable through the reporting API
+          BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":10,"outputTokens":5,"tags":{"env":"ci","team":"search"}}'
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"tags":{"env":"ci","team":"search"}' response.json
+          test "$(report "$READ_KEY" 'usage?tag=env:ci')" = 200
+          test "$(grep -o '"tags":{"env":"ci"' report.json | wc -l)" = 1
+          BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":1,"outputTokens":1,"tags":{"customerId":"x"}}'
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
+
           # Outcomes: recorded once per outcomeId, attributed like usage
           outcome() { curl -s -o outcome.json -w '%{http_code}' -X POST http://localhost:3000/api/outcomes -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/json' -d "$1"; }
           STATUS=$(outcome '{"name":"ticket_resolved","count":2,"outcomeId":"ci-ticket-1","customerId":"cus_ci"}'); cat outcome.json; echo

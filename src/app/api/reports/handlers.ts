@@ -100,6 +100,7 @@ export function createUsageReportHandler(deps: ReportHandlerDeps) {
         userId: row.userId,
         feature: row.feature,
         runId: row.runId,
+        tags: row.tags,
       })),
       nextCursor: page.next ? encodeCursor(page.next) : null,
     });
