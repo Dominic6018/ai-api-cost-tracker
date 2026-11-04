@@ -380,6 +380,30 @@ step("the usage CSV export downloads the filtered events");
   if (requestId)
     assert.ok(csv.includes(requestId), "the smoke event is exported");
 
+  const focus = await fetch(`${base}/usage/export?format=focus`, {
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.equal(focus.status, 200, "GET /usage/export?format=focus");
+  assert.match(
+    focus.headers.get("content-disposition") ?? "",
+    /filename="usage-focus-\d{4}-\d{2}-\d{2}\.csv"/,
+  );
+  const focusCsv = await focus.text();
+  assert.ok(
+    focusCsv.startsWith("BilledCost,EffectiveCost,ListCost,"),
+    "FOCUS header row",
+  );
+  if (requestId) {
+    // Nothing billed; the estimate is ListCost, for both token types.
+    const rows = focusCsv.split("\r\n").filter((l) => l.includes(requestId));
+    assert.equal(rows.length, 2, "input and output rows");
+    assert.ok(
+      rows.every((l) => l.startsWith("0,0,")),
+      "BilledCost 0",
+    );
+  }
+
   const signedOut = await fetch(`${base}/usage/export`, { redirect: "manual" });
   assert.equal(signedOut.status, 307, "signed out");
   assert.equal(
