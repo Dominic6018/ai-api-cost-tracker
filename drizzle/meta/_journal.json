@@ -57,6 +57,13 @@
       "when": 1793714374355,
       "tag": "0007_outcomes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793755924141,
+      "tag": "0008_api_key_scopes",
+      "breakpoints": true
     }
   ]
 }

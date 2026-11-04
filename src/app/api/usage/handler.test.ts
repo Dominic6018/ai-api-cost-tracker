@@ -47,6 +47,7 @@ function setup({
     ok: true,
     projectId,
     apiKeyId: "key-1",
+    scope: "ingest",
   } as AuthenticateResult,
   limit = {
     limited: false,
@@ -134,6 +135,17 @@ describe("POST /api/usage handler", () => {
     expect(authenticate).not.toHaveBeenCalled();
     expect(recordAuthFailure).not.toHaveBeenCalled();
     expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("refuses a read key with 403: report keys can't send usage", async () => {
+    const { handler, recordAuthFailure, recordUsage } = setup({
+      auth: { ok: true, projectId, apiKeyId: "key-2", scope: "read" },
+    });
+    const response = await handler(post(body));
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.code).toBe("insufficient_scope");
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(recordAuthFailure).not.toHaveBeenCalled();
   });
 
   it("returns 401 when the key is rejected, and counts it against the client IP", async () => {

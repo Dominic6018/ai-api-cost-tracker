@@ -223,6 +223,29 @@ jobs:
           BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":1,"outputTokens":1,"feature":""}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
 
+          # Reporting API: a read key reads the project's reports and can't
+          # send usage; the ingest key can't read reports
+          npm run --silent api-key -- create --project sample-app --name ci-reports --scope read > read-key.txt
+          grep -q "Created read API key" read-key.txt
+          READ_KEY=$(grep -oE 'act_[A-Za-z0-9_-]{43}' read-key.txt)
+          echo "::add-mask::$READ_KEY"
+          report() { curl -s -o report.json -w '%{http_code}' -H "authorization: Bearer $1" "http://localhost:3000/api/reports/$2"; }
+          test "$(report "$READ_KEY" 'spend?groupBy=model')" = 200; cat report.json; echo
+          grep -q '"key":"gpt-4.1"' report.json
+          grep -q '"currency":"USD"' report.json
+          test "$(report "$READ_KEY" 'spend?groupBy=week')" = 400
+          test "$(report "$API_KEY_2" 'spend')" = 403
+          grep -q '"insufficient_scope"' report.json
+          STATUS=$(post -H "authorization: Bearer $READ_KEY"); test "$STATUS" = 403
+          # Usage pages: two pages of one event each, different events
+          test "$(report "$READ_KEY" 'usage?limit=1')" = 200
+          FIRST=$(grep -oE '"id":"[^"]+"' report.json | head -1)
+          CURSOR=$(grep -oE '"nextCursor":"[^"]+"' report.json | cut -d'"' -f4)
+          test -n "$CURSOR"
+          test "$(report "$READ_KEY" "usage?limit=1&cursor=$CURSOR")" = 200
+          SECOND=$(grep -oE '"id":"[^"]+"' report.json | head -1)
+          test -n "$SECOND" && test "$FIRST" != "$SECOND"
+
           # Outcomes: recorded once per outcomeId, attributed like usage
           outcome() { curl -s -o outcome.json -w '%{http_code}' -X POST http://localhost:3000/api/outcomes -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/json' -d "$1"; }
           STATUS=$(outcome '{"name":"ticket_resolved","count":2,"outcomeId":"ci-ticket-1","customerId":"cus_ci"}'); cat outcome.json; echo
