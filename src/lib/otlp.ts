@@ -9,6 +9,7 @@ import {
   type Attribution,
   type AttributionKey,
 } from "./attribution";
+import { isValidTag, MAX_TAGS, type Tags } from "./tags";
 
 /** A GenAI span's usage, shaped as a `POST /api/usage` body. */
 export interface OtlpSpanUsage {
@@ -136,6 +137,39 @@ function attribution(
   return result;
 }
 
+/** `cost_tracker.tag.env = "prod"` becomes the tag `env: prod`. */
+export const TAG_ATTRIBUTE_PREFIX = "cost_tracker.tag.";
+
+// A Map, so keys such as `constructor` or `__proto__` are plain tags.
+function tagsFrom(
+  attrs: Map<string, AttributeValue>,
+  into: Map<string, string>,
+) {
+  for (const [name, raw] of attrs) {
+    if (into.size >= MAX_TAGS) return;
+    if (!name.startsWith(TAG_ATTRIBUTE_PREFIX) || raw === undefined) continue;
+    const key = name.slice(TAG_ATTRIBUTE_PREFIX.length);
+    const value = String(raw).trim();
+    if (!into.has(key) && isValidTag(key, value)) into.set(key, value);
+  }
+}
+
+/**
+ * Tags from span attributes, then resource attributes for keys the span
+ * doesn't set. Numbers and booleans become strings. Tags the usage API
+ * would reject are dropped, and only the first 20 kept, so the span's
+ * usage still counts.
+ */
+function tags(
+  span: Map<string, AttributeValue>,
+  resource: Map<string, AttributeValue>,
+): { tags?: Tags } {
+  const result = new Map<string, string>();
+  tagsFrom(span, result);
+  tagsFrom(resource, result);
+  return result.size > 0 ? { tags: Object.fromEntries(result) } : {};
+}
+
 /** Nanoseconds since the epoch (a decimal string or number) as ISO 8601. */
 function isoFromNanos(value: unknown): string | undefined {
   if (typeof value !== "string" && typeof value !== "number") return undefined;
@@ -226,6 +260,7 @@ export function genAiUsageFromOtlp(body: unknown): OtlpParseResult {
             // Collectors retry exports, so the span identifies the record.
             requestId: `otel:${traceId}:${spanId}`,
             ...attribution(attrs, resource),
+            ...tags(attrs, resource),
             occurredAt:
               isoFromNanos(span.endTimeUnixNano) ??
               isoFromNanos(span.startTimeUnixNano),
