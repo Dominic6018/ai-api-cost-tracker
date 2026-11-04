@@ -303,6 +303,25 @@ curl -X POST http://localhost:3000/api/usage   -H "authorization: Bearer $API_KE
 | 422    | `no_pricing`          | No price for the model at `occurredAt`                                                       |
 | 429    | `rate_limited`        | Over 30 invalid API keys from this IP in 15 minutes; wait for the `Retry-After` seconds      |
 
+## FOCUS export
+
+**Download FOCUS** on the usage page exports the same filtered events as [FOCUS 1.4](https://focus.finops.org) Cost and Usage data, the FinOps Foundation's format for cost data, which FinOps tools import. Each request becomes one row per token type it used (input, cached input, cache writes, output), priced at the rate in effect when it occurred.
+
+The export is **strictly compliant**, which means its cost columns may look surprising:
+
+| Column                                   | Value                  | Why                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BilledCost`, `EffectiveCost`            | `0`                    | FOCUS reserves them for amounts the invoicing provider bills, and requires 0 from anyone else, so a tool merging this file with the provider's own bill doesn't count the spend twice                                                                                                 |
+| `ListCost`                               | the estimate           | `ListUnitPrice` × `PricingQuantity`, exactly: the stored per-million-token rate times the tokens in millions (`PricingUnit` `1000000 Tokens`). A request's rows add up to its recorded cost, which is rounded to the micro-dollar, so they can differ from it by less than $0.0000005 |
+| `ContractedCost`                         | `0`                    | No negotiated rate is known, so `ContractedUnitPrice` is left out, and FOCUS then requires `ContractedCost` to equal `BilledCost`                                                                                                                                                     |
+| `BillingAccountId`, `BillingAccountName` | `unknown` placeholders | They name your account with the provider, which the tracker never sees                                                                                                                                                                                                                |
+| `SubAccountId`, `SubAccountName`         | the project            | `SubAccountType` is `Project`                                                                                                                                                                                                                                                         |
+| `Tags`                                   | attribution            | A JSON object of `customerId`, `userId`, `feature` and `runId`, where set                                                                                                                                                                                                             |
+
+Other values: `ChargeCategory` `Usage`, `ChargeFrequency` `Usage-Based`, `PricingCategory` `Standard`, `ServiceCategory` `AI and Machine Learning` with subcategory `Generative AI`, the provider as `InvoiceIssuerName`, `ServiceProviderName` and `HostProviderName`, and hourly charge periods within calendar-month billing periods, all in UTC. `SkuId` is the provider, model and token type, and `SkuPriceId` is the stored price row, token type and long-prompt tier. Two custom columns, `x_UsageEventId` and `x_RequestId`, link rows back to usage events.
+
+Events whose price row has since been deleted are left out, since FOCUS usage rows need a SKU price. Text that a spreadsheet would run as a formula gets a leading `'`, as in the CSV export.
+
 ## Recording outcomes
 
 Cost per request is a start, but what you usually want is cost per result: per resolved ticket, per document summarized, per order completed. Record those results as outcomes, with the same API key and attribution as usage:
