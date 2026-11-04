@@ -1,0 +1,224 @@
+import { describe, expect, it } from "vitest";
+import { calculateCostUsd } from "./cost";
+import {
+  FOCUS_COLUMNS,
+  focusRows,
+  formatDecimal,
+  ratesFor,
+  type FocusPricing,
+  type FocusUsage,
+} from "./focus";
+import { toTokenPricing } from "./pricing";
+
+// Claude Haiku 5.5-like rates, with a long-prompt tier above 100,000 tokens.
+const pricing: FocusPricing = {
+  id: "0c4f2d1e-0000-4000-8000-000000000001",
+  effectiveFrom: new Date("2026-10-28T00:00:00Z"),
+  effectiveTo: null,
+  inputPerMTokUsd: "0.10",
+  outputPerMTokUsd: "0.50",
+  cachedInputPerMTokUsd: "0.01",
+  cacheWritePerMTokUsd: "0.125",
+  longContextThresholdTokens: 100_000,
+  longInputPerMTokUsd: "0.50",
+  longOutputPerMTokUsd: "2.50",
+  longCachedInputPerMTokUsd: null,
+  longCacheWritePerMTokUsd: "0.625",
+};
+
+const usage: FocusUsage = {
+  id: "5d0e8a2c-0000-4000-8000-000000000002",
+  occurredAt: new Date("2026-11-04T13:45:12.345Z"),
+  projectId: "7be6abbf-0000-4000-8000-000000000003",
+  projectName: "Support Bot",
+  provider: "anthropic",
+  model: "claude-haiku-5-5",
+  inputTokens: 12_000,
+  cachedInputTokens: 8_000,
+  cacheWriteInputTokens: 1_000,
+  outputTokens: 700,
+  requestId: "msg_01abc",
+  customerId: "cus_42",
+  userId: null,
+  feature: "support-chat",
+  runId: null,
+};
+
+/** Sum of ListCost in micro-dollars, rounded half up like stored costs. */
+const listCostMicros = (rows: ReturnType<typeof focusRows>) => {
+  const total = rows.reduce((sum, r) => sum + Number(r.ListCost), 0);
+  return Math.round(total * 1e6);
+};
+
+describe("focusRows", () => {
+  const rows = focusRows(usage, pricing);
+
+  it("has every column, in order, for each token type used", () => {
+    expect(rows.map((r) => r.SkuMeter)).toEqual([
+      "Input Tokens",
+      "Cached Input Tokens",
+      "Cache Write Input Tokens",
+      "Output Tokens",
+    ]);
+    for (const row of rows) expect(Object.keys(row)).toEqual(FOCUS_COLUMNS);
+  });
+
+  it("is strictly compliant: nothing billed, the estimate as ListCost", () => {
+    for (const row of rows) {
+      expect([row.BilledCost, row.EffectiveCost, row.ContractedCost]).toEqual([
+        "0",
+        "0",
+        "0",
+      ]);
+      // ListCost MUST equal ListUnitPrice × PricingQuantity.
+      expect(Number(row.ListCost)).toBeCloseTo(
+        Number(row.ListUnitPrice) * Number(row.PricingQuantity),
+        12,
+      );
+    }
+    // 3,000 uncached input at $0.10, 8,000 cached at $0.01,
+    // 1,000 cache writes at $0.125 and 700 output at $0.50, per 1M.
+    expect(
+      rows.map((r) => [r.ListUnitPrice, r.PricingQuantity, r.ListCost]),
+    ).toEqual([
+      ["0.1", "0.003", "0.0003"],
+      ["0.01", "0.008", "0.00008"],
+      ["0.125", "0.001", "0.000125"],
+      ["0.5", "0.0007", "0.00035"],
+    ]);
+  });
+
+  it("adds up to the cost the tracker records for the request", () => {
+    const recorded = calculateCostUsd(usage, toTokenPricing(pricing));
+    expect(listCostMicros(rows)).toBe(Math.round(recorded * 1e6));
+  });
+
+  it("prices every token at the long rates above the threshold", () => {
+    const long = { ...usage, inputTokens: 150_000 };
+    const longRows = focusRows(long, pricing);
+    const recorded = calculateCostUsd(long, toTokenPricing(pricing));
+    expect(listCostMicros(longRows)).toBe(Math.round(recorded * 1e6));
+    // The long tier has no cached rate, so cached input uses long input.
+    expect(longRows.map((r) => r.ListUnitPrice)).toEqual([
+      "0.5",
+      "0.5",
+      "0.625",
+      "2.5",
+    ]);
+    expect(longRows[0].SkuPriceId).toBe(`${pricing.id}/input/long-prompt`);
+    // The SKU stays the same; only its price differs.
+    expect(longRows[0].SkuId).toBe(rows[0].SkuId);
+  });
+
+  it("uses FOCUS's allowed values and units", () => {
+    expect(rows[0]).toMatchObject({
+      ChargeCategory: "Usage",
+      ChargeClass: null,
+      ChargeFrequency: "Usage-Based",
+      PricingCategory: "Standard",
+      PricingUnit: "1000000 Tokens",
+      ConsumedQuantity: "3000",
+      ConsumedUnit: "Tokens",
+      BillingCurrency: "USD",
+      ServiceCategory: "AI and Machine Learning",
+      ServiceSubcategory: "Generative AI",
+      ServiceName: "Claude API",
+      InvoiceIssuerName: "Anthropic",
+      ServiceProviderName: "Anthropic",
+      HostProviderName: "Anthropic",
+      SkuId: "anthropic/claude-haiku-5-5/input",
+      ChargeDescription: "claude-haiku-5-5 input tokens",
+    });
+  });
+
+  it("uses UTC ISO 8601 hour and month periods, end exclusive", () => {
+    expect(rows[0]).toMatchObject({
+      ChargePeriodStart: "2026-11-04T13:00:00Z",
+      ChargePeriodEnd: "2026-11-04T14:00:00Z",
+      BillingPeriodStart: "2026-11-01T00:00:00Z",
+      BillingPeriodEnd: "2026-12-01T00:00:00Z",
+    });
+    const december = focusRows(
+      { ...usage, occurredAt: new Date("2026-12-31T23:59:59Z") },
+      pricing,
+    )[0];
+    expect([december.ChargePeriodEnd, december.BillingPeriodEnd]).toEqual([
+      "2027-01-01T00:00:00Z",
+      "2027-01-01T00:00:00Z",
+    ]);
+  });
+
+  it("puts the project in the sub account and attribution in Tags", () => {
+    expect(rows[0]).toMatchObject({
+      SubAccountId: usage.projectId,
+      SubAccountName: "Support Bot",
+      SubAccountType: "Project",
+      x_UsageEventId: usage.id,
+      x_RequestId: "msg_01abc",
+    });
+    expect(JSON.parse(rows[0].Tags!)).toEqual({
+      customerId: "cus_42",
+      feature: "support-chat",
+    });
+    const bare = focusRows(
+      { ...usage, customerId: null, feature: null },
+      pricing,
+    )[0];
+    expect(bare.Tags).toBeNull();
+  });
+
+  it("leaves out token types with no tokens", () => {
+    const plain = focusRows(
+      { ...usage, cachedInputTokens: 0, cacheWriteInputTokens: 0 },
+      pricing,
+    );
+    expect(plain.map((r) => r.SkuMeter)).toEqual([
+      "Input Tokens",
+      "Output Tokens",
+    ]);
+  });
+
+  it("only leaves nullable FOCUS columns empty", () => {
+    const nullable = new Set(["ChargeClass", "Tags", "x_RequestId"]);
+    const withNulls = focusRows(
+      { ...usage, requestId: null, customerId: null, feature: null },
+      pricing,
+    );
+    for (const row of withNulls) {
+      for (const [column, value] of Object.entries(row)) {
+        if (value === null) expect(nullable.has(column)).toBe(true);
+      }
+    }
+  });
+});
+
+describe("ratesFor", () => {
+  it("falls back to the input rate for missing cached and cache-write rates", () => {
+    const bare = {
+      ...pricing,
+      cachedInputPerMTokUsd: null,
+      cacheWritePerMTokUsd: null,
+    };
+    expect(ratesFor(bare, 1000).rates).toEqual({
+      input: "0.10",
+      "cached-input": "0.10",
+      "cache-write": "0.10",
+      output: "0.50",
+    });
+  });
+
+  it("switches tiers only strictly above the threshold", () => {
+    expect(ratesFor(pricing, 100_000).long).toBe(false);
+    expect(ratesFor(pricing, 100_001).long).toBe(true);
+  });
+});
+
+describe("formatDecimal", () => {
+  it("writes plain decimals without trailing zeros", () => {
+    expect(formatDecimal({ units: 3_000n, scale: 6 })).toBe("0.003");
+    expect(formatDecimal({ units: 250n, scale: 2 })).toBe("2.5");
+    expect(formatDecimal({ units: 7n, scale: 0 })).toBe("7");
+    expect(formatDecimal({ units: 0n, scale: 4 })).toBe("0");
+    expect(formatDecimal({ units: 12_345_678n, scale: 6 })).toBe("12.345678");
+  });
+});
