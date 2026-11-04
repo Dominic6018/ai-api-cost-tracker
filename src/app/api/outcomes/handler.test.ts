@@ -23,7 +23,12 @@ const stored: Outcome = {
 };
 
 function setup({
-  auth = { ok: true, projectId, apiKeyId: "key-1" } as AuthenticateResult,
+  auth = {
+    ok: true,
+    projectId,
+    apiKeyId: "key-1",
+    scope: "ingest",
+  } as AuthenticateResult,
   result = {
     ok: true,
     outcome: stored,
