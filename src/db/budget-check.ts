@@ -22,8 +22,11 @@ export async function getBudgetCheckInputs(
 ): Promise<BudgetCheckInputs | undefined> {
   // postgres-js doesn't serialize Date objects in raw sql, so pass ISO text.
   const monthStart = spendWindows(now).month.toISOString();
+  // Filter by the project ID as a parameter rather than correlating with
+  // the outer row: in a single-table select Drizzle renders columns
+  // unqualified, so `projects.id` would resolve to `usage_events.id` here.
   const sum = (where: ReturnType<typeof sql>) =>
-    sql<string>`(select coalesce(sum(${usageEvents.costUsd}), 0)::numeric(14, 6)::text from ${usageEvents} where ${usageEvents.projectId} = ${projects.id} and ${where})`;
+    sql<string>`(select coalesce(sum(${usageEvents.costUsd}), 0)::numeric(14, 6)::text from ${usageEvents} where ${usageEvents.projectId} = ${projectId}::uuid and ${where})`;
 
   const [row] = await db
     .select({
