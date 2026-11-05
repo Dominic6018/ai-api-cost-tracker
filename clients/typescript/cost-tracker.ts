@@ -106,6 +106,38 @@ export interface OutcomeResult {
   replayed: boolean;
 }
 
+/** One cap in a budget check. Amounts are exact decimal strings. */
+export interface BudgetCap {
+  /** Null when no cap is set, which never denies. */
+  capUsd: string | null;
+  spentUsd: string;
+  /** Negative when over the cap; null without a cap. */
+  remainingUsd: string | null;
+  allowed: boolean;
+}
+
+/** The answer to `checkBudget()`. */
+export interface BudgetCheck {
+  allowed: boolean;
+  /** Why it was denied; empty when allowed. */
+  reasons: Array<"monthly_budget" | "run_budget">;
+  estimatedCostUsd: string;
+  /** This UTC month against the project's monthly budget. */
+  month: BudgetCap & { period: string };
+  /** The run against the project's run budget; null without a runId. */
+  run: (BudgetCap & { runId: string }) | null;
+}
+
+export interface BudgetCheckOptions {
+  /**
+   * What the next step might cost, in USD: a decimal string ("0.25") or
+   * a number, with up to 6 decimals. Defaults to 0.
+   */
+  estimatedCostUsd?: string | number;
+  /** The agent run; defaults to a scoped tracker's runId. */
+  runId?: string;
+}
+
 export interface RecordResult {
   /** The stored cost in USD, as an exact decimal string. */
   costUsd: string;
@@ -158,6 +190,14 @@ export interface CostTracker {
     responseOrPromise: T | Promise<T>,
     options?: TrackOptions,
   ): Promise<T>;
+  /**
+   * Asks whether the project may spend `estimatedCostUsd` now, under its
+   * monthly budget and, given a run ID, its run budget. A denial is a
+   * result with `allowed: false`, not an error; failures throw
+   * CostTrackerError, so decide whether to fail open or closed. Retried
+   * after network errors, 429s and 5xx, since a check changes nothing.
+   */
+  checkBudget(options?: BudgetCheckOptions): Promise<BudgetCheck>;
   /** Waits for every background report, e.g. before a function exits. */
   flush(): Promise<void>;
   /**
@@ -300,7 +340,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
    */
   async function post(
     path: string,
-    payload: { occurredAt?: string | Date },
+    payload: object & { occurredAt?: string | Date },
     retryable: boolean,
   ): Promise<Record<string, unknown>> {
     const body = JSON.stringify({
@@ -374,6 +414,28 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
     return { id: stored.id, replayed: Boolean(json.replayed) };
   }
 
+  async function checkBudget(
+    options: BudgetCheckOptions,
+    defaults: Scope,
+  ): Promise<BudgetCheck> {
+    const runId = options.runId ?? defaults.runId;
+    const json = await post(
+      "/api/budget/check",
+      {
+        ...(options.estimatedCostUsd !== undefined && {
+          estimatedCostUsd: options.estimatedCostUsd,
+        }),
+        ...(runId !== undefined && { runId }),
+      },
+      // A check is read-only, so a retry can't change anything.
+      true,
+    );
+    if (typeof json.allowed !== "boolean" || !json.month) {
+      throw new CostTrackerError("Unexpected response", null, null);
+    }
+    return json as unknown as BudgetCheck;
+  }
+
   async function track<T>(
     responseOrPromise: T | Promise<T>,
     trackOptions: TrackOptions,
@@ -418,6 +480,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       recordOutcome: (outcome) => sendOutcome(withDefaults(outcome, defaults)),
       track: (responseOrPromise, trackOptions = {}) =>
         track(responseOrPromise, trackOptions, defaults),
+      checkBudget: (options = {}) => checkBudget(options, defaults),
       flush,
       with: ({ tags, ...attribution }) =>
         scoped({

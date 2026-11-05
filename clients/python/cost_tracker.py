@@ -23,14 +23,19 @@ import urllib.request
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 from urllib.parse import urljoin
 
 __all__ = [
+    "BudgetCap",
+    "BudgetCheck",
     "CostTracker",
     "CostTrackerError",
+    "MonthBudget",
     "OutcomeResult",
     "RecordResult",
+    "RunBudget",
     "Usage",
     "usage_from_anthropic",
     "usage_from_gemini",
@@ -99,6 +104,71 @@ class OutcomeResult:
     id: str
     #: True when this outcome ID was already recorded.
     replayed: bool
+
+
+@dataclass(frozen=True)
+class BudgetCap:
+    """One cap in a budget check. Amounts are exact decimal strings."""
+
+    #: None when no cap is set, which never denies.
+    cap_usd: Optional[str]
+    spent_usd: str
+    #: Negative when over the cap; None without a cap.
+    remaining_usd: Optional[str]
+    allowed: bool
+
+
+@dataclass(frozen=True)
+class MonthBudget(BudgetCap):
+    #: The UTC month, e.g. "2026-11".
+    period: str
+
+
+@dataclass(frozen=True)
+class RunBudget(BudgetCap):
+    run_id: str
+
+
+@dataclass(frozen=True)
+class BudgetCheck:
+    """The answer to ``check_budget()``."""
+
+    allowed: bool
+    #: Why it was denied ("monthly_budget", "run_budget"); empty when allowed.
+    reasons: Tuple[str, ...]
+    estimated_cost_usd: str
+    #: This UTC month against the project's monthly budget.
+    month: MonthBudget
+    #: The run against the project's run budget; None without a run ID.
+    run: Optional[RunBudget]
+
+
+def _cap_fields(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "cap_usd": data["capUsd"],
+        "spent_usd": data["spentUsd"],
+        "remaining_usd": data["remainingUsd"],
+        "allowed": data["allowed"],
+    }
+
+
+def _budget_check(data: Dict[str, Any]) -> BudgetCheck:
+    try:
+        month = MonthBudget(period=data["month"]["period"], **_cap_fields(data["month"]))
+        run_data = data.get("run")
+        run = RunBudget(run_id=run_data["runId"], **_cap_fields(run_data)) if run_data else None
+        allowed = data["allowed"]
+        if not isinstance(allowed, bool):
+            raise TypeError("allowed")
+        return BudgetCheck(
+            allowed=allowed,
+            reasons=tuple(data["reasons"]),
+            estimated_cost_usd=data["estimatedCostUsd"],
+            month=month,
+            run=run,
+        )
+    except (KeyError, TypeError) as error:
+        raise CostTrackerError("Unexpected response") from error
 
 
 @dataclass(frozen=True)
@@ -370,6 +440,33 @@ class CostTracker:
         if not isinstance(outcome, dict) or "id" not in outcome:
             raise CostTrackerError("Unexpected response")
         return OutcomeResult(id=outcome["id"], replayed=bool(data.get("replayed")))
+
+    def check_budget(
+        self,
+        estimated_cost_usd: Optional[Union[str, int, float, Decimal]] = None,
+        *,
+        run_id: Optional[str] = None,
+    ) -> BudgetCheck:
+        """Asks whether the project may spend ``estimated_cost_usd`` now,
+        under its monthly budget and, given a run ID, its run budget. A
+        scoped tracker's ``run_id`` is used unless one is passed.
+
+        A denial is a result with ``allowed=False``, not an error. Failures
+        raise CostTrackerError, so decide whether to fail open or closed.
+        Retried after network errors, 429s and 5xx, since a check changes
+        nothing."""
+        payload: Dict[str, Any] = {}
+        if estimated_cost_usd is not None:
+            if isinstance(estimated_cost_usd, bool):
+                raise TypeError("estimated_cost_usd must be a number or a decimal string")
+            # Decimal("1E+3") would be sent as "1E+3"; fixed-point is what the API reads.
+            payload["estimatedCostUsd"] = (
+                format(estimated_cost_usd, "f") if isinstance(estimated_cost_usd, Decimal) else estimated_cost_usd
+            )
+        run = run_id if run_id is not None else self._defaults.get("runId")
+        if run is not None:
+            payload["runId"] = run
+        return _budget_check(self._post("/api/budget/check", payload, True))
 
     def track(
         self,
