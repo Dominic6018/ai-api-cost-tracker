@@ -33,6 +33,7 @@ export default async function EditProjectPage({
           name: project.name,
           slug: project.slug,
           monthlyBudgetUsd: project.monthlyBudgetUsd ?? "",
+          runBudgetUsd: project.runBudgetUsd ?? "",
         }}
         submitLabel="Save changes"
       />

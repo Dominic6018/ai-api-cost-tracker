@@ -266,6 +266,33 @@ jobs:
           STATUS=$(outcome '{"name":"Ticket Resolved"}'); test "$STATUS" = 400
           test "$(psql "$DATABASE_URL" -tAc "SELECT sum(count) FROM outcomes WHERE customer_id = 'cus_ci' AND name = 'ticket_resolved'")" = 2
 
+          # Budget check: a $0.01 run budget against run_ci's recorded spend,
+          # with what's left computed independently in SQL
+          psql "$DATABASE_URL" -c "UPDATE projects SET run_budget_usd = 0.01 WHERE slug = 'sample-app'"
+          LEFT=$(psql "$DATABASE_URL" -tAc "SELECT (0.01 - sum(cost_usd))::numeric(14, 6) FROM usage_events WHERE run_id = 'run_ci'")
+          check() { curl -s -o check.json -w '%{http_code}' -X POST http://localhost:3000/api/budget/check -H "authorization: Bearer ${2:-$API_KEY_2}" -H 'content-type: application/json' -d "$1"; }
+          test "$(check "{\"runId\":\"run_ci\",\"estimatedCostUsd\":\"$LEFT\"}")" = 200; cat check.json; echo
+          grep -q '"allowed":true' check.json
+          grep -q "\"remainingUsd\":\"$LEFT\"" check.json
+          # One micro-dollar more than what's left is denied
+          MORE=$(psql "$DATABASE_URL" -tAc "SELECT ($LEFT + 0.000001)::numeric(14, 6)")
+          test "$(check "{\"runId\":\"run_ci\",\"estimatedCostUsd\":\"$MORE\"}")" = 200; cat check.json; echo
+          grep -q '"allowed":false,"reasons":\["run_budget"\]' check.json
+          # A run with no spend yet, and the month alone, are allowed
+          test "$(check '{"runId":"run_new","estimatedCostUsd":0.01}')" = 200
+          grep -q '"allowed":true' check.json
+          test "$(check '')" = 200
+          grep -q '"run":null' check.json
+          # A used-up monthly budget denies even without an estimate
+          psql "$DATABASE_URL" -c "UPDATE projects SET monthly_budget_usd = 0 WHERE slug = 'sample-app'"
+          test "$(check '{}')" = 200; cat check.json; echo
+          grep -q '"allowed":false,"reasons":\["monthly_budget"\]' check.json
+          psql "$DATABASE_URL" -c "UPDATE projects SET monthly_budget_usd = 100, run_budget_usd = NULL WHERE slug = 'sample-app'"
+          # Invalid bodies, and keys of the wrong scope or none, are refused
+          test "$(check '{"estimatedCostUsd":"-1"}')" = 400
+          test "$(check '{}' "$READ_KEY")" = 403
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3000/api/budget/check)" = 401
+
           # The TypeScript client: an Anthropic response with cache traffic,
           # reported through track(), priced and replayed safely.
           COST_TRACKER_API_KEY="$API_KEY_2" node scripts/smoke-client.mjs http://localhost:3000
