@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
-import { getSpendOverview, type SpendTotals } from "@/db/spend";
+import { getSpendOverview } from "@/db/spend";
 import { requireUser } from "@/lib/auth";
 import { formatUsd } from "@/lib/cost";
+import { forecastMonth, forecastOverBudget } from "@/lib/forecast";
+import type { SpendWindow } from "@/lib/spend";
 import { logoutAction } from "../login/actions";
 import { BudgetAlerts } from "../budget-alerts";
+import { BudgetStatusIcon } from "../budget-status";
 import { BudgetMeter } from "./budget-meter";
 
 export const metadata: Metadata = {
@@ -14,7 +17,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const WINDOWS: { key: keyof Omit<SpendTotals, "events">; label: string }[] = [
+const WINDOWS: { key: SpendWindow; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "month", label: "This month" },
   { key: "last30Days", label: "Last 30 days" },
@@ -31,10 +34,19 @@ const utcDate = new Intl.DateTimeFormat("en-US", {
   hourCycle: "h23",
 });
 
+const utcDay = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  month: "short",
+  day: "numeric",
+});
+
 export default async function OverviewPage() {
   const user = await requireUser("/overview");
-  const overview = await getSpendOverview(db);
+  // One "now" for the sums and the forecast, so they agree.
+  const now = new Date();
+  const overview = await getSpendOverview(db, now);
   const { totals, windows } = overview;
+  const totalForecast = forecastMonth(totals.month, totals.last7FullDays, now);
   const hasUsage = totals.events > 0;
 
   return (
@@ -72,7 +84,10 @@ export default async function OverviewPage() {
 
       <BudgetAlerts projects={overview.projects} />
 
-      <section aria-label="Total spend" className="grid gap-4 sm:grid-cols-3">
+      <section
+        aria-label="Total spend"
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
         {WINDOWS.map(({ key, label }) => (
           <div
             key={key}
@@ -90,6 +105,18 @@ export default async function OverviewPage() {
             </p>
           </div>
         ))}
+        <div className="flex flex-col gap-1 rounded-lg border border-foreground/10 p-5">
+          <p className="text-sm text-foreground/60">Month-end forecast</p>
+          <p
+            className="text-3xl font-semibold tabular-nums"
+            data-forecast="total"
+          >
+            {usd(totalForecast.projectedUsd)}
+          </p>
+          <p className="text-xs text-foreground/50">
+            by {utcDay.format(totalForecast.lastDay)} UTC, at the recent pace
+          </p>
+        </div>
       </section>
 
       {!hasUsage && (
@@ -109,7 +136,7 @@ export default async function OverviewPage() {
             By project
           </h2>
           <div className="overflow-x-auto rounded-lg border border-foreground/10">
-            <table className="w-full min-w-[44rem] text-left text-sm">
+            <table className="w-full min-w-[52rem] text-left text-sm">
               <thead className="border-b border-foreground/10 text-foreground/60">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-medium">
@@ -124,39 +151,69 @@ export default async function OverviewPage() {
                       {label}
                     </th>
                   ))}
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                    Month-end forecast
+                  </th>
                   <th scope="col" className="px-4 py-3 font-medium">
                     Monthly budget
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {overview.projects.map((project) => (
-                  <tr
-                    key={project.id}
-                    className="border-b border-foreground/10 last:border-0"
-                  >
-                    <td className="px-4 py-3">
-                      <span className="font-medium">{project.name}</span>{" "}
-                      <span className="font-mono text-xs text-foreground/60">
-                        {project.slug}
-                      </span>
-                    </td>
-                    {WINDOWS.map(({ key }) => (
-                      <td
-                        key={key}
-                        className="px-4 py-3 text-right tabular-nums"
-                      >
-                        {usd(project[key])}
+                {overview.projects.map((project) => {
+                  const forecast = forecastMonth(
+                    project.month,
+                    project.last7FullDays,
+                    now,
+                  );
+                  const flagged = forecastOverBudget(
+                    project.month,
+                    forecast.projectedUsd,
+                    project.monthlyBudgetUsd,
+                  );
+                  return (
+                    <tr
+                      key={project.id}
+                      className="border-b border-foreground/10 last:border-0"
+                    >
+                      <td className="px-4 py-3">
+                        <span className="font-medium">{project.name}</span>{" "}
+                        <span className="font-mono text-xs text-foreground/60">
+                          {project.slug}
+                        </span>
                       </td>
-                    ))}
-                    <td className="px-4 py-3">
-                      <BudgetMeter
-                        spentUsd={project.month}
-                        budgetUsd={project.monthlyBudgetUsd}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                      {WINDOWS.map(({ key }) => (
+                        <td
+                          key={key}
+                          className="px-4 py-3 text-right tabular-nums"
+                        >
+                          {usd(project[key])}
+                        </td>
+                      ))}
+                      <td
+                        className="px-4 py-3 text-right tabular-nums"
+                        data-testid="forecast"
+                      >
+                        {usd(forecast.projectedUsd)}
+                        {flagged && (
+                          <span
+                            className="mt-1 flex items-center justify-end gap-1 text-xs"
+                            title="At the pace of the last 7 full days, this month's spend reaches the budget"
+                          >
+                            <BudgetStatusIcon status="warning" />
+                            Forecast over budget
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <BudgetMeter
+                          spentUsd={project.month}
+                          budgetUsd={project.monthlyBudgetUsd}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -166,7 +223,9 @@ export default async function OverviewPage() {
       <p className="text-xs text-foreground/50">
         Today and this month start at midnight UTC. Last 30 days is a rolling
         window of 30 × 24 hours. Usage counts by its <code>occurredAt</code>{" "}
-        time.
+        time. The month-end forecast is this month&apos;s spend so far plus the
+        average daily spend of the last 7 full UTC days (today left out) for the
+        rest of the month.
       </p>
     </main>
   );

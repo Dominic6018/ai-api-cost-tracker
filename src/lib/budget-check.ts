@@ -5,7 +5,9 @@
 
 import { z } from "zod";
 import { MAX_ATTRIBUTION_LENGTH } from "./attribution";
-import { toMicros } from "./budget";
+import { microsToDecimal, toMicros } from "./budget";
+
+export { microsToDecimal };
 
 /** The largest estimate accepted, in USD. */
 export const MAX_ESTIMATE_USD = 1_000_000_000;
@@ -65,14 +67,6 @@ export function parseBudgetCheckPayload(body: unknown): ParseBudgetCheckResult {
       ...(result.data.runId && { runId: result.data.runId }),
     },
   };
-}
-
-/** Micro-dollars as an exact decimal string, e.g. "-1.250000". */
-export function microsToDecimal(micros: bigint): string {
-  const sign = micros < 0n ? "-" : "";
-  const abs = micros < 0n ? -micros : micros;
-  const fraction = (abs % 1_000_000n).toString().padStart(6, "0");
-  return `${sign}${abs / 1_000_000n}.${fraction}`;
 }
 
 export interface CapCheck {

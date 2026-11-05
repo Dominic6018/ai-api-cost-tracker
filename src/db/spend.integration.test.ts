@@ -86,6 +86,8 @@ describe("getSpendOverview", () => {
       today: "3.000001",
       month: "18.100001",
       last30Days: "18.440001",
+      // Mar 8 00:00 to Mar 15 00:00: only alpha's event late on Mar 14
+      last7FullDays: "0.100000",
       events: 7,
     });
 
@@ -94,6 +96,7 @@ describe("getSpendOverview", () => {
       today: "3.000001",
       month: "3.100001",
       last30Days: "3.100001",
+      last7FullDays: "0.100000",
       events: 3,
     });
     expect(byId.get(beta)).toMatchObject({
@@ -131,6 +134,7 @@ describe("getSpendOverview", () => {
       today: "0.000000",
       month: "0.000000",
       last30Days: "0.000000",
+      last7FullDays: "0.000000",
       events: 0,
     });
   });
@@ -148,5 +152,39 @@ describe("getSpendOverview", () => {
     expect(byId.get(idle)?.monthlyBudgetUsd).toBeNull();
     // Budgets don't change the totals row.
     expect(overview.totals.month).toBe("18.100001");
+  });
+});
+
+describe("the forecast's pace window", () => {
+  it("sums the last 7 full UTC days, leaving out today", async () => {
+    // Pace window for 2034-07-10T06:00Z: Jul 3 00:00 to Jul 10 00:00.
+    const paceNow = new Date("2034-07-10T06:00:00Z");
+    const [project] = await db
+      .insert(projects)
+      .values({ name: "Spend Pace", slug: `it-${randomUUID()}` })
+      .returning({ id: projects.id });
+    try {
+      await db.insert(usageEvents).values(
+        [
+          ["2034-07-03T00:00:00.000Z", "1.000000"], // first moment: in
+          ["2034-07-02T23:59:59.999Z", "2.000000"], // just before: out
+          ["2034-07-09T23:59:59.999Z", "0.500000"], // last moment: in
+          ["2034-07-10T00:00:00.000Z", "4.000000"], // today: out
+        ].map(([occurredAt, costUsd]) => ({
+          projectId: project.id,
+          provider: "openai" as const,
+          model: "spend-pace-test",
+          costUsd,
+          occurredAt: new Date(occurredAt),
+        })),
+      );
+      const overview = await getSpendOverview(db, paceNow);
+      expect(overview.projects.find((p) => p.id === project.id)).toMatchObject({
+        last7FullDays: "1.500000",
+        today: "4.000000",
+      });
+    } finally {
+      await db.delete(projects).where(inArray(projects.id, [project.id]));
+    }
   });
 });
