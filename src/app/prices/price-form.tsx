@@ -174,17 +174,21 @@ export function PriceForm({ action }: { action: Action }) {
   );
 }
 
-function Field({
+/** A labelled input with its hint and inline error, for the price forms. */
+export function Field<Name extends string>({
   name,
   label,
   hint,
   state,
   inputProps,
 }: {
-  name: PriceField;
+  name: Name;
   label: string;
   hint?: string;
-  state: PriceFormState;
+  state: {
+    fieldErrors: Partial<Record<Name, string>>;
+    values: Record<Name, string>;
+  };
   inputProps: React.InputHTMLAttributes<HTMLInputElement>;
 }) {
   const error = state.fieldErrors[name];
