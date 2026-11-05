@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { forecastPaceWindow } from "@/lib/forecast";
 import { earliestWindowStart, spendWindows } from "@/lib/spend";
 import { projects, usageEvents } from "./schema";
 
@@ -11,6 +12,8 @@ export interface SpendTotals {
   today: string;
   month: string;
   last30Days: string;
+  /** The last 7 full UTC days, before today: the forecast's pace. */
+  last7FullDays: string;
   /** Usage events in the widest window. */
   events: number;
 }
@@ -44,6 +47,8 @@ export async function getSpendOverview(
   // driver doesn't serialize Date objects, so pass ISO strings.
   const sumSince = (start: Date) =>
     sql`coalesce(sum(${usageEvents.costUsd}) filter (where ${usageEvents.occurredAt} >= ${start.toISOString()}::timestamptz), 0)::numeric(14, 6)`;
+  const pace = forecastPaceWindow(now);
+  const sumPace = sql`coalesce(sum(${usageEvents.costUsd}) filter (where ${usageEvents.occurredAt} >= ${pace.start.toISOString()}::timestamptz and ${usageEvents.occurredAt} < ${pace.end.toISOString()}::timestamptz), 0)::numeric(14, 6)`;
   const asText = (amount: ReturnType<typeof sumSince>) =>
     sql<string>`${amount}::text`;
 
@@ -57,6 +62,7 @@ export async function getSpendOverview(
       today: asText(sumSince(windows.today)),
       month: asText(monthSum),
       last30Days: asText(sumSince(windows.last30Days)),
+      last7FullDays: asText(sumPace),
       events: sql<number>`count(${usageEvents.id})::int`,
       isTotal: sql<boolean>`grouping(${projects.id}) = 1`,
     })
@@ -78,12 +84,20 @@ export async function getSpendOverview(
     today: "0.000000",
     month: "0.000000",
     last30Days: "0.000000",
+    last7FullDays: "0.000000",
     events: 0,
   };
-  const strip = ({ today, month, last30Days, events }: SpendTotals) => ({
+  const strip = ({
     today,
     month,
     last30Days,
+    last7FullDays,
+    events,
+  }: SpendTotals) => ({
+    today,
+    month,
+    last30Days,
+    last7FullDays,
     events,
   });
 

@@ -168,6 +168,24 @@ step("the overview shows each project's monthly budget use");
     assert.match(budget, /\$0\.006 of \$100\.00/);
     assert.match(budget, /<0\.1%/);
   }
+
+  // The forecast: all CI usage is from today, which the 7-full-day pace
+  // leaves out, so the month-end forecast is this month's spend so far.
+  const forecast = row
+    .match(/data-testid="forecast"[^>]*>([\s\S]*?)<\/td>/)?.[1]
+    .replace(/<!-- -->/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .trim();
+  assert.ok(forecast, "shows a month-end forecast");
+  if (process.env.EXPECT_TODAY_SPEND) {
+    assert.equal(forecast, process.env.EXPECT_TODAY_SPEND);
+  }
+  assert.doesNotMatch(row, /Forecast over budget/);
+  assert.match(
+    overview.html,
+    /data-forecast="total"/,
+    "shows a total forecast",
+  );
 }
 
 step("invalid values are rejected with inline errors");
