@@ -55,9 +55,46 @@ const optionalRate = z
 const isRealDate = (text: string, date: Date) =>
   !Number.isNaN(date.getTime()) && date.toISOString().startsWith(text);
 
+/** An <input type="datetime-local">, read as UTC. */
+export const utcDateTimeField = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Enter a date and time")
+  .transform((value) => ({ value, date: new Date(`${value}:00Z`) }))
+  .refine(({ value, date }) => isRealDate(value, date), "Not a real date")
+  .transform(({ date }) => date);
+
+/** Where a price change was read: required, http or https. */
+export function sourceUrlField(missing: string) {
+  return z
+    .string()
+    .trim()
+    .min(1, missing)
+    .max(500, "URL must be at most 500 characters")
+    .pipe(
+      z.url({
+        protocol: /^https?$/,
+        error: "Enter an http or https URL",
+      }),
+    );
+}
+
+/** The day the source was checked: a real date, not after `now`'s UTC day. */
+export function checkedOnField(now: Date) {
+  const today = now.toISOString().slice(0, 10);
+  return z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the date you checked the source")
+    .refine(
+      (value) => isRealDate(value, new Date(`${value}T00:00:00Z`)),
+      "Not a real date",
+    )
+    .refine((value) => value <= today, "The check date can't be in the future");
+}
+
 /** Builds the form schema; `now` bounds the check date. */
 function priceFormSchema(now: Date) {
-  const today = now.toISOString().slice(0, 10);
   return z
     .object({
       provider: z.enum(PRICE_PROVIDERS, { error: "Choose a provider" }),
@@ -87,37 +124,11 @@ function priceFormSchema(now: Date) {
       longOutputPerMTokUsd: optionalRate,
       longCachedInputPerMTokUsd: optionalRate,
       longCacheWritePerMTokUsd: optionalRate,
-      // An <input type="datetime-local">, read as UTC.
-      effectiveFrom: z
-        .string()
-        .trim()
-        .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Enter a date and time")
-        .transform((value) => ({ value, date: new Date(`${value}:00Z`) }))
-        .refine(({ value, date }) => isRealDate(value, date), "Not a real date")
-        .transform(({ date }) => date),
-      sourceUrl: z
-        .string()
-        .trim()
-        .min(1, "Where was this price read? Enter the pricing page's URL")
-        .max(500, "URL must be at most 500 characters")
-        .pipe(
-          z.url({
-            protocol: /^https?$/,
-            error: "Enter an http or https URL",
-          }),
-        ),
-      checkedOn: z
-        .string()
-        .trim()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the date you checked the source")
-        .refine(
-          (value) => isRealDate(value, new Date(`${value}T00:00:00Z`)),
-          "Not a real date",
-        )
-        .refine(
-          (value) => value <= today,
-          "The check date can't be in the future",
-        ),
+      effectiveFrom: utcDateTimeField,
+      sourceUrl: sourceUrlField(
+        "Where was this price read? Enter the pricing page's URL",
+      ),
+      checkedOn: checkedOnField(now),
     })
     .superRefine((values, ctx) => {
       // A tier needs its threshold and both long rates (as the database
