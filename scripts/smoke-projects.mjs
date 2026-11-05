@@ -181,6 +181,8 @@ step("the overview shows each project's monthly budget use");
     assert.equal(forecast, process.env.EXPECT_TODAY_SPEND);
   }
   assert.doesNotMatch(row, /Forecast over budget/);
+  // $0.006 today is under the $1 floor for a spending spike.
+  assert.doesNotMatch(row, /data-testid="spike"/);
   assert.match(
     overview.html,
     /data-forecast="total"/,
