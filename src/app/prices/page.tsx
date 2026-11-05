@@ -71,6 +71,12 @@ export default async function PricesPage() {
               Sign out
             </button>
           </form>
+          <Link
+            href="/prices/new"
+            className="rounded-md bg-foreground px-4 py-2 font-medium text-background"
+          >
+            Add price
+          </Link>
         </nav>
       </header>
 
@@ -79,8 +85,8 @@ export default async function PricesPage() {
         when usage occurred, so each model keeps its history. Every price shows
         where it was read and when it was last checked there; a check that is
         missing or more than {STALE_CHECK_DAYS} days old is marked{" "}
-        <strong>Recheck</strong>. Prices are loaded with{" "}
-        <code>npm run db:seed</code>.
+        <strong>Recheck</strong>. Add a price when a provider changes its rates,
+        or load the bundled prices with <code>npm run db:seed</code>.
       </p>
 
       {histories.length === 0 ? (
@@ -204,6 +210,11 @@ export default async function PricesPage() {
                             ? `Checked ${row.checkedOn}`
                             : "Check date not recorded"}
                         </span>
+                        {row.recordedByEmail && (
+                          <span className="block text-foreground/60">
+                            Added by {row.recordedByEmail}
+                          </span>
+                        )}
                         {recheck && <strong className="block">Recheck</strong>}
                       </td>
                     </tr>
