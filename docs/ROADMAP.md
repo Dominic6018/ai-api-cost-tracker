@@ -87,7 +87,9 @@ Recording usage shouldn't require hand-written API calls.
 
 ## Milestone 9: Price management
 
-- [ ] A screen for managing prices, requiring a source and check date for every change
+- A screen for managing prices, requiring a source and check date for every change:
+  - [x] Record each price's source and check date, and list prices on `/prices` (#93)
+  - [ ] Add and end prices from the screen, requiring both
 - [ ] Separate rates per cache duration; batch, flex and priority tiers; non-token charges (search, images, audio)
 - [ ] OpenAI long-context tiers, once their rates can be verified from the pricing page
 

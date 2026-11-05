@@ -1,4 +1,4 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, asc, desc, eq, lte } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import {
   selectEffectivePricing,
@@ -39,4 +39,16 @@ export async function findEffectivePricing(
     .orderBy(desc(modelPricing.effectiveFrom));
 
   return selectEffectivePricing(candidates, at);
+}
+
+/** Every price row, for the price list; grouping happens in `priceHistories`. */
+export function listModelPrices(db: Database): Promise<ModelPricing[]> {
+  return db
+    .select()
+    .from(modelPricing)
+    .orderBy(
+      asc(modelPricing.provider),
+      asc(modelPricing.model),
+      desc(modelPricing.effectiveFrom),
+    );
 }

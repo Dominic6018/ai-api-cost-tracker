@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { modelPricing, projects } from "../schema";
 import { sampleProjects, seedPrices } from "./data";
@@ -8,12 +9,16 @@ type Database = Pick<PgDatabase<PgQueryResultHKT>, "insert">;
 export interface SeedResult {
   projectsInserted: number;
   pricesInserted: number;
+  /** Existing prices given the source and check date they were missing. */
+  provenanceFilled: number;
 }
 
 /**
  * Inserts sample projects and seed prices. Safe to re-run: rows that
  * already exist (by project slug, or by provider, model and start time)
- * are left untouched rather than overwritten.
+ * keep their values. The one exception: an existing price recorded
+ * without a source or check date gets the seed's, filling only what's
+ * missing, so databases seeded before those columns existed catch up.
  */
 export async function seed(db: Database): Promise<SeedResult> {
   const insertedProjects = await db
@@ -22,7 +27,7 @@ export async function seed(db: Database): Promise<SeedResult> {
     .onConflictDoNothing({ target: projects.slug })
     .returning({ id: projects.id });
 
-  const insertedPrices = await db
+  const upsertedPrices = await db
     .insert(modelPricing)
     .values(
       seedPrices.map((price) => ({
@@ -41,19 +46,30 @@ export async function seed(db: Database): Promise<SeedResult> {
           price.longContext?.cacheWritePerMTokUsd ?? null,
         effectiveFrom: new Date(price.effectiveFrom),
         effectiveTo: price.effectiveTo ? new Date(price.effectiveTo) : null,
+        sourceUrl: price.source,
+        checkedOn: price.checkedOn,
       })),
     )
-    .onConflictDoNothing({
+    .onConflictDoUpdate({
       target: [
         modelPricing.provider,
         modelPricing.model,
         modelPricing.effectiveFrom,
       ],
+      // Fill in missing provenance only; recorded values are kept.
+      set: {
+        sourceUrl: sql`coalesce(${modelPricing.sourceUrl}, excluded.source_url)`,
+        checkedOn: sql`coalesce(${modelPricing.checkedOn}, excluded.checked_on)`,
+      },
+      setWhere: sql`${modelPricing.sourceUrl} is null or ${modelPricing.checkedOn} is null`,
     })
-    .returning({ id: modelPricing.id });
+    // xmax is 0 for a row this statement inserted, and set for one it updated.
+    .returning({ inserted: sql<boolean>`(xmax = 0)` });
 
+  const pricesInserted = upsertedPrices.filter((row) => row.inserted).length;
   return {
     projectsInserted: insertedProjects.length,
-    pricesInserted: insertedPrices.length,
+    pricesInserted,
+    provenanceFilled: upsertedPrices.length - pricesInserted,
   };
 }

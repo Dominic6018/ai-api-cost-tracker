@@ -71,6 +71,9 @@ export default async function OverviewPage() {
           <Link href="/breakdown" className="underline">
             Cost breakdown
           </Link>
+          <Link href="/prices" className="underline">
+            Prices
+          </Link>
           <Link href="/projects" className="underline">
             Projects
           </Link>
