@@ -69,6 +69,7 @@ export const TOKEN_TYPES = [
   { key: "input", meter: "Input Tokens" },
   { key: "cached-input", meter: "Cached Input Tokens" },
   { key: "cache-write", meter: "Cache Write Input Tokens" },
+  { key: "cache-write-1h", meter: "1-Hour Cache Write Input Tokens" },
   { key: "output", meter: "Output Tokens" },
 ] as const;
 type TokenType = (typeof TOKEN_TYPES)[number]["key"];
@@ -93,6 +94,8 @@ export interface FocusUsage {
   inputTokens: number;
   cachedInputTokens: number;
   cacheWriteInputTokens: number;
+  /** The part of cacheWriteInputTokens written with a 1-hour TTL. */
+  cacheWrite1hInputTokens: number;
   outputTokens: number;
   requestId: string | null;
   customerId: string | null;
@@ -143,6 +146,9 @@ export function ratesFor(
     pricing.longContextThresholdTokens !== null &&
     inputTokens > pricing.longContextThresholdTokens;
   const input = long ? pricing.longInputPerMTokUsd! : pricing.inputPerMTokUsd;
+  const cacheWrite =
+    (long ? pricing.longCacheWritePerMTokUsd : pricing.cacheWritePerMTokUsd) ??
+    input;
   return {
     long,
     rates: {
@@ -151,10 +157,12 @@ export function ratesFor(
         (long
           ? pricing.longCachedInputPerMTokUsd
           : pricing.cachedInputPerMTokUsd) ?? input,
-      "cache-write":
+      "cache-write": cacheWrite,
+      // As in calculateCostUsd: 1-hour writes fall back to the write rate.
+      "cache-write-1h":
         (long
-          ? pricing.longCacheWritePerMTokUsd
-          : pricing.cacheWritePerMTokUsd) ?? input,
+          ? pricing.longCacheWrite1hPerMTokUsd
+          : pricing.cacheWrite1hPerMTokUsd) ?? cacheWrite,
       output: long ? pricing.longOutputPerMTokUsd! : pricing.outputPerMTokUsd,
     },
   };
@@ -213,7 +221,8 @@ export function focusRows(
     input:
       usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens,
     "cached-input": usage.cachedInputTokens,
-    "cache-write": usage.cacheWriteInputTokens,
+    "cache-write": usage.cacheWriteInputTokens - usage.cacheWrite1hInputTokens,
+    "cache-write-1h": usage.cacheWrite1hInputTokens,
     output: usage.outputTokens,
   };
   const { chargeStart, chargeEnd, billingStart, billingEnd } = periods(

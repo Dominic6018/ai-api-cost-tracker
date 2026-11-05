@@ -48,6 +48,7 @@ beforeAll(async () => {
         outputPerMTokUsd: "0.50",
         cachedInputPerMTokUsd: "0.01",
         cacheWritePerMTokUsd: "0.125",
+        cacheWrite1hPerMTokUsd: "0.20",
         longContextThresholdTokens: 100_000,
         longInputPerMTokUsd: "0.50",
         longOutputPerMTokUsd: "2.50",
@@ -76,6 +77,7 @@ function usage(overrides: Partial<UsageInput> = {}): UsageInput {
     outputTokens: 100_000,
     cachedInputTokens: 400_000,
     cacheWriteInputTokens: 0,
+    cacheWrite1hInputTokens: 0,
     occurredAt: new Date("2026-06-01T00:00:00Z"),
     ...overrides,
   };
@@ -148,6 +150,31 @@ describe("recordUsage with tiered pricing and cache writes", () => {
     if (!result.ok) throw new Error(result.error);
     expect(result.event.costUsd).toBe("0.508950");
     expect(result.event.cacheWriteInputTokens).toBe(30_000);
+  });
+
+  it("prices 1-hour cache writes at their rate, and replays only the same split", async () => {
+    // 50k uncached * $0.10 + 20k 5-minute writes * $0.125
+    // + 10k 1-hour writes * $0.20 + 20k cached * $0.01 + 1M out * $0.50
+    const requestId = `req-1h-${randomUUID()}`;
+    const split = tiered({
+      inputTokens: 100_000,
+      cacheWriteInputTokens: 30_000,
+      cacheWrite1hInputTokens: 10_000,
+      cachedInputTokens: 20_000,
+      requestId,
+    });
+    const result = await recordUsage(db, split);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.event.costUsd).toBe("0.509700");
+    expect(result.event.cacheWrite1hInputTokens).toBe(10_000);
+
+    expect(await recordUsage(db, split)).toMatchObject({
+      ok: true,
+      replayed: true,
+    });
+    expect(
+      await recordUsage(db, { ...split, cacheWrite1hInputTokens: 0 }),
+    ).toEqual({ ok: false, error: "request_id_conflict" });
   });
 
   it("prices a prompt over the threshold at the long rates", async () => {

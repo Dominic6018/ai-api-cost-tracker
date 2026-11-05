@@ -19,11 +19,13 @@ const pricing: FocusPricing = {
   outputPerMTokUsd: "0.50",
   cachedInputPerMTokUsd: "0.01",
   cacheWritePerMTokUsd: "0.125",
+  cacheWrite1hPerMTokUsd: null,
   longContextThresholdTokens: 100_000,
   longInputPerMTokUsd: "0.50",
   longOutputPerMTokUsd: "2.50",
   longCachedInputPerMTokUsd: null,
   longCacheWritePerMTokUsd: "0.625",
+  longCacheWrite1hPerMTokUsd: null,
 };
 
 const usage: FocusUsage = {
@@ -36,6 +38,7 @@ const usage: FocusUsage = {
   inputTokens: 12_000,
   cachedInputTokens: 8_000,
   cacheWriteInputTokens: 1_000,
+  cacheWrite1hInputTokens: 0,
   outputTokens: 700,
   requestId: "msg_01abc",
   customerId: "cus_42",
@@ -92,6 +95,27 @@ describe("focusRows", () => {
   it("adds up to the cost the tracker records for the request", () => {
     const recorded = calculateCostUsd(usage, toTokenPricing(pricing));
     expect(listCostMicros(rows)).toBe(Math.round(recorded * 1e6));
+  });
+
+  it("splits 1-hour cache writes into their own row, still adding up", () => {
+    // Claude Haiku 5.5: 1-hour writes at $0.20, against $0.125 for 5 minutes.
+    const withHour = { ...pricing, cacheWrite1hPerMTokUsd: "0.20" };
+    const split = { ...usage, cacheWrite1hInputTokens: 400 };
+    const splitRows = focusRows(split, withHour);
+    const byType = Object.fromEntries(
+      splitRows.map((row) => [row.SkuId?.split("/").pop(), row]),
+    );
+    expect(byType["cache-write"]).toMatchObject({
+      PricingQuantity: "0.0006",
+      ListUnitPrice: "0.125",
+    });
+    expect(byType["cache-write-1h"]).toMatchObject({
+      PricingQuantity: "0.0004",
+      ListUnitPrice: "0.2",
+      ConsumedQuantity: "400",
+    });
+    const recorded = calculateCostUsd(split, toTokenPricing(withHour));
+    expect(listCostMicros(splitRows)).toBe(Math.round(recorded * 1e6));
   });
 
   it("prices every token at the long rates above the threshold", () => {
@@ -215,6 +239,7 @@ describe("ratesFor", () => {
       input: "0.10",
       "cached-input": "0.10",
       "cache-write": "0.10",
+      "cache-write-1h": "0.10",
       output: "0.50",
     });
   });

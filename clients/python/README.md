@@ -116,7 +116,7 @@ A check doesn't reserve the money: send each step's usage promptly so the next c
 The same mappings as the [TypeScript client](../typescript/README.md#how-usage-is-read):
 
 - **OpenAI Chat Completions and Responses:** cached tokens are part of the input count, and output already includes reasoning tokens.
-- **Anthropic Messages:** `input_tokens` excludes cache reads and writes, so they're added back into input.
+- **Anthropic Messages:** `input_tokens` excludes cache reads and writes, so they're added back into input. 1-hour cache writes, billed at a higher rate, are read from `cache_creation.ephemeral_1h_input_tokens`.
 - **Gemini:** the prompt count already includes cached content; thinking tokens are added to output, and tool-use prompt tokens to input.
 
 The provider's response ID becomes the request ID, so a report retried after a network error, 429 or 5xx is stored once. Without a request ID, failed reports aren't retried.

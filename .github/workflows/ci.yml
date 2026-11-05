@@ -214,6 +214,22 @@ jobs:
           grep -q '"costUsd":"0.083750"' response.json
           grep -q '"cacheWriteInputTokens":50000' response.json
 
+          # 1-hour cache writes at their own rate. Dated yesterday, so the
+          # reconciliation below (today's costs) isn't affected. Sonnet 5.5:
+          # 4,000 * $2 + 2,000 5-minute writes * $2.50 + 4,000 1-hour writes * $4
+          YESTERDAY="$(date -u -d yesterday +%F)T12:00:00Z"
+          BODY="{\"provider\":\"anthropic\",\"model\":\"claude-sonnet-5-5\",\"inputTokens\":10000,\"cacheWriteInputTokens\":6000,\"cacheWrite1hInputTokens\":4000,\"outputTokens\":0,\"requestId\":\"ci-1h-$GITHUB_RUN_ID\",\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"costUsd":"0.029000"' response.json
+          grep -q '"cacheWrite1hInputTokens":4000' response.json
+          # A retry that splits the writes differently is a conflict
+          BODY="{\"provider\":\"anthropic\",\"model\":\"claude-sonnet-5-5\",\"inputTokens\":10000,\"cacheWriteInputTokens\":6000,\"cacheWrite1hInputTokens\":3000,\"outputTokens\":0,\"requestId\":\"ci-1h-$GITHUB_RUN_ID\",\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 409
+          # More 1-hour writes than writes is invalid
+          BODY='{"provider":"anthropic","model":"claude-sonnet-5-5","inputTokens":10000,"cacheWriteInputTokens":10,"cacheWrite1hInputTokens":11,"outputTokens":0}'
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
+
           # Attribution is stored in its own columns and returned
           BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":100,"outputTokens":10,"customerId":" cus_ci ","userId":"u_ci","feature":"ci-smoke","runId":"run_ci"}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo

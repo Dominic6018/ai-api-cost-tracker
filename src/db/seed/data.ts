@@ -13,6 +13,8 @@ export interface SeedPrice {
   cachedInputPerMTokUsd: string | null;
   /** Price for writing to the prompt cache; omit when not charged extra. */
   cacheWritePerMTokUsd?: string;
+  /** Price for 1-hour cache writes, where they cost more; omit otherwise. */
+  cacheWrite1hPerMTokUsd?: string;
   /** Higher rates for prompts with more input tokens than the threshold. */
   longContext?: {
     thresholdTokens: number;
@@ -20,6 +22,7 @@ export interface SeedPrice {
     outputPerMTokUsd: string;
     cachedInputPerMTokUsd?: string;
     cacheWritePerMTokUsd?: string;
+    cacheWrite1hPerMTokUsd?: string;
   };
   /** ISO timestamp the price applies from (inclusive). */
   effectiveFrom: string;
@@ -43,8 +46,10 @@ const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 // and couldn't be verified from the page source, so its tiered flagships
 // aren't seeded.
 //
-// Cache writes use the shortest cache duration's rate (Anthropic's
-// 5-minute writes). Longer-lived writes cost more and are under-priced.
+// Cache writes are Anthropic's "5m cache writes" rate; 1-hour writes have
+// their own "1h cache writes" rate (2× input). The 1-hour rates were added
+// on 2026-11-06, checked against the same page; the rows keep their
+// original check date.
 //
 // Start dates before the check date aren't recorded, so prices apply from
 // the day they were checked. Usage before then has no price.
@@ -62,6 +67,7 @@ export const seedPrices: SeedPrice[] = [
     outputPerMTokUsd: "50",
     cachedInputPerMTokUsd: "0.25",
     cacheWritePerMTokUsd: "12.50",
+    cacheWrite1hPerMTokUsd: "20",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -73,6 +79,7 @@ export const seedPrices: SeedPrice[] = [
     outputPerMTokUsd: "20",
     cachedInputPerMTokUsd: "0.20",
     cacheWritePerMTokUsd: "5",
+    cacheWrite1hPerMTokUsd: "8",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -84,6 +91,7 @@ export const seedPrices: SeedPrice[] = [
     outputPerMTokUsd: "10",
     cachedInputPerMTokUsd: "0.10",
     cacheWritePerMTokUsd: "2.50",
+    cacheWrite1hPerMTokUsd: "4",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -98,12 +106,14 @@ export const seedPrices: SeedPrice[] = [
     outputPerMTokUsd: "0.50",
     cachedInputPerMTokUsd: "0.01",
     cacheWritePerMTokUsd: "0.125",
+    cacheWrite1hPerMTokUsd: "0.20",
     longContext: {
       thresholdTokens: 100_000,
       inputPerMTokUsd: "0.50",
       outputPerMTokUsd: "2.50",
       cachedInputPerMTokUsd: "0.05",
       cacheWritePerMTokUsd: "0.625",
+      cacheWrite1hPerMTokUsd: "1",
     },
     effectiveFrom: FROM,
     source: ANTHROPIC,

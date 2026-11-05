@@ -221,11 +221,13 @@ function seedPricing(price: SeedPrice): PricingRow {
     outputPerMTokUsd: price.outputPerMTokUsd,
     cachedInputPerMTokUsd: price.cachedInputPerMTokUsd,
     cacheWritePerMTokUsd: price.cacheWritePerMTokUsd ?? null,
+    cacheWrite1hPerMTokUsd: price.cacheWrite1hPerMTokUsd ?? null,
     longContextThresholdTokens: long?.thresholdTokens ?? null,
     longInputPerMTokUsd: long?.inputPerMTokUsd ?? null,
     longOutputPerMTokUsd: long?.outputPerMTokUsd ?? null,
     longCachedInputPerMTokUsd: long?.cachedInputPerMTokUsd ?? null,
     longCacheWritePerMTokUsd: long?.cacheWritePerMTokUsd ?? null,
+    longCacheWrite1hPerMTokUsd: long?.cacheWrite1hPerMTokUsd ?? null,
   };
 }
 

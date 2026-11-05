@@ -24,11 +24,13 @@ const price = (
   outputPerMTokUsd: "2.000000",
   cachedInputPerMTokUsd: null,
   cacheWritePerMTokUsd: null,
+  cacheWrite1hPerMTokUsd: null,
   longContextThresholdTokens: null,
   longInputPerMTokUsd: null,
   longOutputPerMTokUsd: null,
   longCachedInputPerMTokUsd: null,
   longCacheWritePerMTokUsd: null,
+  longCacheWrite1hPerMTokUsd: null,
   sourceUrl: "https://example.com/pricing",
   checkedOn: "2026-11-01",
 });
