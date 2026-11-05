@@ -95,6 +95,28 @@ class UsageFromResponseTest(unittest.TestCase):
             ),
         )
 
+    def test_anthropic_1h_cache_writes_from_cache_creation(self):
+        split = {"ephemeral_5m_input_tokens": 500, "ephemeral_1h_input_tokens": 1500}
+        as_dict = {**ANTHROPIC, "usage": {**ANTHROPIC["usage"], "cache_creation": split}}
+        as_sdk = Obj(
+            id="msg_01abc",
+            type="message",
+            model="claude-sonnet-5-5",
+            usage=Obj(
+                input_tokens=50,
+                cache_creation_input_tokens=2000,
+                cache_read_input_tokens=8000,
+                output_tokens=400,
+                cache_creation=Obj(ephemeral_5m_input_tokens=500, ephemeral_1h_input_tokens=1500),
+            ),
+        )
+        for response in (as_dict, as_sdk):
+            usage = usage_from_response(response)
+            self.assertEqual((usage.cache_write_input_tokens, usage.cache_write_1h_input_tokens), (2000, 1500))
+            self.assertEqual(usage.to_payload()["cacheWrite1hInputTokens"], 1500)
+        # Without the breakdown, every write is a 5-minute write.
+        self.assertEqual(usage_from_response(ANTHROPIC).cache_write_1h_input_tokens, 0)
+
     def test_gemini_rest_bills_thinking_as_output(self):
         self.assertEqual(
             usage_from_response(GEMINI_REST),
@@ -158,6 +180,7 @@ class UsageFromResponseTest(unittest.TestCase):
                 "cacheWriteInputTokens": 2000,
                 "requestId": "msg_01abc",
                 "occurredAt": "2026-11-02T10:00:00+00:00",
+                "cacheWrite1hInputTokens": 0,
             },
         )
         usage.occurred_at = datetime(2026, 11, 2, 10, 0)

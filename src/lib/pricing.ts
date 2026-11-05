@@ -8,11 +8,13 @@ export interface PricingRow {
   outputPerMTokUsd: string;
   cachedInputPerMTokUsd: string | null;
   cacheWritePerMTokUsd: string | null;
+  cacheWrite1hPerMTokUsd: string | null;
   longContextThresholdTokens: number | null;
   longInputPerMTokUsd: string | null;
   longOutputPerMTokUsd: string | null;
   longCachedInputPerMTokUsd: string | null;
   longCacheWritePerMTokUsd: string | null;
+  longCacheWrite1hPerMTokUsd: string | null;
 }
 
 export type PricingLookupResult<Row extends PricingRow = PricingRow> =
@@ -77,6 +79,10 @@ export function toTokenPricing(row: PricingRow): TokenPricing {
       "cacheWritePerMTokUsd",
       row.cacheWritePerMTokUsd,
     ),
+    cacheWrite1hPerMTokUsd: optionalUsd(
+      "cacheWrite1hPerMTokUsd",
+      row.cacheWrite1hPerMTokUsd,
+    ),
     longContext: null,
   };
 
@@ -101,6 +107,10 @@ export function toTokenPricing(row: PricingRow): TokenPricing {
       cacheWritePerMTokUsd: optionalUsd(
         "longCacheWritePerMTokUsd",
         row.longCacheWritePerMTokUsd,
+      ),
+      cacheWrite1hPerMTokUsd: optionalUsd(
+        "longCacheWrite1hPerMTokUsd",
+        row.longCacheWrite1hPerMTokUsd,
       ),
     };
   }

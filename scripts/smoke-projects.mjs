@@ -159,8 +159,9 @@ step("the price list shows each seeded price with its source");
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ");
   assert.match(text, /Current/);
-  // Seed prices per 1M tokens: $2 input, $0.10 cache reads, $10 output.
-  assert.match(text, /\$2\.00 \$0\.10 \$2\.50 \$10\.00/);
+  // Seed prices per 1M tokens: $2 input, $0.10 cache reads, $2.50 5-minute
+  // and $4 1-hour cache writes, $10 output.
+  assert.match(text, /\$2\.00 \$0\.10 \$2\.50 \$4\.00 \$10\.00/);
   assert.match(
     row,
     /href="https:\/\/platform\.claude\.com\/docs\/en\/about-claude\/pricing"/,
@@ -207,7 +208,7 @@ step("the price list shows each seeded price with its source");
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ");
     assert.match(text, /Current/);
-    assert.match(text, /\$2\.00 \$0\.50 — \$8\.00/);
+    assert.match(text, /\$2\.00 \$0\.50 — — \$8\.00/);
     assert.match(
       row,
       /href="https:\/\/developers\.openai\.com\/api\/docs\/pricing"/,

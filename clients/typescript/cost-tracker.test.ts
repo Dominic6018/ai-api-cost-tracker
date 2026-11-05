@@ -97,8 +97,40 @@ describe("usageFromResponse", () => {
       outputTokens: 400,
       cachedInputTokens: 8000,
       cacheWriteInputTokens: 2000,
+      // No cache_creation breakdown: every write is a 5-minute write.
+      cacheWrite1hInputTokens: 0,
       requestId: "msg_01abc",
     });
+  });
+
+  it("reads Anthropic's 1-hour cache writes from cache_creation", () => {
+    const withTtl = {
+      ...anthropic,
+      usage: {
+        ...anthropic.usage,
+        cache_creation: {
+          ephemeral_5m_input_tokens: 500,
+          ephemeral_1h_input_tokens: 1500,
+        },
+      },
+    };
+    expect(usageFromResponse(withTtl)).toMatchObject({
+      cacheWriteInputTokens: 2000,
+      cacheWrite1hInputTokens: 1500,
+    });
+    // Priced at Sonnet 5.5's rates: 50 × $2 + 8,000 × $0.10 + 500 × $2.50
+    // + 1,500 × $4 + 400 × $10 = $0.01215
+    const usage = usageFromResponse(withTtl)!;
+    expect(usagePayloadSchema.safeParse(usage).success).toBe(true);
+    expect(
+      calculateCostUsd(usage, {
+        inputPerMTokUsd: 2,
+        outputPerMTokUsd: 10,
+        cachedInputPerMTokUsd: 0.1,
+        cacheWritePerMTokUsd: 2.5,
+        cacheWrite1hPerMTokUsd: 4,
+      }),
+    ).toBe(0.01215);
   });
 
   it("maps Gemini, billing thinking as output and tool-use prompts as input", () => {

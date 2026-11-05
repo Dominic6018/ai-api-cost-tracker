@@ -77,6 +77,11 @@ export interface Usage extends Attribution {
   outputTokens: number;
   cachedInputTokens?: number;
   cacheWriteInputTokens?: number;
+  /**
+   * The part of cacheWriteInputTokens written with a 1-hour TTL, which
+   * Anthropic bills at a higher rate than 5-minute writes.
+   */
+  cacheWrite1hInputTokens?: number;
   /** The provider's ID for the request; makes retries safe. */
   requestId?: string;
   occurredAt?: string | Date;
@@ -277,6 +282,11 @@ export function usageFromAnthropic(response: AnyResponse): Usage | null {
   if (!usage || typeof usage.input_tokens !== "number") return null;
   const cacheRead = n(usage.cache_read_input_tokens);
   const cacheWrite = n(usage.cache_creation_input_tokens);
+  // `cache_creation` splits the writes by TTL; 1-hour writes cost more.
+  const cacheWrite1h = Math.min(
+    n(details(usage.cache_creation).ephemeral_1h_input_tokens),
+    cacheWrite,
+  );
   return {
     provider: "anthropic",
     model: response.model ?? "",
@@ -284,6 +294,7 @@ export function usageFromAnthropic(response: AnyResponse): Usage | null {
     outputTokens: n(usage.output_tokens),
     cachedInputTokens: cacheRead,
     cacheWriteInputTokens: cacheWrite,
+    cacheWrite1hInputTokens: cacheWrite1h,
     requestId: response.id,
   };
 }

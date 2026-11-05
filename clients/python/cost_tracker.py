@@ -72,6 +72,9 @@ class Usage:
     #: Free-form labels such as ``{"env": "prod"}``: up to 20, keys of
     #: letters, digits and ``_ . / -``, values up to 200 characters.
     tags: Optional[Dict[str, str]] = None
+    #: The part of cache_write_input_tokens written with a 1-hour TTL, which
+    #: Anthropic bills at a higher rate. Last, so positional use is unchanged.
+    cache_write_1h_input_tokens: int = 0
 
     def to_payload(self) -> Dict[str, Any]:
         occurred_at = self.occurred_at
@@ -86,6 +89,7 @@ class Usage:
             "outputTokens": self.output_tokens,
             "cachedInputTokens": self.cached_input_tokens,
             "cacheWriteInputTokens": self.cache_write_input_tokens,
+            "cacheWrite1hInputTokens": self.cache_write_1h_input_tokens,
             "requestId": self.request_id,
             "occurredAt": occurred_at,
             "metadata": self.metadata,
@@ -242,6 +246,8 @@ def usage_from_anthropic(response: Any) -> Optional[Usage]:
         return None
     cache_read = _n(_get(usage, "cache_read_input_tokens"))
     cache_write = _n(_get(usage, "cache_creation_input_tokens"))
+    # ``cache_creation`` splits the writes by TTL; 1-hour writes cost more.
+    cache_write_1h = min(_n(_get(_get(usage, "cache_creation"), "ephemeral_1h_input_tokens")), cache_write)
     return Usage(
         provider="anthropic",
         model=_get(response, "model") or "",
@@ -249,6 +255,7 @@ def usage_from_anthropic(response: Any) -> Optional[Usage]:
         output_tokens=_n(_get(usage, "output_tokens")),
         cached_input_tokens=cache_read,
         cache_write_input_tokens=cache_write,
+        cache_write_1h_input_tokens=cache_write_1h,
         request_id=_get(response, "id"),
     )
 

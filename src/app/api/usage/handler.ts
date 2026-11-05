@@ -80,6 +80,7 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
           outputTokens: event.outputTokens,
           cachedInputTokens: event.cachedInputTokens,
           cacheWriteInputTokens: event.cacheWriteInputTokens,
+          cacheWrite1hInputTokens: event.cacheWrite1hInputTokens,
           costUsd: event.costUsd,
           requestId: event.requestId,
           customerId: event.customerId,

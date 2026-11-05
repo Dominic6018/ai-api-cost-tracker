@@ -26,6 +26,7 @@ const storedEvent: UsageEvent = {
   outputTokens: 500,
   cachedInputTokens: 0,
   cacheWriteInputTokens: 0,
+  cacheWrite1hInputTokens: 0,
   costUsd: "0.006000",
   requestId: "req_1",
   occurredAt: now,
@@ -100,6 +101,7 @@ describe("POST /api/usage handler", () => {
         outputTokens: 500,
         cachedInputTokens: 0,
         cacheWriteInputTokens: 0,
+        cacheWrite1hInputTokens: 0,
         costUsd: "0.006000",
         requestId: "req_1",
         customerId: null,
@@ -118,6 +120,7 @@ describe("POST /api/usage handler", () => {
       projectId,
       cachedInputTokens: 0,
       cacheWriteInputTokens: 0,
+      cacheWrite1hInputTokens: 0,
       occurredAt: now,
     });
   });

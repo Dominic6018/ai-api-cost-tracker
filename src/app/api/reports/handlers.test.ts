@@ -15,6 +15,7 @@ const totals = {
   inputTokens: "3000",
   cachedInputTokens: "0",
   cacheWriteInputTokens: "0",
+  cacheWrite1hInputTokens: "0",
   outputTokens: "300",
 };
 const report: SpendReport = {
@@ -34,6 +35,7 @@ const page: UsageEventsPage = {
       inputTokens: 1000,
       cachedInputTokens: 0,
       cacheWriteInputTokens: 0,
+      cacheWrite1hInputTokens: 0,
       outputTokens: 100,
       costUsd: "0.002800",
       requestId: "req_1",
@@ -149,6 +151,7 @@ describe("GET /api/reports/usage", () => {
       inputTokens: 1000,
       cachedInputTokens: 0,
       cacheWriteInputTokens: 0,
+      cacheWrite1hInputTokens: 0,
       outputTokens: 100,
       costUsd: "0.002800",
       requestId: "req_1",

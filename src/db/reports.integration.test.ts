@@ -79,6 +79,7 @@ describe("getSpendReport", () => {
       inputTokens: "4000",
       cachedInputTokens: "400",
       cacheWriteInputTokens: "40",
+      cacheWrite1hInputTokens: "0",
       outputTokens: "200",
     });
   });
@@ -126,6 +127,7 @@ describe("getSpendReport", () => {
         inputTokens: "0",
         cachedInputTokens: "0",
         cacheWriteInputTokens: "0",
+        cacheWrite1hInputTokens: "0",
         outputTokens: "0",
       },
       groups: [],
