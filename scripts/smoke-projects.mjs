@@ -146,6 +146,28 @@ step("the spend overview renders totals for each window");
   }
 }
 
+step("the price list shows each seeded price with its source");
+{
+  const prices = await page("/prices");
+  assert.equal(prices.status, 200);
+  const row = prices.html
+    .split("<tr")
+    .find((r) => r.includes('data-model="claude-sonnet-5-5"'));
+  assert.ok(row, "the seeded Claude Sonnet 5.5 price is listed");
+  const text = row
+    .replace(/<!-- -->/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
+  assert.match(text, /Current/);
+  // Seed prices per 1M tokens: $2 input, $0.10 cache reads, $10 output.
+  assert.match(text, /\$2\.00 \$0\.10 \$2\.50 \$10\.00/);
+  assert.match(
+    row,
+    /href="https:\/\/platform\.claude\.com\/docs\/en\/about-claude\/pricing"/,
+  );
+  assert.match(text, /Checked \d{4}-\d{2}-\d{2}/);
+}
+
 step("the overview shows each project's monthly budget use");
 {
   const overview = await page("/overview");

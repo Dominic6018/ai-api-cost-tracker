@@ -18,7 +18,10 @@ async function main() {
     console.log(
       `Seeded ${result.projectsInserted} project(s) and ` +
         `${result.pricesInserted} of ${seedPrices.length} price(s); ` +
-        "existing rows were left unchanged.",
+        "existing rows were left unchanged" +
+        (result.provenanceFilled > 0
+          ? `, except that ${result.provenanceFilled} price(s) got the source and check date they were missing.`
+          : "."),
     );
   } finally {
     await client.end();

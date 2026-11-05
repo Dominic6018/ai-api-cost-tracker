@@ -92,6 +92,13 @@
       "when": 1793893673809,
       "tag": "0012_spend_signal_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793895373477,
+      "tag": "0013_price_provenance",
+      "breakpoints": true
     }
   ]
 }
