@@ -222,6 +222,51 @@ step("the price list shows each seeded price with its source");
     assert.equal(result.status, 200);
     assert.match(result.html, /already has a price starting at this time/);
   }
+
+  const priceRow = async () =>
+    (await page("/prices")).html
+      .split("<tr")
+      .find((r) => r.includes(`data-model="${priceModel}"`));
+  const endPath = (await priceRow()).match(
+    /href="(\/prices\/[0-9a-f-]+\/end)"/,
+  )?.[1];
+  assert.ok(endPath, "a current price links to its end page");
+  const ending = {
+    endsAt: "2026-02-01T00:00",
+    sourceUrl: "https://developers.openai.com/api/docs/deprecations",
+    checkedOn: today,
+  };
+
+  step("ending a price before it starts shows an inline error");
+  {
+    const result = await submit(endPath, {
+      ...ending,
+      endsAt: "2025-06-01T00:00",
+    });
+    assert.equal(result.status, 200);
+    assert.match(result.html, /after this price starts/);
+  }
+
+  step(`ending "${priceModel}" lists it as ended, with who ended it and why`);
+  {
+    const result = await submit(endPath, ending);
+    assert.equal(result.status, 303, "redirect after ending");
+    assert.equal(new URL(result.location, base).pathname, "/prices");
+
+    const row = await priceRow();
+    const text = row
+      .replace(/<!-- -->/g, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+    // The status cell, between the provider and the first rate.
+    assert.match(text, /openai Ended \$2\.00/);
+    assert.doesNotMatch(row, /\/end"/, "an ended price has no End link");
+    assert.match(text, /Ended per developers\.openai\.com/);
+    assert.ok(
+      text.includes(`Checked ${today}, by ${email}`),
+      "shows who ended it",
+    );
+  }
 }
 
 step("the overview shows each project's monthly budget use");

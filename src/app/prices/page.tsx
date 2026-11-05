@@ -159,6 +159,15 @@ export default async function PricesPage() {
                         >
                           {STATUS_LABELS[status]}
                         </span>
+                        {status !== "ended" && (
+                          <Link
+                            href={`/prices/${row.id}/end`}
+                            className="block text-xs underline"
+                            aria-label={`End the ${model} price from ${utcDateTime.format(row.effectiveFrom)}`}
+                          >
+                            End
+                          </Link>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {rate(row.inputPerMTokUsd)}
@@ -216,6 +225,23 @@ export default async function PricesPage() {
                           </span>
                         )}
                         {recheck && <strong className="block">Recheck</strong>}
+                        {row.endSourceUrl && (
+                          <span className="mt-1 block" data-testid="ended">
+                            Ended per{" "}
+                            <a
+                              href={row.endSourceUrl}
+                              className="underline"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {hostOf(row.endSourceUrl)}
+                            </a>
+                            <span className="block text-foreground/60">
+                              Checked {row.endCheckedOn}
+                              {row.endedByEmail && `, by ${row.endedByEmail}`}
+                            </span>
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

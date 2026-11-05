@@ -3,13 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { addModelPrice } from "@/db/pricing";
+import { addModelPrice, endModelPrice } from "@/db/pricing";
 import { requireUser } from "@/lib/auth";
+import type { EndPriceFormState } from "@/lib/price-end-form";
 import type { PriceFormState } from "@/lib/price-form";
 import { submitPriceForm } from "./submit";
+import { submitEndPriceForm } from "./submit-end";
 
-// Server actions can be called from any route, so this checks the session
-// itself rather than relying on the page that renders the form.
+// Server actions can be called from any route, so each checks the session
+// itself rather than relying on the page that renders its form.
 export async function addPriceAction(
   _previous: PriceFormState | undefined,
   formData: FormData,
@@ -17,6 +19,21 @@ export async function addPriceAction(
   const user = await requireUser();
   const result = await submitPriceForm(formData, (input) =>
     addModelPrice(db, input, user.id),
+  );
+  if (!result.ok) return result.state;
+
+  revalidatePath("/prices");
+  redirect("/prices");
+}
+
+export async function endPriceAction(
+  id: string,
+  _previous: EndPriceFormState | undefined,
+  formData: FormData,
+): Promise<EndPriceFormState> {
+  const user = await requireUser();
+  const result = await submitEndPriceForm(formData, (input) =>
+    endModelPrice(db, id, input, user.id),
   );
   if (!result.ok) return result.state;
 
