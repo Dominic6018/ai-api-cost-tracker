@@ -192,11 +192,12 @@ const wholeCents = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
-const usd = (amount: string) =>
+/** An exact decimal amount in whole cents, e.g. "$1,234.50". */
+export const usd = (amount: string) =>
   wholeCents.format(microsToUsd(toMicros(amount)));
 
 /** Slack treats &, < and > as markup; anything else is shown as typed. */
-const slackEscape = (text: string) =>
+export const slackEscape = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** A Slack incoming-webhook body. */
@@ -215,10 +216,41 @@ export function slackPayload(alert: BudgetAlert) {
 export type DeliveryResult = { ok: true } | { ok: false; error: string };
 
 /** POSTs one alert to one channel. Never throws. */
-export async function deliverAlert(
+export function deliverAlert(
   alert: BudgetAlert,
   channel: AlertChannel,
   config: AlertConfig,
+  options: { fetch?: typeof fetch; now?: Date } = {},
+): Promise<DeliveryResult> {
+  const now = options.now ?? new Date();
+  return postToChannel(
+    channel,
+    config,
+    {
+      event: WEBHOOK_EVENT,
+      webhookBody: webhookPayload(alert, now),
+      slackBody: slackPayload(alert),
+    },
+    { ...options, now },
+  );
+}
+
+/** What one notification sends: the webhook's event and body, and Slack's. */
+export interface ChannelMessage {
+  event: string;
+  webhookBody: object;
+  slackBody: { text: string };
+}
+
+/**
+ * POSTs a message to one channel: JSON, signed for the webhook when a
+ * secret is set, with a timeout, and without following redirects.
+ * Never throws.
+ */
+export async function postToChannel(
+  channel: AlertChannel,
+  config: AlertConfig,
+  message: ChannelMessage,
   options: { fetch?: typeof fetch; now?: Date } = {},
 ): Promise<DeliveryResult> {
   const fetchImpl = options.fetch ?? globalThis.fetch;
@@ -227,13 +259,13 @@ export async function deliverAlert(
   if (!destination) return { ok: false, error: `${channel} isn't configured` };
 
   const body = JSON.stringify(
-    channel === "webhook" ? webhookPayload(alert, now) : slackPayload(alert),
+    channel === "webhook" ? message.webhookBody : message.slackBody,
   );
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
   if (channel === "webhook") {
-    headers["x-cost-tracker-event"] = WEBHOOK_EVENT;
+    headers["x-cost-tracker-event"] = message.event;
     if (config.webhook?.secret) {
       headers[SIGNATURE_HEADER] = signWebhook(body, config.webhook.secret, now);
     }

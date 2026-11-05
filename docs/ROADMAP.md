@@ -83,7 +83,7 @@ Recording usage shouldn't require hand-written API calls.
 - [x] `checkBudget()` in the TypeScript and Python clients (#85)
 - [x] Month-end spend forecast on the overview (#87)
 - [x] Spending spike detection on the overview (#89)
-- [ ] Spike and forecast notifications by webhook and Slack
+- [x] Spike and forecast notifications by webhook and Slack (#91)
 
 ## Milestone 9: Price management
 

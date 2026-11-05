@@ -359,6 +359,52 @@ export const budgetNotifications = pgTable(
   ],
 );
 
+/**
+ * Forecast and spike notifications sent: at most one per project, kind,
+ * period (the month for a forecast, the UTC day for a spike) and channel.
+ * Claimed before sending and removed if delivery fails, like
+ * budget_notifications.
+ */
+export const spendSignalNotifications = pgTable(
+  "spend_signal_notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"forecast" | "spike">().notNull(),
+    // "2026-11" for a forecast, "2026-11-06" for a spike.
+    period: text("period").notNull(),
+    channel: text("channel").$type<AlertChannel>().notNull(),
+    // What the message reported: the projected month or today's spend,
+    // against the budget or the 7-day daily average.
+    amountUsd: numeric("amount_usd", { precision: 14, scale: 6 }).notNull(),
+    referenceUsd: numeric("reference_usd", {
+      precision: 14,
+      scale: 6,
+    }).notNull(),
+    notifiedAt: timestamp("notified_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("spend_signal_notifications_once_idx").on(
+      t.projectId,
+      t.kind,
+      t.period,
+      t.channel,
+    ),
+    check(
+      "spend_signal_notifications_period_valid",
+      sql`(${t.kind} = 'forecast' and ${t.period} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$') or (${t.kind} = 'spike' and ${t.period} ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')`,
+    ),
+    check(
+      "spend_signal_notifications_channel_valid",
+      sql`${t.channel} in ('webhook', 'slack')`,
+    ),
+  ],
+);
+
 export const API_KEY_SCOPES = ["ingest", "read"] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 

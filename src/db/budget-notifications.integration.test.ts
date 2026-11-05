@@ -6,8 +6,18 @@ import postgres from "postgres";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { AlertConfig } from "@/lib/budget-notifications";
 import { parseEnv } from "@/lib/env";
-import { runBudgetAlerts, type AlertResult } from "./budget-notifications";
-import { budgetNotifications, projects, usageEvents } from "./schema";
+import {
+  runBudgetAlerts,
+  runSpendSignalAlerts,
+  type AlertResult,
+  type SignalResult,
+} from "./budget-notifications";
+import {
+  budgetNotifications,
+  projects,
+  spendSignalNotifications,
+  usageEvents,
+} from "./schema";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -263,5 +273,198 @@ describe("runBudgetAlerts", () => {
     const fetch = okFetch();
     expect(await runBudgetAlerts(db, { config: {}, now, fetch })).toEqual([]);
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+/** Signal results for these projects, as comparable tuples. */
+const signalSummary = (results: SignalResult[], ids: string[]) =>
+  results
+    .filter((r) => ids.includes(r.alert.project.id))
+    .map((r) => [
+      ids.indexOf(r.alert.project.id),
+      r.alert.kind,
+      r.alert.period,
+      r.channel,
+      r.outcome,
+    ])
+    .sort((a, b) => String(a).localeCompare(String(b)));
+
+const storedSignals = (ids: string[]) =>
+  db
+    .select({
+      kind: spendSignalNotifications.kind,
+      period: spendSignalNotifications.period,
+      channel: spendSignalNotifications.channel,
+      amountUsd: spendSignalNotifications.amountUsd,
+      referenceUsd: spendSignalNotifications.referenceUsd,
+    })
+    .from(spendSignalNotifications)
+    .where(inArray(spendSignalNotifications.projectId, ids));
+
+describe("runSpendSignalAlerts", () => {
+  it("sends a spike once a day, and again on a new spiking day", async () => {
+    // No budget, so no forecast; $5 today after an idle week is a spike.
+    const { ids } = await setup("2032-09", [{ budget: null, spent: "0" }]);
+    const day1 = new Date("2032-09-20T10:00:00Z");
+    await spend(ids, ["5.000000"], new Date("2032-09-20T09:00:00Z"));
+
+    const fetch = okFetch();
+    expect(
+      signalSummary(
+        await runSpendSignalAlerts(db, { config, now: day1, fetch }),
+        ids,
+      ),
+    ).toEqual([
+      [0, "spike", "2032-09-20", "slack", "sent"],
+      [0, "spike", "2032-09-20", "webhook", "sent"],
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    // Later the same day: already told.
+    const quiet = okFetch();
+    const later = new Date("2032-09-20T18:00:00Z");
+    expect(
+      signalSummary(
+        await runSpendSignalAlerts(db, { config, now: later, fetch: quiet }),
+        ids,
+      ).every((r) => r[4] === "already_sent"),
+    ).toBe(true);
+    expect(quiet).not.toHaveBeenCalled();
+
+    // The next day spikes again: $5 against $5/7 a day.
+    await spend(ids, ["5.000000"], new Date("2032-09-21T09:00:00Z"));
+    const day2 = new Date("2032-09-21T10:00:00Z");
+    expect(
+      signalSummary(
+        await runSpendSignalAlerts(db, { config, now: day2, fetch: okFetch() }),
+        ids,
+      ),
+    ).toEqual([
+      [0, "spike", "2032-09-21", "slack", "sent"],
+      [0, "spike", "2032-09-21", "webhook", "sent"],
+    ]);
+    expect(await storedSignals(ids)).toContainEqual({
+      kind: "spike",
+      period: "2032-09-21",
+      channel: "webhook",
+      amountUsd: "5.000000",
+      referenceUsd: "0.714285",
+    });
+  });
+
+  it("sends a forecast over budget once a month", async () => {
+    // $50 early in the month and $21 in the pace window ($3 a day):
+    // $71 + 16.5 days × $3 = $120.50 of a $100 budget.
+    const { ids } = await setup("2032-10", [
+      { budget: "100.00", spent: "50.000000" },
+    ]);
+    await spend(ids, ["21.000000"], new Date("2032-10-10T00:00:00Z"));
+    const now = new Date("2032-10-15T12:00:00Z");
+    const webhookOnly: AlertConfig = { webhook: config.webhook };
+
+    const fetch = okFetch();
+    expect(
+      signalSummary(
+        await runSpendSignalAlerts(db, { config: webhookOnly, now, fetch }),
+        ids,
+      ),
+    ).toEqual([[0, "forecast", "2032-10", "webhook", "sent"]]);
+    const body = JSON.parse(fetch.mock.calls[0][1]?.body as string);
+    expect(body).toMatchObject({
+      type: "spend.forecast_over_budget",
+      spentUsd: "71.000000",
+      projectedUsd: "120.500000",
+      budgetUsd: "100.00",
+      lastDay: "2032-10-31",
+    });
+
+    // A week later, still on pace to exceed it ($92 + 9.5 days × $3 =
+    // $120.50): planned again, but not sent again this month.
+    await spend(ids, ["21.000000"], new Date("2032-10-18T00:00:00Z"));
+    const quiet = okFetch();
+    expect(
+      signalSummary(
+        await runSpendSignalAlerts(db, {
+          config: webhookOnly,
+          now: new Date("2032-10-22T12:00:00Z"),
+          fetch: quiet,
+        }),
+        ids,
+      ),
+    ).toEqual([[0, "forecast", "2032-10", "webhook", "already_sent"]]);
+    expect(quiet).not.toHaveBeenCalled();
+    expect((await storedSignals(ids)).map((r) => r.period)).toEqual([
+      "2032-10",
+    ]);
+  });
+
+  it("doesn't record a failed delivery, so the next run retries it", async () => {
+    const { ids } = await setup("2032-11", [{ budget: null, spent: "0" }]);
+    await spend(ids, ["2.000000"], new Date("2032-11-20T01:00:00Z"));
+    const now = new Date("2032-11-20T10:00:00Z");
+    const flaky = vi.fn<typeof fetch>(async (url) =>
+      String(url).includes("slack")
+        ? new Response("down", { status: 503 })
+        : new Response("ok"),
+    );
+    expect(
+      signalSummary(
+        await runSpendSignalAlerts(db, { config, now, fetch: flaky }),
+        ids,
+      ),
+    ).toEqual([
+      [0, "spike", "2032-11-20", "slack", "failed"],
+      [0, "spike", "2032-11-20", "webhook", "sent"],
+    ]);
+    expect((await storedSignals(ids)).map((r) => r.channel)).toEqual([
+      "webhook",
+    ]);
+
+    const retry = okFetch();
+    expect(
+      signalSummary(
+        await runSpendSignalAlerts(db, { config, now, fetch: retry }),
+        ids,
+      ),
+    ).toEqual([
+      [0, "spike", "2032-11-20", "slack", "sent"],
+      [0, "spike", "2032-11-20", "webhook", "already_sent"],
+    ]);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends and records nothing in a dry run", async () => {
+    const { ids } = await setup("2032-12", [{ budget: null, spent: "0" }]);
+    await spend(ids, ["3.000000"], new Date("2032-12-20T01:00:00Z"));
+    const now = new Date("2032-12-20T10:00:00Z");
+    const fetch = okFetch();
+    expect(
+      signalSummary(
+        await runSpendSignalAlerts(db, { config, now, fetch, dryRun: true }),
+        ids,
+      ),
+    ).toEqual([
+      [0, "spike", "2032-12-20", "slack", "would_send"],
+      [0, "spike", "2032-12-20", "webhook", "would_send"],
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await storedSignals(ids)).toEqual([]);
+  });
+
+  it("doesn't send twice when two runs overlap", async () => {
+    const { ids } = await setup("2033-01", [{ budget: null, spent: "0" }]);
+    await spend(ids, ["4.000000"], new Date("2033-01-20T01:00:00Z"));
+    const now = new Date("2033-01-20T10:00:00Z");
+    const fetch = okFetch();
+    const [a, b] = await Promise.all([
+      runSpendSignalAlerts(db, { config, now, fetch }),
+      runSpendSignalAlerts(db, { config, now, fetch }),
+    ]);
+    const sent = [...signalSummary(a, ids), ...signalSummary(b, ids)].filter(
+      (r) => r[4] === "sent",
+    );
+    expect(sent).toHaveLength(2);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(await storedSignals(ids)).toHaveLength(2);
   });
 });
