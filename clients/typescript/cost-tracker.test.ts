@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { calculateCostUsd } from "@/lib/cost";
+import { budgetCheckPayloadSchema } from "@/lib/budget-check";
 import { usagePayloadSchema } from "@/lib/usage";
 import {
   CostTrackerError,
@@ -530,5 +531,101 @@ describe("recordOutcome", () => {
     await expect(
       tracker.recordOutcome({ name: "ticket_resolved", outcomeId: "x" }),
     ).rejects.toMatchObject({ status: 409, code: "outcome_id_conflict" });
+  });
+});
+
+describe("checkBudget", () => {
+  const answer = {
+    allowed: false,
+    reasons: ["run_budget"],
+    estimatedCostUsd: "0.250000",
+    month: {
+      period: "2026-11",
+      capUsd: "100.000000",
+      spentUsd: "40.000000",
+      remainingUsd: "60.000000",
+      allowed: true,
+    },
+    run: {
+      runId: "run_42",
+      capUsd: "2.000000",
+      spentUsd: "1.900000",
+      remainingUsd: "0.100000",
+      allowed: false,
+    },
+  };
+  const checked = () => Response.json(answer);
+  const call = (fetch: ReturnType<typeof setup>["fetch"], n = 0) =>
+    fetch.mock.calls[n] as unknown as [string, RequestInit];
+  const bodyOf = (fetch: ReturnType<typeof setup>["fetch"], n = 0) =>
+    JSON.parse(call(fetch, n)[1].body as string);
+
+  it("posts the estimate and run, and returns the answer", async () => {
+    const { tracker, fetch } = setup([checked()]);
+    expect(
+      await tracker.checkBudget({ estimatedCostUsd: "0.25", runId: "run_42" }),
+    ).toEqual(answer);
+    const [url, init] = call(fetch);
+    expect(url).toBe("https://costs.example.com/api/budget/check");
+    expect(new Headers(init.headers).get("authorization")).toBe(
+      "Bearer act_test",
+    );
+    expect(bodyOf(fetch)).toEqual({
+      estimatedCostUsd: "0.25",
+      runId: "run_42",
+    });
+  });
+
+  it("uses a scoped tracker's run unless one is passed", async () => {
+    const { tracker, fetch } = setup([checked(), checked(), checked()]);
+    const run = tracker.with({ runId: "run_42", customerId: "cus_1" });
+    await run.checkBudget({ estimatedCostUsd: 0.25 });
+    await run.checkBudget({ runId: "run_other" });
+    await tracker.checkBudget();
+    // Only the run matters to a check; other attribution isn't sent.
+    expect(bodyOf(fetch, 0)).toEqual({
+      estimatedCostUsd: 0.25,
+      runId: "run_42",
+    });
+    expect(bodyOf(fetch, 1)).toEqual({ runId: "run_other" });
+    expect(bodyOf(fetch, 2)).toEqual({});
+  });
+
+  it("sends bodies the API accepts", () => {
+    for (const body of [
+      {},
+      { estimatedCostUsd: "0.25", runId: "run_42" },
+      { estimatedCostUsd: 0.25 },
+    ]) {
+      expect(budgetCheckPayloadSchema.safeParse(body).success).toBe(true);
+    }
+  });
+
+  it("retries network errors, 429s and 5xx, since a check is read-only", async () => {
+    const { tracker, fetch } = setup([
+      new TypeError("fetch failed"),
+      failed(503, "unavailable"),
+      checked(),
+    ]);
+    vi.useFakeTimers();
+    try {
+      const result = tracker.checkBudget();
+      await vi.runAllTimersAsync();
+      expect((await result).allowed).toBe(false);
+      expect(fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("throws the API's error, or for an unexpected response", async () => {
+    const { tracker } = setup([
+      failed(400, "invalid_payload"),
+      Response.json({ ok: true }),
+    ]);
+    await expect(
+      tracker.checkBudget({ estimatedCostUsd: "-1" }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_payload" });
+    await expect(tracker.checkBudget()).rejects.toThrow("Unexpected response");
   });
 });

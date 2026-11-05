@@ -103,6 +103,30 @@ await scoped.recordOutcome({ name: "ticket_resolved", outcomeId: ticket.id });
 
 `recordOutcome()` returns `{ id, replayed }` and throws a `CostTrackerError` if the outcome isn't stored. With an `outcomeId`, network errors, 429s and 5xx are retried and a repeat isn't counted twice; without one, it isn't retried. `count` (default 1) records a batch.
 
+## Budget check
+
+Ask before an agent step whether the run or the month has room left ([details](../../README.md#budget-check-before-spending)):
+
+```ts
+const run = tracker.with({ customerId, runId: agentRun.id });
+const check = await run.checkBudget({ estimatedCostUsd: "0.25" });
+if (!check.allowed) {
+  // check.reasons: ["run_budget"] and/or ["monthly_budget"]
+  return stopRun(check.run?.remainingUsd);
+}
+```
+
+A scoped tracker's `runId` is used unless you pass one. The result has `allowed`, `reasons`, and `month` and `run` blocks with the cap, spent and remaining as exact decimal strings (`run` is `null` without a run ID). A denial isn't an error. Network errors, 429s and 5xx are retried, since a check changes nothing; after that it throws a `CostTrackerError`, so choose whether to fail open or closed:
+
+```ts
+const allowed = await run.checkBudget({ estimatedCostUsd: "0.25" }).then(
+  (check) => check.allowed,
+  () => true,
+); // fail open
+```
+
+A check doesn't reserve the money: send each step's usage promptly so the next check sees it.
+
 ## How usage is read
 
 | API                      | Input tokens                                                                    | Cached / cache writes                                     | Output tokens                                 | `requestId`  |
