@@ -89,7 +89,8 @@ Recording usage shouldn't require hand-written API calls.
 
 - A screen for managing prices, requiring a source and check date for every change:
   - [x] Record each price's source and check date, and list prices on `/prices` (#93)
-  - [ ] Add and end prices from the screen, requiring both
+  - [x] Add a price from the screen, requiring both (#95)
+  - [ ] End a price without a replacement (a retired model)
 - [ ] Separate rates per cache duration; batch, flex and priority tiers; non-token charges (search, images, audio)
 - [ ] OpenAI long-context tiers, once their rates can be verified from the pricing page
 
