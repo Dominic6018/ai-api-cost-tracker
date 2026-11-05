@@ -1,9 +1,14 @@
 import { and, asc, desc, eq, gt, isNull, lt, lte, or } from "drizzle-orm";
-import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import {
+  alias,
+  type PgDatabase,
+  type PgQueryResultHKT,
+} from "drizzle-orm/pg-core";
 import {
   selectEffectivePricing,
   type PricingLookupResult,
 } from "@/lib/pricing";
+import type { EndPriceInput } from "@/lib/price-end-form";
 import type { PriceInput } from "@/lib/price-form";
 import { modelPricing, users, type ModelPricing } from "./schema";
 
@@ -42,23 +47,35 @@ export async function findEffectivePricing(
   return selectEffectivePricing(candidates, at);
 }
 
-/** A price row for the list, with the email of whoever added it. */
-export type PriceListEntry = ModelPricing & { recordedByEmail: string | null };
+/** A price row for the list, with the emails of who added and ended it. */
+export type PriceListEntry = ModelPricing & {
+  recordedByEmail: string | null;
+  endedByEmail: string | null;
+};
+
+const recorder = alias(users, "recorder");
+const ender = alias(users, "ender");
 
 /** Every price row, for the price list; grouping happens in `priceHistories`. */
 export async function listModelPrices(db: Database): Promise<PriceListEntry[]> {
   const rows = await db
-    .select({ price: modelPricing, recordedByEmail: users.email })
+    .select({
+      price: modelPricing,
+      recordedByEmail: recorder.email,
+      endedByEmail: ender.email,
+    })
     .from(modelPricing)
-    .leftJoin(users, eq(users.id, modelPricing.recordedBy))
+    .leftJoin(recorder, eq(recorder.id, modelPricing.recordedBy))
+    .leftJoin(ender, eq(ender.id, modelPricing.endedBy))
     .orderBy(
       asc(modelPricing.provider),
       asc(modelPricing.model),
       desc(modelPricing.effectiveFrom),
     );
-  return rows.map(({ price, recordedByEmail }) => ({
+  return rows.map(({ price, recordedByEmail, endedByEmail }) => ({
     ...price,
     recordedByEmail,
+    endedByEmail,
   }));
 }
 
@@ -147,4 +164,79 @@ export async function addModelPrice<
     }
     throw error;
   }
+}
+
+const INVALID_TEXT_REPRESENTATION = "22P02";
+
+/** One price by id; undefined for unknown or malformed ids. */
+export async function getModelPrice(
+  db: Database,
+  id: string,
+): Promise<ModelPricing | undefined> {
+  try {
+    const [price] = await db
+      .select()
+      .from(modelPricing)
+      .where(eq(modelPricing.id, id));
+    return price;
+  } catch (error) {
+    if (pgErrorCode(error) === INVALID_TEXT_REPRESENTATION) return undefined;
+    throw error;
+  }
+}
+
+export type EndPriceResult =
+  | { ok: true; price: ModelPricing }
+  | {
+      ok: false;
+      /**
+       * not_found: no such price. invalid_end: the end isn't after the
+       * price's start and before any end it already has.
+       */
+      error: "not_found" | "invalid_end";
+    };
+
+/**
+ * Ends a price without a replacement, e.g. for a retired model, recording
+ * where that was read, when it was checked and who did it. It can only
+ * shorten a price: the end must be after its start and before any end it
+ * already has. One conditional update, so a price changed in the meantime
+ * is refused rather than overwritten.
+ */
+export async function endModelPrice(
+  db: Pick<PgDatabase<PgQueryResultHKT>, "select" | "update">,
+  id: string,
+  input: EndPriceInput,
+  endedBy: string,
+): Promise<EndPriceResult> {
+  try {
+    const [price] = await db
+      .update(modelPricing)
+      .set({
+        effectiveTo: input.endsAt,
+        endSourceUrl: input.sourceUrl,
+        endCheckedOn: input.checkedOn,
+        endedBy,
+      })
+      .where(
+        and(
+          eq(modelPricing.id, id),
+          lt(modelPricing.effectiveFrom, input.endsAt),
+          or(
+            isNull(modelPricing.effectiveTo),
+            gt(modelPricing.effectiveTo, input.endsAt),
+          ),
+        ),
+      )
+      .returning();
+    if (price) return { ok: true, price };
+  } catch (error) {
+    if (pgErrorCode(error) === INVALID_TEXT_REPRESENTATION) {
+      return { ok: false, error: "not_found" };
+    }
+    throw error;
+  }
+  return (await getModelPrice(db, id))
+    ? { ok: false, error: "invalid_end" }
+    : { ok: false, error: "not_found" };
 }

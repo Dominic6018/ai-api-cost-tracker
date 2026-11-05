@@ -122,6 +122,14 @@ export const modelPricing = pgTable(
     recordedBy: uuid("recorded_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    // Set when the price was ended from /prices without a replacement (a
+    // retired model): where that was read, when it was checked, and by
+    // whom. The price's own source above is kept.
+    endSourceUrl: text("end_source_url"),
+    endCheckedOn: date("end_checked_on", { mode: "string" }),
+    endedBy: uuid("ended_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...timestamps,
   },
   (t) => [
@@ -133,6 +141,10 @@ export const modelPricing = pgTable(
     check(
       "model_pricing_source_url_http",
       sql`${t.sourceUrl} IS NULL OR ${t.sourceUrl} ~ '^https?://'`,
+    ),
+    check(
+      "model_pricing_end_source_url_http",
+      sql`${t.endSourceUrl} IS NULL OR ${t.endSourceUrl} ~ '^https?://'`,
     ),
     check(
       "model_pricing_effective_range",

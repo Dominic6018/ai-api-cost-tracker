@@ -8,6 +8,7 @@ import { parseEnv } from "@/lib/env";
 import type { PriceInput } from "@/lib/price-form";
 import {
   addModelPrice,
+  endModelPrice,
   findEffectivePricing,
   listModelPrices,
 } from "./pricing";
@@ -192,5 +193,114 @@ describe("addModelPrice", () => {
     await db.delete(users).where(eq(users.id, other.id));
     const [row] = await history(model);
     expect(row).toMatchObject({ input: "2.000000", recordedBy: null });
+  });
+});
+
+describe("endModelPrice", () => {
+  const ending = (endsAt: string) => ({
+    endsAt: at(endsAt),
+    sourceUrl: "https://developers.openai.com/api/docs/deprecations",
+    checkedOn: "2026-11-06",
+  });
+  // Each model here has exactly one price.
+  const idOf = async (model: string) => {
+    const [price] = await db
+      .select({ id: modelPricing.id })
+      .from(modelPricing)
+      .where(eq(modelPricing.model, model));
+    return price.id;
+  };
+  const row = async (id: string) =>
+    (await db.select().from(modelPricing).where(eq(modelPricing.id, id)))[0];
+
+  it("ends a price with its provenance, after which the model has no price", async () => {
+    const model = `${prefix}-end-a`;
+    await existing(model, "2026-01-01T00:00:00Z");
+    const id = await idOf(model);
+
+    const result = await endModelPrice(
+      db,
+      id,
+      ending("2026-09-01T00:00:00Z"),
+      userId,
+    );
+    expect(result.ok && result.price).toMatchObject({
+      effectiveTo: at("2026-09-01T00:00:00Z"),
+      endSourceUrl: "https://developers.openai.com/api/docs/deprecations",
+      endCheckedOn: "2026-11-06",
+      endedBy: userId,
+      // The price's own provenance is kept.
+      sourceUrl: null,
+    });
+
+    const lookup = (iso: string) =>
+      findEffectivePricing(db, { provider: "openai", model, at: at(iso) });
+    expect((await lookup("2026-08-31T23:59:59Z")).found).toBe(true);
+    expect(await lookup("2026-09-01T00:00:00Z")).toEqual({
+      found: false,
+      reason: "no_pricing",
+    });
+  });
+
+  it("can end a price earlier than its existing end", async () => {
+    const model = `${prefix}-end-b`;
+    await existing(model, "2026-01-01T00:00:00Z", "2026-06-01T00:00:00Z");
+    const id = await idOf(model);
+    expect(
+      (await endModelPrice(db, id, ending("2026-03-01T00:00:00Z"), userId)).ok,
+    ).toBe(true);
+    expect((await row(id)).effectiveTo).toEqual(at("2026-03-01T00:00:00Z"));
+  });
+
+  it.each([
+    ["at its start", "2026-01-01T00:00:00Z"],
+    ["before its start", "2025-12-31T23:59:59Z"],
+    ["at its existing end", "2026-06-01T00:00:00Z"],
+    ["after its existing end", "2026-07-01T00:00:00Z"],
+  ])("refuses an end %s and changes nothing", async (_, endsAt) => {
+    const model = `${prefix}-end-c-${endsAt.slice(0, 10)}`;
+    await existing(model, "2026-01-01T00:00:00Z", "2026-06-01T00:00:00Z");
+    const id = await idOf(model);
+    const before = await row(id);
+
+    expect(await endModelPrice(db, id, ending(endsAt), userId)).toEqual({
+      ok: false,
+      error: "invalid_end",
+    });
+    expect(await row(id)).toEqual(before);
+  });
+
+  it.each([randomUUID(), "not-a-uuid"])(
+    "treats the id %s as not found",
+    async (id) => {
+      expect(
+        await endModelPrice(db, id, ending("2026-09-01T00:00:00Z"), userId),
+      ).toEqual({ ok: false, error: "not_found" });
+    },
+  );
+
+  it("lists who ended a price, and keeps the end if they're deleted", async () => {
+    const model = `${prefix}-end-d`;
+    await existing(model, "2026-01-01T00:00:00Z");
+    const id = await idOf(model);
+    const [other] = await db
+      .insert(users)
+      .values({ email: `${prefix}-end@example.com`, passwordHash: "x" })
+      .returning({ id: users.id });
+    await endModelPrice(db, id, ending("2026-09-01T00:00:00Z"), other.id);
+
+    const listed = (await listModelPrices(db)).find((p) => p.id === id);
+    expect(listed).toMatchObject({
+      endedBy: other.id,
+      endedByEmail: `${prefix}-end@example.com`,
+      recordedByEmail: null,
+    });
+
+    await db.delete(users).where(eq(users.id, other.id));
+    expect(await row(id)).toMatchObject({
+      endedBy: null,
+      effectiveTo: at("2026-09-01T00:00:00Z"),
+      endSourceUrl: "https://developers.openai.com/api/docs/deprecations",
+    });
   });
 });
