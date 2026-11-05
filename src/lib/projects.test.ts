@@ -11,6 +11,7 @@ const valid = {
   name: "Sample App",
   slug: "sample-app",
   monthlyBudgetUsd: "100",
+  runBudgetUsd: "2",
 };
 
 function errors(values: Record<string, string>) {
@@ -35,6 +36,7 @@ describe("parseProjectForm", () => {
         name: "Sample App",
         slug: "sample-app",
         monthlyBudgetUsd: "99.5",
+        runBudgetUsd: null,
       },
     });
   });
@@ -82,6 +84,18 @@ describe("parseProjectForm", () => {
     if (result.ok) return;
     expect(result.state.values).toEqual({ ...valid, slug: "Bad Slug" });
     expect(result.state.fieldErrors.name).toBeUndefined();
+  });
+
+  it("validates the run budget like the monthly budget", () => {
+    const parsed = parseProjectForm(form({ ...valid, runBudgetUsd: " 2.5 " }));
+    expect(parsed.ok && parsed.values.runBudgetUsd).toBe("2.5");
+    const empty = parseProjectForm(form({ ...valid, runBudgetUsd: "" }));
+    expect(empty.ok && empty.values.runBudgetUsd).toBeNull();
+    for (const bad of ["-1", "0.001", "abc", "10000000000"]) {
+      const fieldErrors = errors({ ...valid, runBudgetUsd: bad });
+      expect(fieldErrors.runBudgetUsd, bad).toBeDefined();
+      expect(fieldErrors.monthlyBudgetUsd).toBeUndefined();
+    }
   });
 
   it("treats missing fields as empty", () => {

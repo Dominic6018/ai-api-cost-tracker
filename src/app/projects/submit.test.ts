@@ -7,6 +7,7 @@ const project: Project = {
   name: "Sample App",
   slug: "sample-app",
   monthlyBudgetUsd: null,
+  runBudgetUsd: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -21,6 +22,7 @@ const valid = form({
   name: "Sample App",
   slug: "sample-app",
   monthlyBudgetUsd: "",
+  runBudgetUsd: "1.5",
 });
 
 describe("submitProjectForm", () => {
@@ -31,6 +33,7 @@ describe("submitProjectForm", () => {
       name: "Sample App",
       slug: "sample-app",
       monthlyBudgetUsd: null,
+      runBudgetUsd: "1.5",
     });
   });
 
@@ -53,6 +56,7 @@ describe("submitProjectForm", () => {
           name: "Sample App",
           slug: "sample-app",
           monthlyBudgetUsd: "",
+          runBudgetUsd: "1.5",
         },
         fieldErrors: { slug: "Another project already uses this slug" },
       },

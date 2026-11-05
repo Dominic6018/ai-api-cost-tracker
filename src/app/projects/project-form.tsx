@@ -15,7 +15,7 @@ interface ProjectFormProps {
   submitLabel: string;
 }
 
-const EMPTY = { name: "", slug: "", monthlyBudgetUsd: "" };
+const EMPTY = { name: "", slug: "", monthlyBudgetUsd: "", runBudgetUsd: "" };
 
 const inputClass =
   "w-full rounded-md border border-foreground/20 bg-background px-3 py-2 " +
@@ -66,6 +66,13 @@ export function ProjectForm({
         hint="Leave empty for no budget."
         state={state}
         inputProps={{ inputMode: "decimal", placeholder: "e.g. 100.00" }}
+      />
+      <Field
+        name="runBudgetUsd"
+        label="Run budget (USD)"
+        hint="The most one agent run (one runId) may spend, enforced by the budget check API. Leave empty for no limit."
+        state={state}
+        inputProps={{ inputMode: "decimal", placeholder: "e.g. 2.00" }}
       />
 
       <div className="flex items-center gap-3">

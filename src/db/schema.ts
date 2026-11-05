@@ -43,6 +43,8 @@ export const projects = pgTable(
       precision: 12,
       scale: 2,
     }),
+    // Optional cap on any one agent run's total spend (by run_id), in USD.
+    runBudgetUsd: numeric("run_budget_usd", { precision: 12, scale: 2 }),
     ...timestamps,
   },
   (t) => [
@@ -50,6 +52,10 @@ export const projects = pgTable(
     check(
       "projects_budget_non_negative",
       sql`${t.monthlyBudgetUsd} IS NULL OR ${t.monthlyBudgetUsd} >= 0`,
+    ),
+    check(
+      "projects_run_budget_non_negative",
+      sql`${t.runBudgetUsd} IS NULL OR ${t.runBudgetUsd} >= 0`,
     ),
   ],
 );

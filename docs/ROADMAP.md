@@ -79,7 +79,8 @@ Recording usage shouldn't require hand-written API calls.
 - Budget notifications at the existing 80% / 100% thresholds:
   - [x] Webhook (signed) and Slack, once per threshold per month (#81)
   - [ ] Email
-- [ ] A budget check an app calls before spending (allow or deny), with per-run and per-period caps
+- [x] A budget check an app calls before spending (allow or deny), with per-run and per-period caps (#83)
+- [ ] `checkBudget()` in the TypeScript and Python clients
 - [ ] Month-end spend forecast and spike detection
 
 ## Milestone 9: Price management
