@@ -414,6 +414,7 @@ Both fields are optional. `estimatedCostUsd` is what the next step might cost, a
 - **Denials are answers, not errors:** `reasons` lists `monthly_budget` and/or `run_budget`. Errors are `400` for an invalid body, `401`/`429` for keys as for usage, `403` for a read key, and `404` if the key's project was deleted. Responses are never cached.
 - **A check reserves nothing.** It sees only usage already recorded, so steps checked at the same moment can each be allowed, and a step's cost counts once its usage is sent. Check before each step with an estimate, and record usage promptly.
 - **Failing open or closed is your choice.** If the tracker can't be reached, decide in your app whether to proceed.
+- **From the clients:** `tracker.checkBudget({ estimatedCostUsd, runId })` in [TypeScript](clients/typescript/README.md#budget-check) and `tracker.check_budget(estimated_cost_usd, run_id=...)` in [Python](clients/python/README.md#budget-check). A scoped tracker's run ID is used by default.
 
 ## Budget notifications
 

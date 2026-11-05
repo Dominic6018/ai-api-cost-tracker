@@ -88,6 +88,29 @@ scoped.record_outcome("ticket_resolved", outcome_id=ticket.id)
 
 `record_outcome()` returns an `OutcomeResult(id, replayed)` and raises `CostTrackerError` if the outcome isn't stored. With an `outcome_id`, network errors, 429s and 5xx are retried and a repeat isn't counted twice; without one, it isn't retried. `count` (default 1) records a batch.
 
+## Budget check
+
+Ask before an agent step whether the run or the month has room left ([details](../../README.md#budget-check-before-spending)):
+
+```python
+run = tracker.with_attribution(customer_id=customer_id, run_id=run_id)
+check = run.check_budget("0.25")  # a decimal string, int, float or Decimal
+if not check.allowed:
+    # check.reasons: ("run_budget",) and/or ("monthly_budget",)
+    stop_run(check.run.remaining_usd if check.run else None)
+```
+
+A scoped tracker's `run_id` is used unless you pass one. The result is a `BudgetCheck` with `allowed`, `reasons`, and `month` and `run` caps (`cap_usd`, `spent_usd`, `remaining_usd` as exact decimal strings; `run` is `None` without a run ID). A denial isn't an error. Network errors, 429s and 5xx are retried, since a check changes nothing; after that it raises `CostTrackerError`, so choose whether to fail open or closed:
+
+```python
+try:
+    allowed = run.check_budget("0.25").allowed
+except CostTrackerError:
+    allowed = True  # fail open
+```
+
+A check doesn't reserve the money: send each step's usage promptly so the next check sees it. `check_budget()` runs on the calling thread.
+
 ## How usage is read
 
 The same mappings as the [TypeScript client](../typescript/README.md#how-usage-is-read):

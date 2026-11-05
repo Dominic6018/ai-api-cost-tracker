@@ -48,6 +48,20 @@ assert.equal(
 await tracker.flush();
 assert.deepEqual(errors, []);
 
+console.log("- checkBudget() sees the run's spend and the monthly budget");
+{
+  const run = tracker.with({ runId: `run_ts_${message.id}` });
+  const check = await run.checkBudget({ estimatedCostUsd: "0.01" });
+  assert.equal(check.allowed, true);
+  assert.equal(check.run.runId, `run_ts_${message.id}`);
+  assert.equal(check.run.spentUsd, "0.009900");
+  assert.equal(check.run.capUsd, null);
+  assert.equal(check.month.capUsd, "100.000000");
+  const denied = await run.checkBudget({ estimatedCostUsd: 1000 });
+  assert.equal(denied.allowed, false);
+  assert.deepEqual(denied.reasons, ["monthly_budget"]);
+}
+
 console.log("- the stored cost uses cache read and write rates");
 // Claude Sonnet 5.5 seed prices per 1M tokens: $2 input, $0.10 cache
 // reads, $2.50 cache writes, $10 output.
