@@ -21,11 +21,13 @@ export const PRICE_FIELDS = [
   "outputPerMTokUsd",
   "cachedInputPerMTokUsd",
   "cacheWritePerMTokUsd",
+  "cacheWrite1hPerMTokUsd",
   "longContextThresholdTokens",
   "longInputPerMTokUsd",
   "longOutputPerMTokUsd",
   "longCachedInputPerMTokUsd",
   "longCacheWritePerMTokUsd",
+  "longCacheWrite1hPerMTokUsd",
   "effectiveFrom",
   "sourceUrl",
   "checkedOn",
@@ -39,6 +41,7 @@ const LONG_FIELDS = [
   "longOutputPerMTokUsd",
   "longCachedInputPerMTokUsd",
   "longCacheWritePerMTokUsd",
+  "longCacheWrite1hPerMTokUsd",
 ] as const satisfies readonly PriceField[];
 
 /** Fits `numeric(12, 6)`: up to 6 digits before the point and 6 after. */
@@ -111,6 +114,7 @@ function priceFormSchema(now: Date) {
       outputPerMTokUsd: rate,
       cachedInputPerMTokUsd: optionalRate,
       cacheWritePerMTokUsd: optionalRate,
+      cacheWrite1hPerMTokUsd: optionalRate,
       longContextThresholdTokens: z
         .string()
         .trim()
@@ -124,6 +128,7 @@ function priceFormSchema(now: Date) {
       longOutputPerMTokUsd: optionalRate,
       longCachedInputPerMTokUsd: optionalRate,
       longCacheWritePerMTokUsd: optionalRate,
+      longCacheWrite1hPerMTokUsd: optionalRate,
       effectiveFrom: utcDateTimeField,
       sourceUrl: sourceUrlField(
         "Where was this price read? Enter the pricing page's URL",

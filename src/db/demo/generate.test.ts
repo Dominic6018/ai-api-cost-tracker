@@ -114,11 +114,14 @@ describe("generateDemoData", () => {
         outputPerMTokUsd: p.outputPerMTokUsd,
         cachedInputPerMTokUsd: p.cachedInputPerMTokUsd,
         cacheWritePerMTokUsd: p.cacheWritePerMTokUsd ?? null,
+        cacheWrite1hPerMTokUsd: p.cacheWrite1hPerMTokUsd ?? null,
         longContextThresholdTokens: p.longContext?.thresholdTokens ?? null,
         longInputPerMTokUsd: p.longContext?.inputPerMTokUsd ?? null,
         longOutputPerMTokUsd: p.longContext?.outputPerMTokUsd ?? null,
         longCachedInputPerMTokUsd: p.longContext?.cachedInputPerMTokUsd ?? null,
         longCacheWritePerMTokUsd: p.longContext?.cacheWritePerMTokUsd ?? null,
+        longCacheWrite1hPerMTokUsd:
+          p.longContext?.cacheWrite1hPerMTokUsd ?? null,
       });
     };
     for (const event of data.events) {

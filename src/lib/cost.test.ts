@@ -241,3 +241,106 @@ describe("ratesForUsage", () => {
     expect(ratesForUsage({ inputTokens }, pricing).inputPerMTokUsd).toBe(rate);
   });
 });
+
+describe("calculateCostUsd with 1-hour cache writes", () => {
+  // Claude Sonnet 5.5, per 1M tokens: $2 input, $2.50 5-minute writes,
+  // $4 1-hour writes, $10 output.
+  const sonnet = {
+    inputPerMTokUsd: 2,
+    outputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 0.1,
+    cacheWritePerMTokUsd: 2.5,
+    cacheWrite1hPerMTokUsd: 4,
+  };
+
+  it("bills 1-hour writes at their rate and the rest at the 5-minute rate", () => {
+    // 4,000 × $2 + 2,000 × $2.50 + 4,000 × $4 = $0.029
+    expect(
+      calculateCostUsd(
+        {
+          inputTokens: 10_000,
+          outputTokens: 0,
+          cacheWriteInputTokens: 6_000,
+          cacheWrite1hInputTokens: 4_000,
+        },
+        sonnet,
+      ),
+    ).toBe(0.029);
+  });
+
+  it("is unchanged for usage without 1-hour writes", () => {
+    const usage = {
+      inputTokens: 10_000,
+      outputTokens: 1_000,
+      cacheWriteInputTokens: 6_000,
+    };
+    // 4,000 × $2 + 6,000 × $2.50 + 1,000 × $10 = $0.033
+    expect(calculateCostUsd(usage, sonnet)).toBe(0.033);
+    expect(
+      calculateCostUsd({ ...usage, cacheWrite1hInputTokens: 0 }, sonnet),
+    ).toBe(0.033);
+  });
+
+  it("falls back to the 5-minute rate, then input, without a 1-hour rate", () => {
+    const usage = {
+      inputTokens: 10_000,
+      outputTokens: 0,
+      cacheWriteInputTokens: 6_000,
+      cacheWrite1hInputTokens: 4_000,
+    };
+    // 4,000 × $2 + 6,000 × $2.50 = $0.023
+    expect(
+      calculateCostUsd(usage, { ...sonnet, cacheWrite1hPerMTokUsd: null }),
+    ).toBe(0.023);
+    // Every input token at $2 = $0.02
+    expect(
+      calculateCostUsd(usage, {
+        inputPerMTokUsd: 2,
+        outputPerMTokUsd: 10,
+      }),
+    ).toBe(0.02);
+  });
+
+  it("uses the long tier's 1-hour rate for long prompts", () => {
+    // Claude Haiku 5.5 over 100,000 tokens: $0.50 input, $1 1-hour writes.
+    const haiku = {
+      inputPerMTokUsd: 0.1,
+      outputPerMTokUsd: 0.5,
+      cacheWritePerMTokUsd: 0.125,
+      cacheWrite1hPerMTokUsd: 0.2,
+      longContext: {
+        thresholdTokens: 100_000,
+        inputPerMTokUsd: 0.5,
+        outputPerMTokUsd: 2.5,
+        cacheWritePerMTokUsd: 0.625,
+        cacheWrite1hPerMTokUsd: 1,
+      },
+    };
+    // 100,000 × $0.50 + 50,000 × $1 = $0.10
+    expect(
+      calculateCostUsd(
+        {
+          inputTokens: 150_000,
+          outputTokens: 0,
+          cacheWriteInputTokens: 50_000,
+          cacheWrite1hInputTokens: 50_000,
+        },
+        haiku,
+      ),
+    ).toBe(0.1);
+  });
+
+  it("rejects more 1-hour writes than writes", () => {
+    expect(() =>
+      calculateCostUsd(
+        {
+          inputTokens: 10_000,
+          outputTokens: 0,
+          cacheWriteInputTokens: 1_000,
+          cacheWrite1hInputTokens: 1_001,
+        },
+        sonnet,
+      ),
+    ).toThrow(RangeError);
+  });
+});

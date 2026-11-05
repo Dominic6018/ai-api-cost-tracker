@@ -91,7 +91,10 @@ Recording usage shouldn't require hand-written API calls.
   - [x] Record each price's source and check date, and list prices on `/prices` (#93)
   - [x] Add a price from the screen, requiring both (#95)
   - [x] End a price without a replacement (a retired model) (#97)
-- [ ] Separate rates per cache duration; batch, flex and priority tiers; non-token charges (search, images, audio)
+- Richer prices:
+  - [x] Separate rates per cache duration: Anthropic 1-hour cache writes (#99)
+  - [ ] Batch, flex and priority tiers
+  - [ ] Non-token charges (search, images, audio)
 - [ ] OpenAI long-context tiers, once their rates can be verified from the pricing page
 
 ## Milestone 10: Teams

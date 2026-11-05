@@ -14,6 +14,7 @@ export interface SpendTotals {
   inputTokens: string;
   cachedInputTokens: string;
   cacheWriteInputTokens: string;
+  cacheWrite1hInputTokens: string;
   outputTokens: string;
 }
 
@@ -42,6 +43,7 @@ const sums = {
   inputTokens: sql<string>`coalesce(sum(${usageEvents.inputTokens}), 0)::text`,
   cachedInputTokens: sql<string>`coalesce(sum(${usageEvents.cachedInputTokens}), 0)::text`,
   cacheWriteInputTokens: sql<string>`coalesce(sum(${usageEvents.cacheWriteInputTokens}), 0)::text`,
+  cacheWrite1hInputTokens: sql<string>`coalesce(sum(${usageEvents.cacheWrite1hInputTokens}), 0)::text`,
   outputTokens: sql<string>`coalesce(sum(${usageEvents.outputTokens}), 0)::text`,
 };
 

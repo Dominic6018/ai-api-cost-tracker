@@ -95,7 +95,7 @@ export default async function PricesPage() {
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-foreground/10">
-          <table className="w-full min-w-[60rem] text-left text-sm">
+          <table className="w-full min-w-[66rem] text-left text-sm">
             <thead className="border-b border-foreground/10 text-foreground/60">
               <tr>
                 <th scope="col" className="px-4 py-3 font-medium">
@@ -112,6 +112,9 @@ export default async function PricesPage() {
                 </th>
                 <th scope="col" className="px-4 py-3 text-right font-medium">
                   Cache write
+                </th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">
+                  1-hour cache write
                 </th>
                 <th scope="col" className="px-4 py-3 text-right font-medium">
                   Output
@@ -177,6 +180,9 @@ export default async function PricesPage() {
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {rate(row.cacheWritePerMTokUsd)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {rate(row.cacheWrite1hPerMTokUsd)}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {rate(row.outputPerMTokUsd)}

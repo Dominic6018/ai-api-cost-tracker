@@ -45,11 +45,13 @@ describe("parsePriceForm", () => {
         outputPerMTokUsd: "10",
         cachedInputPerMTokUsd: null,
         cacheWritePerMTokUsd: null,
+        cacheWrite1hPerMTokUsd: null,
         longContextThresholdTokens: null,
         longInputPerMTokUsd: null,
         longOutputPerMTokUsd: null,
         longCachedInputPerMTokUsd: null,
         longCacheWritePerMTokUsd: null,
+        longCacheWrite1hPerMTokUsd: null,
         effectiveFrom: new Date("2026-12-01T00:00:00Z"),
         sourceUrl: valid.sourceUrl,
         checkedOn: "2026-11-06",
@@ -100,6 +102,25 @@ describe("parsePriceForm", () => {
     ["provider", "azure"],
   ])("rejects %s = %j", (field, value) => {
     expect(errors({ ...valid, [field]: value })).toHaveProperty(field);
+  });
+
+  it("accepts 1-hour cache-write rates, which need a tier when long", () => {
+    const result = parsePriceForm(
+      form({
+        ...valid,
+        cacheWritePerMTokUsd: "2.50",
+        cacheWrite1hPerMTokUsd: "4",
+      }),
+      NOW,
+    );
+    expect(result.ok && result.input.cacheWrite1hPerMTokUsd).toBe("4");
+    expect(
+      Object.keys(errors({ ...valid, longCacheWrite1hPerMTokUsd: "8" })).sort(),
+    ).toEqual([
+      "longContextThresholdTokens",
+      "longInputPerMTokUsd",
+      "longOutputPerMTokUsd",
+    ]);
   });
 
   it("requires the threshold and both long rates for a tier", () => {

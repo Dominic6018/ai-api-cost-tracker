@@ -19,8 +19,8 @@ async function main() {
       `Seeded ${result.projectsInserted} project(s) and ` +
         `${result.pricesInserted} of ${seedPrices.length} price(s); ` +
         "existing rows were left unchanged" +
-        (result.provenanceFilled > 0
-          ? `, except that ${result.provenanceFilled} price(s) got the source and check date they were missing.`
+        (result.filled > 0
+          ? `, except that ${result.filled} price(s) got a source, check date or 1-hour cache-write rate they were missing.`
           : "."),
     );
   } finally {
