@@ -5,6 +5,7 @@ import { getSpendOverview } from "@/db/spend";
 import { requireUser } from "@/lib/auth";
 import { formatUsd } from "@/lib/cost";
 import { forecastMonth, forecastOverBudget } from "@/lib/forecast";
+import { detectSpike, SPIKE_RULES } from "@/lib/spike";
 import type { SpendWindow } from "@/lib/spend";
 import { logoutAction } from "../login/actions";
 import { BudgetAlerts } from "../budget-alerts";
@@ -171,6 +172,10 @@ export default async function OverviewPage() {
                     forecast.projectedUsd,
                     project.monthlyBudgetUsd,
                   );
+                  const spike = detectSpike(
+                    project.today,
+                    project.last7FullDays,
+                  );
                   return (
                     <tr
                       key={project.id}
@@ -188,6 +193,18 @@ export default async function OverviewPage() {
                           className="px-4 py-3 text-right tabular-nums"
                         >
                           {usd(project[key])}
+                          {key === "today" && spike.spike && (
+                            <span
+                              className="mt-1 flex items-center justify-end gap-1 text-xs"
+                              data-testid="spike"
+                              title={`Today is at least $${SPIKE_RULES.minimumUsd} and ${SPIKE_RULES.multiplier}× the average daily spend of the last 7 full days (${usd(spike.dailyAverageUsd)} a day)`}
+                            >
+                              <BudgetStatusIcon status="warning" />
+                              Spending spike
+                              {spike.multiple !== null &&
+                                `, ${spike.multiple.toFixed(1)}× usual`}
+                            </span>
+                          )}
                         </td>
                       ))}
                       <td
@@ -225,7 +242,9 @@ export default async function OverviewPage() {
         window of 30 × 24 hours. Usage counts by its <code>occurredAt</code>{" "}
         time. The month-end forecast is this month&apos;s spend so far plus the
         average daily spend of the last 7 full UTC days (today left out) for the
-        rest of the month.
+        rest of the month. A spending spike is a day of at least{" "}
+        {`$${SPIKE_RULES.minimumUsd}`} and at least {SPIKE_RULES.multiplier}×
+        that average.
       </p>
     </main>
   );
