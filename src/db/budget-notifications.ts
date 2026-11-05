@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import {
   configuredChannels,
@@ -8,7 +8,17 @@ import {
   type AlertConfig,
   type BudgetAlert,
 } from "@/lib/budget-notifications";
-import { budgetNotifications, type AlertChannel } from "./schema";
+import {
+  deliverSignal,
+  planSignalAlerts,
+  signalAmounts,
+  type SignalAlert,
+} from "@/lib/spend-signals";
+import {
+  budgetNotifications,
+  spendSignalNotifications,
+  type AlertChannel,
+} from "./schema";
 import { getSpendOverview } from "./spend";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
@@ -122,6 +132,102 @@ export async function runBudgetAlerts(
         await db
           .delete(budgetNotifications)
           .where(eq(budgetNotifications.id, claim.id));
+        results.push({
+          alert,
+          channel,
+          outcome: "failed",
+          error: delivery.error,
+        });
+      }
+    }
+  }
+  return results;
+}
+
+export interface SignalResult {
+  alert: SignalAlert;
+  channel: AlertChannel;
+  /** "already_sent": this kind was sent for this period already. */
+  outcome: AlertOutcome;
+  error?: string;
+}
+
+/**
+ * Sends the overview's early warnings, a forecast over budget (once per
+ * project and month) and a spending spike (once per project and UTC
+ * day), to each configured channel. Claimed before sending and released
+ * if delivery fails, as for budget thresholds.
+ */
+export async function runSpendSignalAlerts(
+  db: Database,
+  options: RunBudgetAlertsOptions,
+): Promise<SignalResult[]> {
+  const now = options.now ?? new Date();
+  const channels = configuredChannels(options.config);
+  if (channels.length === 0) return [];
+
+  const overview = await getSpendOverview(db, now);
+  const alerts = planSignalAlerts(overview.projects, now);
+  if (alerts.length === 0) return [];
+
+  const periods = [...new Set(alerts.map((alert) => alert.period))];
+  const sent = await db
+    .select({
+      projectId: spendSignalNotifications.projectId,
+      kind: spendSignalNotifications.kind,
+      period: spendSignalNotifications.period,
+      channel: spendSignalNotifications.channel,
+    })
+    .from(spendSignalNotifications)
+    .where(inArray(spendSignalNotifications.period, periods));
+  const alreadySent = (alert: SignalAlert, channel: AlertChannel) =>
+    sent.some(
+      (row) =>
+        row.projectId === alert.project.id &&
+        row.kind === alert.kind &&
+        row.period === alert.period &&
+        row.channel === channel,
+    );
+
+  const results: SignalResult[] = [];
+  for (const alert of alerts) {
+    for (const channel of channels) {
+      if (alreadySent(alert, channel)) {
+        results.push({ alert, channel, outcome: "already_sent" });
+        continue;
+      }
+      if (options.dryRun) {
+        results.push({ alert, channel, outcome: "would_send" });
+        continue;
+      }
+
+      const [claim] = await db
+        .insert(spendSignalNotifications)
+        .values({
+          projectId: alert.project.id,
+          kind: alert.kind,
+          period: alert.period,
+          channel,
+          ...signalAmounts(alert),
+        })
+        .onConflictDoNothing()
+        .returning({ id: spendSignalNotifications.id });
+      if (!claim) {
+        // Another run claimed it after this one looked.
+        results.push({ alert, channel, outcome: "already_sent" });
+        continue;
+      }
+
+      const delivery = await deliverSignal(alert, channel, options.config, {
+        fetch: options.fetch,
+        now,
+      });
+      if (delivery.ok) {
+        results.push({ alert, channel, outcome: "sent" });
+      } else {
+        await db
+          .delete(spendSignalNotifications)
+          .where(eq(spendSignalNotifications.id, claim.id));
         results.push({
           alert,
           channel,

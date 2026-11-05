@@ -451,13 +451,21 @@ jobs:
           # The demo data has one project at its budget warning and one over.
           npm run --silent db:demo > /dev/null
           export BUDGET_ALERT_WEBHOOK_SECRET="$SECRET"
-          demo_alerts() { jq -c 'select(.body.project.slug | startswith("demo-"))' alerts.jsonl 2>/dev/null || true; }
+          # Threshold alerts for the demo projects, which may also get forecast
+          # or spike messages depending on the day
+          demo_alerts() { jq -c 'select(.event == "budget.threshold_reached" and (.body.project.slug | startswith("demo-")))' alerts.jsonl 2>/dev/null || true; }
+          # A project spiking today: $5 after an idle week, with no budget
+          SPIKE_ID=$(psql "$DATABASE_URL" -qtAc "INSERT INTO projects (name, slug) VALUES ('CI Spike', 'ci-spike') RETURNING id")
+          psql "$DATABASE_URL" -qc "INSERT INTO usage_events (project_id, provider, model, cost_usd, occurred_at) VALUES ('$SPIKE_ID', 'openai', 'ci-spike', 5, now())"
+          spike_alerts() { jq -c 'select(.body.project.slug == "ci-spike")' alerts.jsonl 2>/dev/null || true; }
 
           # A dry run sends and records nothing
           BUDGET_ALERT_WEBHOOK_URL=http://localhost:4010/budget npm run --silent budget-alerts -- --dry-run | tee alerts-dry.log
           grep -E 'would_send +webhook +demo-support-bot: 80% threshold' alerts-dry.log
           grep -E 'would_send +webhook +demo-research-agent: 100% threshold' alerts-dry.log
+          grep -E 'would_send +webhook +ci-spike: spike on [0-9-]+, \$5\.000000 today \(after an idle week\)' alerts-dry.log
           test -z "$(demo_alerts)"
+          test -z "$(spike_alerts)"
 
           # An unreachable destination fails the run and records nothing
           if BUDGET_ALERT_WEBHOOK_URL=http://localhost:4011/budget npm run --silent budget-alerts > alerts-fail.log; then
@@ -465,6 +473,8 @@ jobs:
           fi
           grep -E 'failed +webhook +demo-support-bot' alerts-fail.log
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM budget_notifications n JOIN projects p ON p.id = n.project_id WHERE p.slug LIKE 'demo-%'")" = 0
+          grep -E 'failed +webhook +ci-spike: spike' alerts-fail.log
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM spend_signal_notifications WHERE project_id = '$SPIKE_ID'")" = 0
 
           # One signed message per project, at the highest threshold reached
           BUDGET_ALERT_WEBHOOK_URL=http://localhost:4010/budget npm run --silent budget-alerts | tee alerts.log
@@ -473,11 +483,21 @@ jobs:
           test "$(demo_alerts | jq -s 'all(.valid and .event == "budget.threshold_reached")')" = true
           test "$(demo_alerts | jq -r 'select(.body.project.slug == "demo-support-bot") | "\(.body.thresholdPercent) \(.body.status)"')" = "80 warning"
           test "$(demo_alerts | jq -r 'select(.body.project.slug == "demo-research-agent") | "\(.body.thresholdPercent) \(.body.status)"')" = "100 over"
+          # One signed spike event for the spiking project, with exact amounts
+          spike_alerts
+          test "$(spike_alerts | wc -l)" = 1
+          test "$(spike_alerts | jq -r '"\(.valid) \(.event) \(.body.type) \(.body.todayUsd) \(.body.dailyAverageUsd) \(.body.multiple)"')" = "true spend.spike spend.spike 5.000000 0.000000 null"
+          test "$(spike_alerts | jq -r .body.period)" = "$(date -u +%F)"
+          # Every message the receiver got was validly signed
+          test "$(jq -s 'all(.valid)' alerts.jsonl)" = true
 
           # Running again sends nothing new
           BUDGET_ALERT_WEBHOOK_URL=http://localhost:4010/budget npm run --silent budget-alerts | tee alerts-again.log
           grep -E 'already_sent +webhook +demo-support-bot' alerts-again.log
+          grep -E 'already_sent +webhook +ci-spike: spike' alerts-again.log
           test "$(demo_alerts | wc -l)" = 2
+          test "$(spike_alerts | wc -l)" = 1
+          psql "$DATABASE_URL" -qc "DELETE FROM projects WHERE id = '$SPIKE_ID'"
 
           kill "$RECEIVER"
           npm run db:demo -- --remove
