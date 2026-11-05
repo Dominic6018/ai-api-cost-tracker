@@ -168,6 +168,62 @@ step("the price list shows each seeded price with its source");
   assert.match(text, /Checked \d{4}-\d{2}-\d{2}/);
 }
 
+{
+  const priceModel = `smoke-price-${randomUUID().slice(0, 8)}`;
+  const today = new Date().toISOString().slice(0, 10);
+  const price = {
+    provider: "openai",
+    model: priceModel,
+    inputPerMTokUsd: "2",
+    outputPerMTokUsd: "8",
+    cachedInputPerMTokUsd: "0.5",
+    effectiveFrom: "2026-01-01T00:00",
+    sourceUrl: "https://developers.openai.com/api/docs/pricing",
+    checkedOn: today,
+  };
+
+  step("adding a price without a source shows an inline error");
+  {
+    const result = await submit("/prices/new", { ...price, sourceUrl: "" });
+    assert.equal(result.status, 200);
+    assert.match(result.html, /Where was this price read\?/);
+  }
+
+  step(
+    `adding a price for "${priceModel}" lists it as current, with who added it`,
+  );
+  {
+    const result = await submit("/prices/new", price);
+    assert.equal(result.status, 303, "redirect after adding");
+    assert.equal(new URL(result.location, base).pathname, "/prices");
+
+    const prices = await page("/prices");
+    const row = prices.html
+      .split("<tr")
+      .find((r) => r.includes(`data-model="${priceModel}"`));
+    assert.ok(row, "the new price is listed");
+    const text = row
+      .replace(/<!-- -->/g, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+    assert.match(text, /Current/);
+    assert.match(text, /\$2\.00 \$0\.50 — \$8\.00/);
+    assert.match(
+      row,
+      /href="https:\/\/developers\.openai\.com\/api\/docs\/pricing"/,
+    );
+    assert.ok(text.includes(`Checked ${today}`), "shows the check date");
+    assert.ok(text.includes(`Added by ${email}`), "shows who added it");
+  }
+
+  step("a second price starting at the same time is refused");
+  {
+    const result = await submit("/prices/new", price);
+    assert.equal(result.status, 200);
+    assert.match(result.html, /already has a price starting at this time/);
+  }
+}
+
 step("the overview shows each project's monthly budget use");
 {
   const overview = await page("/overview");

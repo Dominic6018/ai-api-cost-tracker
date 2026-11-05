@@ -117,6 +117,11 @@ export const modelPricing = pgTable(
     // was last checked there. Null for rows recorded before these existed.
     sourceUrl: text("source_url"),
     checkedOn: date("checked_on", { mode: "string" }),
+    // The user who added the price from /prices; null for seeded prices,
+    // and kept (as null) if the account is deleted.
+    recordedBy: uuid("recorded_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...timestamps,
   },
   (t) => [
