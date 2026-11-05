@@ -172,12 +172,14 @@ describe("seed", () => {
     });
     if (!result.found) throw new Error("expected pricing");
     expect(result.pricing.cacheWritePerMTokUsd).toBe(0.125);
+    expect(result.pricing.cacheWrite1hPerMTokUsd).toBe(0.2);
     expect(result.pricing.longContext).toEqual({
       thresholdTokens: 100_000,
       inputPerMTokUsd: 0.5,
       outputPerMTokUsd: 2.5,
       cachedInputPerMTokUsd: 0.05,
       cacheWritePerMTokUsd: 0.625,
+      cacheWrite1hPerMTokUsd: 1,
     });
   });
 
