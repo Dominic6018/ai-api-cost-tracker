@@ -78,6 +78,13 @@
       "when": 1793812262367,
       "tag": "0010_budget_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793866832454,
+      "tag": "0011_project_run_budget",
+      "breakpoints": true
     }
   ]
 }

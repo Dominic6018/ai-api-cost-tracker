@@ -133,6 +133,18 @@ describe("projects constraints", () => {
     createdProjectIds.push(zero.id);
     expect(zero.monthlyBudgetUsd).toBe("0.00");
   });
+
+  it("rejects a negative run budget", async () => {
+    expect(
+      await pgErrorCode(
+        db.insert(projects).values({
+          name: "Negative run budget",
+          slug: `it-${randomUUID()}`,
+          runBudgetUsd: "-0.01",
+        }),
+      ),
+    ).toBe(CHECK_VIOLATION);
+  });
 });
 
 describe("model_pricing constraints", () => {

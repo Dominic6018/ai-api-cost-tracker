@@ -1,9 +1,23 @@
 import { z } from "zod";
 
-/** Largest value `monthly_budget_usd numeric(12, 2)` can hold. */
+/** Largest value a budget column, `numeric(12, 2)`, can hold. */
 export const MAX_BUDGET_USD = 9_999_999_999.99;
 
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** An optional USD amount with up to two decimals; empty means none. */
+const budgetField = z
+  .string()
+  .trim()
+  .transform((value) => (value === "" ? null : value))
+  .refine(
+    (value) => value === null || /^\d+(\.\d{1,2})?$/.test(value),
+    "Enter an amount like 100 or 99.50, or leave it empty for no budget",
+  )
+  .refine(
+    (value) => value === null || Number(value) <= MAX_BUDGET_USD,
+    "Budget is too large",
+  );
 
 /** Fields submitted by the create and edit project forms. */
 export const projectFormSchema = z.object({
@@ -21,19 +35,9 @@ export const projectFormSchema = z.object({
       SLUG_PATTERN,
       "Use lowercase letters, numbers and single hyphens, e.g. my-app",
     ),
-  // An empty field means "no budget".
-  monthlyBudgetUsd: z
-    .string()
-    .trim()
-    .transform((value) => (value === "" ? null : value))
-    .refine(
-      (value) => value === null || /^\d+(\.\d{1,2})?$/.test(value),
-      "Enter an amount like 100 or 99.50, or leave it empty for no budget",
-    )
-    .refine(
-      (value) => value === null || Number(value) <= MAX_BUDGET_USD,
-      "Budget is too large",
-    ),
+  monthlyBudgetUsd: budgetField,
+  // A cap on any one agent run's total spend, checked by POST /api/budget/check.
+  runBudgetUsd: budgetField,
 });
 
 export type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -59,6 +63,7 @@ export function parseProjectForm(formData: FormData): ParseProjectFormResult {
     name: field(formData, "name"),
     slug: field(formData, "slug"),
     monthlyBudgetUsd: field(formData, "monthlyBudgetUsd"),
+    runBudgetUsd: field(formData, "runBudgetUsd"),
   };
   const result = projectFormSchema.safeParse(raw);
   if (result.success) return { ok: true, values: result.data };
@@ -72,6 +77,7 @@ export function parseProjectForm(formData: FormData): ParseProjectFormResult {
         name: fieldErrors.name?.[0],
         slug: fieldErrors.slug?.[0],
         monthlyBudgetUsd: fieldErrors.monthlyBudgetUsd?.[0],
+        runBudgetUsd: fieldErrors.runBudgetUsd?.[0],
       },
     },
   };
