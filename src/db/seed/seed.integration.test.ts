@@ -40,7 +40,11 @@ describe("seed", () => {
     expect(await countSeedPrices()).toBe(seedPrices.length);
 
     const rerun = await seed(db);
-    expect(rerun).toEqual({ projectsInserted: 0, pricesInserted: 0 });
+    expect(rerun).toEqual({
+      projectsInserted: 0,
+      pricesInserted: 0,
+      provenanceFilled: 0,
+    });
     expect(await countSeedPrices()).toBe(seedPrices.length);
   });
 
@@ -70,6 +74,79 @@ describe("seed", () => {
 
     const [after] = await db.select().from(modelPricing).where(match);
     expect(after).toEqual(before);
+  });
+
+  it("stores each price's source and check date", async () => {
+    const rows = await db
+      .select({
+        model: modelPricing.model,
+        effectiveFrom: modelPricing.effectiveFrom,
+        sourceUrl: modelPricing.sourceUrl,
+        checkedOn: modelPricing.checkedOn,
+      })
+      .from(modelPricing)
+      .where(
+        inArray(
+          modelPricing.model,
+          seedPrices.map((p) => p.model),
+        ),
+      );
+    for (const price of seedPrices) {
+      expect(
+        rows.find(
+          (row) =>
+            row.model === price.model &&
+            row.effectiveFrom.getTime() ===
+              new Date(price.effectiveFrom).getTime(),
+        ),
+      ).toMatchObject({ sourceUrl: price.source, checkedOn: price.checkedOn });
+    }
+  });
+
+  it("fills in missing provenance, keeping what's recorded and the price", async () => {
+    const [first] = seedPrices;
+    const match = and(
+      eq(modelPricing.provider, first.provider),
+      eq(modelPricing.model, first.model),
+      eq(modelPricing.effectiveFrom, new Date(first.effectiveFrom)),
+    );
+    const row = async () =>
+      (await db.select().from(modelPricing).where(match))[0];
+    const before = await row();
+    try {
+      // A row seeded before the columns existed has neither.
+      await db
+        .update(modelPricing)
+        .set({ sourceUrl: null, checkedOn: null })
+        .where(match);
+      expect(await seed(db)).toEqual({
+        projectsInserted: 0,
+        pricesInserted: 0,
+        provenanceFilled: 1,
+      });
+      expect(await row()).toMatchObject({
+        sourceUrl: first.source,
+        checkedOn: first.checkedOn,
+        inputPerMTokUsd: before.inputPerMTokUsd,
+        outputPerMTokUsd: before.outputPerMTokUsd,
+      });
+
+      // Only the date is missing: the recorded source stays.
+      await db
+        .update(modelPricing)
+        .set({ sourceUrl: "https://example.com/own-check", checkedOn: null })
+        .where(match);
+      expect((await seed(db)).provenanceFilled).toBe(1);
+      expect(await row()).toMatchObject({
+        sourceUrl: "https://example.com/own-check",
+        checkedOn: first.checkedOn,
+      });
+    } finally {
+      await db
+        .update(modelPricing)
+        .set({ sourceUrl: before.sourceUrl, checkedOn: before.checkedOn })
+        .where(match);
+    }
   });
 
   it("follows a scheduled price change through the pricing lookup", async () => {

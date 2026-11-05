@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -112,6 +113,10 @@ export const modelPricing = pgTable(
       .notNull()
       .defaultNow(),
     effectiveTo: timestamp("effective_to", { withTimezone: true }),
+    // Where the price was read (the provider's pricing page) and the day it
+    // was last checked there. Null for rows recorded before these existed.
+    sourceUrl: text("source_url"),
+    checkedOn: date("checked_on", { mode: "string" }),
     ...timestamps,
   },
   (t) => [
@@ -119,6 +124,10 @@ export const modelPricing = pgTable(
       t.provider,
       t.model,
       t.effectiveFrom,
+    ),
+    check(
+      "model_pricing_source_url_http",
+      sql`${t.sourceUrl} IS NULL OR ${t.sourceUrl} ~ '^https?://'`,
     ),
     check(
       "model_pricing_effective_range",
