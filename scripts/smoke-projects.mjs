@@ -191,6 +191,7 @@ step(`creating "${slug}" redirects to the list, which shows it`);
     name: "Smoke Project",
     slug,
     monthlyBudgetUsd: "42.5",
+    runBudgetUsd: "1.25",
   });
   assert.equal(result.status, 303, "redirect after create");
   assert.equal(new URL(result.location, base).pathname, "/projects");
@@ -221,6 +222,7 @@ step("editing clears the budget and renames the project");
 
   const edit = await page(editPath);
   assert.match(edit.html, /value="42\.50"/, "edit form is prefilled");
+  assert.match(edit.html, /value="1\.25"/, "run budget is prefilled");
 
   const result = await submit(editPath, {
     name: "Smoke Project Renamed",

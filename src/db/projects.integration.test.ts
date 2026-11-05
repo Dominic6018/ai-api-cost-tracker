@@ -36,6 +36,7 @@ async function create(monthlyBudgetUsd: string | null = null) {
     name: "Projects test",
     slug: slug(),
     monthlyBudgetUsd,
+    runBudgetUsd: null,
   });
   if (!result.ok) throw new Error(`expected success, got ${result.error}`);
   createdIds.push(result.project.id);
@@ -46,6 +47,7 @@ describe("project data access", () => {
   it("creates a project, storing an empty budget as null", async () => {
     const project = await create();
     expect(project.monthlyBudgetUsd).toBeNull();
+    expect(project.runBudgetUsd).toBeNull();
     expect(await getProject(db, project.id)).toEqual(project);
   });
 
@@ -60,6 +62,7 @@ describe("project data access", () => {
         name: "Duplicate",
         slug: project.slug,
         monthlyBudgetUsd: null,
+        runBudgetUsd: null,
       }),
     ).toEqual({ ok: false, error: "slug_taken" });
   });
@@ -70,10 +73,12 @@ describe("project data access", () => {
       name: "Renamed",
       slug: project.slug,
       monthlyBudgetUsd: "250",
+      runBudgetUsd: "2.5",
     });
     if (!result.ok) throw new Error(`expected success, got ${result.error}`);
     expect(result.project.name).toBe("Renamed");
     expect(result.project.monthlyBudgetUsd).toBe("250.00");
+    expect(result.project.runBudgetUsd).toBe("2.50");
     expect(result.project.updatedAt.getTime()).toBeGreaterThanOrEqual(
       project.updatedAt.getTime(),
     );
@@ -85,6 +90,7 @@ describe("project data access", () => {
       name: project.name,
       slug: project.slug,
       monthlyBudgetUsd: null,
+      runBudgetUsd: null,
     });
     expect(result.ok && result.project.monthlyBudgetUsd).toBeNull();
   });
@@ -97,6 +103,7 @@ describe("project data access", () => {
         name: second.name,
         slug: first.slug,
         monthlyBudgetUsd: null,
+        runBudgetUsd: null,
       }),
     ).toEqual({ ok: false, error: "slug_taken" });
   });
@@ -110,6 +117,7 @@ describe("project data access", () => {
           name: "x",
           slug: slug(),
           monthlyBudgetUsd: null,
+          runBudgetUsd: null,
         }),
       ).toEqual({ ok: false, error: "not_found" });
     },

@@ -26,6 +26,7 @@ export async function submitProjectForm(
     name: parsed.values.name,
     slug: parsed.values.slug,
     monthlyBudgetUsd: parsed.values.monthlyBudgetUsd ?? "",
+    runBudgetUsd: parsed.values.runBudgetUsd ?? "",
   };
   if (result.error === "slug_taken") {
     return {
