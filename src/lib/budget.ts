@@ -13,6 +13,14 @@ export function toMicros(usd: string): bigint {
   return BigInt(whole) * MICROS_PER_USD + BigInt(fraction.padEnd(6, "0"));
 }
 
+/** Micro-dollars as an exact decimal string, e.g. "-1.250000". */
+export function microsToDecimal(micros: bigint): string {
+  const sign = micros < 0n ? "-" : "";
+  const abs = micros < 0n ? -micros : micros;
+  const fraction = (abs % 1_000_000n).toString().padStart(6, "0");
+  return `${sign}${abs / 1_000_000n}.${fraction}`;
+}
+
 export function microsToUsd(micros: bigint): number {
   return Number(micros) / Number(MICROS_PER_USD);
 }
