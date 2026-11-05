@@ -4,14 +4,18 @@ import json
 import threading
 import unittest
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace as Obj
 from unittest import mock
 
 from cost_tracker import (
+    BudgetCheck,
     CostTracker,
     CostTrackerError,
+    MonthBudget,
     OutcomeResult,
     RecordResult,
+    RunBudget,
     Usage,
     usage_from_response,
 )
@@ -458,3 +462,94 @@ class RecordOutcomeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+ANSWER = {
+    "allowed": False,
+    "reasons": ["run_budget"],
+    "estimatedCostUsd": "0.250000",
+    "month": {
+        "period": "2026-11",
+        "capUsd": "100.000000",
+        "spentUsd": "40.000000",
+        "remainingUsd": "60.000000",
+        "allowed": True,
+    },
+    "run": {
+        "runId": "run_42",
+        "capUsd": "2.000000",
+        "spentUsd": "1.900000",
+        "remainingUsd": "0.100000",
+        "allowed": False,
+    },
+}
+
+
+def checked(answer=None):
+    return 200, json.dumps(answer or ANSWER).encode()
+
+
+@mock.patch("cost_tracker.time.sleep", lambda seconds: None)
+class CheckBudgetTest(unittest.TestCase):
+    def test_posts_the_estimate_and_run_and_returns_the_answer(self):
+        tracker, transport, _ = make(checked())
+        check = tracker.check_budget("0.25", run_id="run_42")
+        url, body, headers = transport.calls[0]
+        self.assertEqual(url, "https://costs.example.com/api/budget/check")
+        self.assertEqual(headers["authorization"], "Bearer act_test")
+        self.assertEqual(body, {"estimatedCostUsd": "0.25", "runId": "run_42"})
+        self.assertEqual(
+            check,
+            BudgetCheck(
+                allowed=False,
+                reasons=("run_budget",),
+                estimated_cost_usd="0.250000",
+                month=MonthBudget("100.000000", "40.000000", "60.000000", True, period="2026-11"),
+                run=RunBudget("2.000000", "1.900000", "0.100000", False, run_id="run_42"),
+            ),
+        )
+
+    def test_uses_a_scoped_trackers_run_unless_one_is_passed(self):
+        tracker, transport, _ = make(checked(), checked(), checked())
+        run = tracker.with_attribution(run_id="run_42", customer_id="cus_1", tags={"env": "prod"})
+        run.check_budget(0.25)
+        run.check_budget(run_id="run_other")
+        tracker.check_budget()
+        # Only the run matters to a check; other attribution isn't sent.
+        self.assertEqual(transport.calls[0][1], {"estimatedCostUsd": 0.25, "runId": "run_42"})
+        self.assertEqual(transport.calls[1][1], {"runId": "run_other"})
+        self.assertEqual(transport.calls[2][1], {})
+
+    def test_sends_decimals_in_fixed_point_and_rejects_booleans(self):
+        tracker, transport, _ = make(checked())
+        tracker.check_budget(Decimal("1E+3"))
+        self.assertEqual(transport.calls[0][1], {"estimatedCostUsd": "1000"})
+        with self.assertRaises(TypeError):
+            tracker.check_budget(True)
+
+    def test_without_a_run_or_caps(self):
+        answer = {
+            **ANSWER,
+            "allowed": True,
+            "reasons": [],
+            "month": {**ANSWER["month"], "capUsd": None, "remainingUsd": None},
+            "run": None,
+        }
+        tracker, _, _ = make(checked(answer))
+        check = tracker.check_budget()
+        self.assertTrue(check.allowed)
+        self.assertIsNone(check.run)
+        self.assertIsNone(check.month.cap_usd)
+
+    def test_retries_network_errors_429_and_5xx(self):
+        tracker, transport, _ = make(OSError("down"), failed(503, "unavailable"), checked())
+        self.assertFalse(tracker.check_budget().allowed)
+        self.assertEqual(len(transport.calls), 3)
+
+    def test_raises_the_api_error_or_for_an_unexpected_response(self):
+        tracker, _, _ = make(failed(400, "invalid_payload"), (200, b'{"ok": true}'))
+        with self.assertRaises(CostTrackerError) as caught:
+            tracker.check_budget("-1")
+        self.assertEqual((caught.exception.status, caught.exception.code), (400, "invalid_payload"))
+        with self.assertRaisesRegex(CostTrackerError, "Unexpected response"):
+            tracker.check_budget()
