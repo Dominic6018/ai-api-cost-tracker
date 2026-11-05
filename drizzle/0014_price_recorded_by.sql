@@ -1,0 +1,2 @@
+ALTER TABLE "model_pricing" ADD COLUMN "recorded_by" uuid;--> statement-breakpoint
+ALTER TABLE "model_pricing" ADD CONSTRAINT "model_pricing_recorded_by_users_id_fk" FOREIGN KEY ("recorded_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
