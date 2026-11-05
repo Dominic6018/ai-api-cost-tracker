@@ -7,6 +7,11 @@ export interface TokenUsage {
   cachedInputTokens?: number;
   /** Portion of inputTokens written to the provider's prompt cache. */
   cacheWriteInputTokens?: number;
+  /**
+   * Portion of cacheWriteInputTokens written with a 1-hour TTL (Anthropic
+   * bills these at 2× input, against 1.25× for 5-minute writes).
+   */
+  cacheWrite1hInputTokens?: number;
 }
 
 /** One set of prices in USD per 1M tokens. */
@@ -17,6 +22,8 @@ export interface TokenRates {
   cachedInputPerMTokUsd?: number | null;
   /** Falls back to the input price when cache writes aren't charged extra. */
   cacheWritePerMTokUsd?: number | null;
+  /** 1-hour cache writes; falls back to the (5-minute) cache-write price. */
+  cacheWrite1hPerMTokUsd?: number | null;
 }
 
 /** A model's prices, optionally with higher rates for long prompts. */
@@ -71,13 +78,20 @@ export function calculateCostUsd(
 ): number {
   const cached = usage.cachedInputTokens ?? 0;
   const writes = usage.cacheWriteInputTokens ?? 0;
+  const writes1h = usage.cacheWrite1hInputTokens ?? 0;
   assertCount("inputTokens", usage.inputTokens);
   assertCount("outputTokens", usage.outputTokens);
   assertCount("cachedInputTokens", cached);
   assertCount("cacheWriteInputTokens", writes);
+  assertCount("cacheWrite1hInputTokens", writes1h);
   if (cached + writes > usage.inputTokens) {
     throw new RangeError(
       `cachedInputTokens (${cached}) plus cacheWriteInputTokens (${writes}) cannot exceed inputTokens (${usage.inputTokens})`,
+    );
+  }
+  if (writes1h > writes) {
+    throw new RangeError(
+      `cacheWrite1hInputTokens (${writes1h}) cannot exceed cacheWriteInputTokens (${writes})`,
     );
   }
   if (pricing.longContext) {
@@ -91,15 +105,18 @@ export function calculateCostUsd(
   const inputRate = rates.inputPerMTokUsd;
   const cachedRate = rates.cachedInputPerMTokUsd ?? inputRate;
   const writeRate = rates.cacheWritePerMTokUsd ?? inputRate;
+  const write1hRate = rates.cacheWrite1hPerMTokUsd ?? writeRate;
   assertPrice("inputPerMTokUsd", inputRate);
   assertPrice("outputPerMTokUsd", rates.outputPerMTokUsd);
   assertPrice("cachedInputPerMTokUsd", cachedRate);
   assertPrice("cacheWritePerMTokUsd", writeRate);
+  assertPrice("cacheWrite1hPerMTokUsd", write1hRate);
 
   const raw =
     ((usage.inputTokens - cached - writes) * inputRate +
       cached * cachedRate +
-      writes * writeRate +
+      (writes - writes1h) * writeRate +
+      writes1h * write1hRate +
       usage.outputTokens * rates.outputPerMTokUsd) /
     TOKENS_PER_MILLION;
 

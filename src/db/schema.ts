@@ -89,6 +89,13 @@ export const modelPricing = pgTable(
       precision: 12,
       scale: 6,
     }),
+    // Price for 1-hour cache writes, where a provider charges more for a
+    // longer TTL (Anthropic: 2× input, against 1.25× for 5 minutes); null
+    // bills them like other cache writes.
+    cacheWrite1hPerMTokUsd: numeric("cache_write_1h_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
     // Prompt-length tier: a request whose input tokens (including cached
     // and cache-write tokens) exceed the threshold pays the long rates for
     // the whole request. All long_* columns are null for untiered models.
@@ -106,6 +113,10 @@ export const modelPricing = pgTable(
       scale: 6,
     }),
     longCacheWritePerMTokUsd: numeric("long_cache_write_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    longCacheWrite1hPerMTokUsd: numeric("long_cache_write_1h_per_mtok_usd", {
       precision: 12,
       scale: 6,
     }),
@@ -154,7 +165,7 @@ export const modelPricing = pgTable(
     // rates may be set.
     check(
       "model_pricing_long_context_complete",
-      sql`(${t.longContextThresholdTokens} IS NULL AND ${t.longInputPerMTokUsd} IS NULL AND ${t.longOutputPerMTokUsd} IS NULL AND ${t.longCachedInputPerMTokUsd} IS NULL AND ${t.longCacheWritePerMTokUsd} IS NULL) OR (${t.longContextThresholdTokens} > 0 AND ${t.longInputPerMTokUsd} IS NOT NULL AND ${t.longOutputPerMTokUsd} IS NOT NULL)`,
+      sql`(${t.longContextThresholdTokens} IS NULL AND ${t.longInputPerMTokUsd} IS NULL AND ${t.longOutputPerMTokUsd} IS NULL AND ${t.longCachedInputPerMTokUsd} IS NULL AND ${t.longCacheWritePerMTokUsd} IS NULL AND ${t.longCacheWrite1hPerMTokUsd} IS NULL) OR (${t.longContextThresholdTokens} > 0 AND ${t.longInputPerMTokUsd} IS NOT NULL AND ${t.longOutputPerMTokUsd} IS NOT NULL)`,
     ),
   ],
 );
@@ -174,6 +185,10 @@ export const usageEvents = pgTable(
     cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
     // Portion of inputTokens written to the prompt cache.
     cacheWriteInputTokens: integer("cache_write_input_tokens")
+      .notNull()
+      .default(0),
+    // The part of cache_write_input_tokens written with a 1-hour TTL.
+    cacheWrite1hInputTokens: integer("cache_write_1h_input_tokens")
       .notNull()
       .default(0),
     costUsd: numeric("cost_usd", { precision: 14, scale: 6 }).notNull(),

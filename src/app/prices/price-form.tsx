@@ -112,7 +112,13 @@ export function PriceForm({ action }: { action: Action }) {
           "cacheWritePerMTokUsd",
           "Cache write",
           RATE_PROPS,
-          "Leave empty if writes cost the same as input.",
+          "The shortest cache duration (Anthropic: 5 minutes). Leave empty if writes cost the same as input.",
+        )}
+        {field(
+          "cacheWrite1hPerMTokUsd",
+          "1-hour cache write",
+          RATE_PROPS,
+          "Anthropic's 1-hour cache writes. Leave empty if they cost the same as other cache writes.",
         )}
       </fieldset>
 
@@ -130,6 +136,11 @@ export function PriceForm({ action }: { action: Action }) {
         {field("longOutputPerMTokUsd", "Long output", RATE_PROPS)}
         {field("longCachedInputPerMTokUsd", "Long cached input", RATE_PROPS)}
         {field("longCacheWritePerMTokUsd", "Long cache write", RATE_PROPS)}
+        {field(
+          "longCacheWrite1hPerMTokUsd",
+          "Long 1-hour cache write",
+          RATE_PROPS,
+        )}
       </fieldset>
 
       <fieldset className="grid gap-5 sm:grid-cols-2">

@@ -25,6 +25,7 @@ describe("parseUsagePayload", () => {
         ...valid,
         cachedInputTokens: 0,
         cacheWriteInputTokens: 0,
+        cacheWrite1hInputTokens: 0,
         occurredAt: now,
       },
     });
@@ -77,6 +78,21 @@ describe("parseUsagePayload", () => {
       expect(fieldErrors(body)).toHaveProperty(field);
     },
   );
+
+  it("accepts 1-hour cache writes within cache writes, and rejects more", () => {
+    const writes = { ...valid, inputTokens: 10, cacheWriteInputTokens: 6 };
+    const ok = parseUsagePayload(
+      { ...writes, cacheWrite1hInputTokens: 6 },
+      now,
+    );
+    expect(ok.ok && ok.usage.cacheWrite1hInputTokens).toBe(6);
+    expect(
+      fieldErrors({ ...writes, cacheWrite1hInputTokens: 7 }),
+    ).toHaveProperty("cacheWrite1hInputTokens");
+    expect(
+      fieldErrors({ ...writes, cacheWrite1hInputTokens: -1 }),
+    ).toHaveProperty("cacheWrite1hInputTokens");
+  });
 
   it("rejects cached tokens above input tokens", () => {
     expect(

@@ -43,7 +43,7 @@ describe("seed", () => {
     expect(rerun).toEqual({
       projectsInserted: 0,
       pricesInserted: 0,
-      provenanceFilled: 0,
+      filled: 0,
     });
     expect(await countSeedPrices()).toBe(seedPrices.length);
   });
@@ -122,7 +122,7 @@ describe("seed", () => {
       expect(await seed(db)).toEqual({
         projectsInserted: 0,
         pricesInserted: 0,
-        provenanceFilled: 1,
+        filled: 1,
       });
       expect(await row()).toMatchObject({
         sourceUrl: first.source,
@@ -136,7 +136,7 @@ describe("seed", () => {
         .update(modelPricing)
         .set({ sourceUrl: "https://example.com/own-check", checkedOn: null })
         .where(match);
-      expect((await seed(db)).provenanceFilled).toBe(1);
+      expect((await seed(db)).filled).toBe(1);
       expect(await row()).toMatchObject({
         sourceUrl: "https://example.com/own-check",
         checkedOn: first.checkedOn,
@@ -179,5 +179,51 @@ describe("seed", () => {
       cachedInputPerMTokUsd: 0.05,
       cacheWritePerMTokUsd: 0.625,
     });
+  });
+
+  it("fills a missing 1-hour cache-write rate, keeping a recorded one", async () => {
+    const price = seedPrices.find((p) => p.model === "claude-haiku-5-5");
+    if (!price) throw new Error("expected Claude Haiku 5.5 in the seed data");
+    const match = and(
+      eq(modelPricing.provider, price.provider),
+      eq(modelPricing.model, price.model),
+      eq(modelPricing.effectiveFrom, new Date(price.effectiveFrom)),
+    );
+    const row = async () =>
+      (await db.select().from(modelPricing).where(match))[0];
+    const before = await row();
+    expect(before).toMatchObject({
+      cacheWrite1hPerMTokUsd: "0.200000",
+      longCacheWrite1hPerMTokUsd: "1.000000",
+    });
+    try {
+      // A row seeded before the 1-hour columns existed has neither.
+      await db
+        .update(modelPricing)
+        .set({ cacheWrite1hPerMTokUsd: null, longCacheWrite1hPerMTokUsd: null })
+        .where(match);
+      expect((await seed(db)).filled).toBe(1);
+      expect(await row()).toMatchObject({
+        cacheWrite1hPerMTokUsd: "0.200000",
+        longCacheWrite1hPerMTokUsd: "1.000000",
+        inputPerMTokUsd: before.inputPerMTokUsd,
+      });
+
+      // A rate someone recorded is kept.
+      await db
+        .update(modelPricing)
+        .set({ cacheWrite1hPerMTokUsd: "0.25" })
+        .where(match);
+      expect((await seed(db)).filled).toBe(0);
+      expect((await row()).cacheWrite1hPerMTokUsd).toBe("0.250000");
+    } finally {
+      await db
+        .update(modelPricing)
+        .set({
+          cacheWrite1hPerMTokUsd: before.cacheWrite1hPerMTokUsd,
+          longCacheWrite1hPerMTokUsd: before.longCacheWrite1hPerMTokUsd,
+        })
+        .where(match);
+    }
   });
 });

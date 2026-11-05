@@ -14,6 +14,7 @@ export const USAGE_CSV_COLUMNS = [
   "input_tokens",
   "cached_input_tokens",
   "cache_write_input_tokens",
+  "cache_write_1h_input_tokens",
   "output_tokens",
   "cost_usd",
   "customer_id",
@@ -36,6 +37,7 @@ function line(row: UsageEventRow): string {
     row.inputTokens,
     row.cachedInputTokens,
     row.cacheWriteInputTokens,
+    row.cacheWrite1hInputTokens,
     row.outputTokens,
     // Exact decimal string, as stored; not converted through a float.
     row.costUsd,

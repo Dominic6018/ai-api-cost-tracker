@@ -19,11 +19,13 @@ function row(
     outputPerMTokUsd: "15",
     cachedInputPerMTokUsd: null,
     cacheWritePerMTokUsd: null,
+    cacheWrite1hPerMTokUsd: null,
     longContextThresholdTokens: null,
     longInputPerMTokUsd: null,
     longOutputPerMTokUsd: null,
     longCachedInputPerMTokUsd: null,
     longCacheWritePerMTokUsd: null,
+    longCacheWrite1hPerMTokUsd: null,
     ...overrides,
   };
 }
@@ -121,6 +123,7 @@ describe("toTokenPricing", () => {
       outputPerMTokUsd: 15.5,
       cachedInputPerMTokUsd: null,
       cacheWritePerMTokUsd: null,
+      cacheWrite1hPerMTokUsd: null,
       longContext: null,
     });
   });
@@ -132,11 +135,13 @@ describe("toTokenPricing", () => {
           outputPerMTokUsd: "0.50",
           cachedInputPerMTokUsd: "0.01",
           cacheWritePerMTokUsd: "0.125",
+          cacheWrite1hPerMTokUsd: "0.20",
           longContextThresholdTokens: 100_000,
           longInputPerMTokUsd: "0.50",
           longOutputPerMTokUsd: "2.50",
           longCachedInputPerMTokUsd: "0.05",
           longCacheWritePerMTokUsd: null,
+          longCacheWrite1hPerMTokUsd: "1",
         }),
       ),
     ).toEqual({
@@ -144,12 +149,14 @@ describe("toTokenPricing", () => {
       outputPerMTokUsd: 0.5,
       cachedInputPerMTokUsd: 0.01,
       cacheWritePerMTokUsd: 0.125,
+      cacheWrite1hPerMTokUsd: 0.2,
       longContext: {
         thresholdTokens: 100_000,
         inputPerMTokUsd: 0.5,
         outputPerMTokUsd: 2.5,
         cachedInputPerMTokUsd: 0.05,
         cacheWritePerMTokUsd: null,
+        cacheWrite1hPerMTokUsd: 1,
       },
     });
   });

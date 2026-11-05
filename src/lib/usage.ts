@@ -31,6 +31,10 @@ export const usagePayloadSchema = z
     // Anthropic reports these as cache_creation_input_tokens. Like cached
     // tokens, they're part of inputTokens.
     cacheWriteInputTokens: tokenCount.default(0),
+    // The part of cacheWriteInputTokens written with a 1-hour TTL, which
+    // Anthropic bills at a higher rate (usage.cache_creation
+    // .ephemeral_1h_input_tokens).
+    cacheWrite1hInputTokens: tokenCount.default(0),
     requestId: z.string().trim().min(1).max(200).optional(),
     customerId: attribution,
     userId: attribution,
@@ -61,6 +65,14 @@ export const usagePayloadSchema = z
       path: ["cacheWriteInputTokens"],
       message:
         "cachedInputTokens plus cacheWriteInputTokens cannot exceed inputTokens",
+    },
+  )
+  .refine(
+    (usage) => usage.cacheWrite1hInputTokens <= usage.cacheWriteInputTokens,
+    {
+      path: ["cacheWrite1hInputTokens"],
+      message:
+        "cacheWrite1hInputTokens is part of cacheWriteInputTokens and cannot exceed it",
     },
   );
 
