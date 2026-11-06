@@ -344,3 +344,92 @@ describe("calculateCostUsd with 1-hour cache writes", () => {
     ).toThrow(RangeError);
   });
 });
+
+describe("calculateCostUsd for batch usage", () => {
+  // Claude Sonnet 5.5 with Anthropic's 50% Batch API price.
+  const sonnet = {
+    inputPerMTokUsd: 2,
+    outputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 0.1,
+    cacheWritePerMTokUsd: 2.5,
+    cacheWrite1hPerMTokUsd: 4,
+    batchMultiplier: 0.5,
+  };
+  const usage = {
+    inputTokens: 10_000,
+    outputTokens: 1_000,
+    cachedInputTokens: 2_000,
+    cacheWriteInputTokens: 4_000,
+    cacheWrite1hInputTokens: 1_000,
+  };
+
+  it("costs the multiplier times the standard price, cache rates included", () => {
+    // Standard: 4,000 × $2 + 2,000 × $0.10 + 3,000 × $2.50 + 1,000 × $4
+    // + 1,000 × $10 = $0.0297; batch is half of that.
+    expect(calculateCostUsd(usage, sonnet)).toBe(0.0297);
+    expect(
+      calculateCostUsd({ ...usage, serviceTier: "standard" }, sonnet),
+    ).toBe(0.0297);
+    expect(calculateCostUsd({ ...usage, serviceTier: "batch" }, sonnet)).toBe(
+      0.01485,
+    );
+  });
+
+  it("halves the long tier too", () => {
+    const haiku = {
+      inputPerMTokUsd: 0.1,
+      outputPerMTokUsd: 0.5,
+      longContext: {
+        thresholdTokens: 100_000,
+        inputPerMTokUsd: 0.5,
+        outputPerMTokUsd: 2.5,
+      },
+      batchMultiplier: 0.5,
+    };
+    // 150,000 × $0.50 + 1,000 × $2.50 = $0.0775, halved.
+    expect(
+      calculateCostUsd(
+        { inputTokens: 150_000, outputTokens: 1_000, serviceTier: "batch" },
+        haiku,
+      ),
+    ).toBe(0.03875);
+  });
+
+  it("rounds once, after the discount", () => {
+    // 1 input token at $3 is $0.000003; half is $0.0000015, rounded to
+    // $0.000002 once, not $0.000003 × 0.5 of an already-rounded amount.
+    expect(
+      calculateCostUsd(
+        { inputTokens: 1, outputTokens: 0, serviceTier: "batch" },
+        { inputPerMTokUsd: 3, outputPerMTokUsd: 15, batchMultiplier: 0.5 },
+      ),
+    ).toBe(0.000002);
+  });
+
+  it("rounds an exact half micro-dollar up, despite float noise", () => {
+    // $0.000855 halved is exactly $0.0004275, but the nearest float is
+    // 0.00042749999…, so plain rounding goes down. FOCUS's exact
+    // arithmetic rounds it up, and the recorded cost must agree.
+    expect((0.000855 * 0.5).toFixed(6)).toBe("0.000427");
+    expect(
+      calculateCostUsd(
+        { inputTokens: 1, outputTokens: 0, serviceTier: "batch" },
+        { inputPerMTokUsd: 855, outputPerMTokUsd: 0, batchMultiplier: 0.5 },
+      ),
+    ).toBe(0.000428);
+  });
+
+  it("refuses batch usage without a batch price, or with a bad one", () => {
+    const batch = { ...usage, serviceTier: "batch" as const };
+    expect(() =>
+      calculateCostUsd(batch, { ...sonnet, batchMultiplier: null }),
+    ).toThrow(/No batch price/);
+    expect(() =>
+      calculateCostUsd(batch, { ...sonnet, batchMultiplier: 1.5 }),
+    ).toThrow(RangeError);
+    // Standard usage doesn't need one.
+    expect(calculateCostUsd(usage, { ...sonnet, batchMultiplier: null })).toBe(
+      0.0297,
+    );
+  });
+});

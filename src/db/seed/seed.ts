@@ -10,8 +10,8 @@ export interface SeedResult {
   projectsInserted: number;
   pricesInserted: number;
   /**
-   * Existing prices given the source, check date or 1-hour cache-write
-   * rates they were missing.
+   * Existing prices given the source, check date, 1-hour cache-write
+   * rates or batch multiplier they were missing.
    */
   filled: number;
 }
@@ -20,9 +20,10 @@ export interface SeedResult {
  * Inserts sample projects and seed prices. Safe to re-run: rows that
  * already exist (by project slug, or by provider, model and start time)
  * keep their values. The one exception: an existing price recorded
- * without a source, a check date or a 1-hour cache-write rate the seed
- * has gets the seed's, filling only what's missing, so databases seeded
- * before those columns existed catch up. Recorded values aren't changed.
+ * without a source, a check date, a 1-hour cache-write rate or a batch
+ * multiplier the seed has gets the seed's, filling only what's missing, so
+ * databases seeded before those columns existed catch up. Recorded values
+ * aren't changed.
  */
 export async function seed(db: Database): Promise<SeedResult> {
   const insertedProjects = await db
@@ -51,6 +52,7 @@ export async function seed(db: Database): Promise<SeedResult> {
           price.longContext?.cacheWritePerMTokUsd ?? null,
         longCacheWrite1hPerMTokUsd:
           price.longContext?.cacheWrite1hPerMTokUsd ?? null,
+        batchMultiplier: price.batchMultiplier ?? null,
         effectiveFrom: new Date(price.effectiveFrom),
         effectiveTo: price.effectiveTo ? new Date(price.effectiveTo) : null,
         sourceUrl: price.source,
@@ -64,15 +66,16 @@ export async function seed(db: Database): Promise<SeedResult> {
         modelPricing.effectiveFrom,
       ],
       // Fill in what's missing only; recorded values are kept. A 1-hour
-      // rate counts as missing only when the seed has one, so models
-      // without one (OpenAI, Google) aren't rewritten on every run.
+      // rate or batch multiplier counts as missing only when the seed has
+      // one, so models without (OpenAI, Google) aren't rewritten every run.
       set: {
         sourceUrl: sql`coalesce(${modelPricing.sourceUrl}, excluded.source_url)`,
         checkedOn: sql`coalesce(${modelPricing.checkedOn}, excluded.checked_on)`,
         cacheWrite1hPerMTokUsd: sql`coalesce(${modelPricing.cacheWrite1hPerMTokUsd}, excluded.cache_write_1h_per_mtok_usd)`,
         longCacheWrite1hPerMTokUsd: sql`coalesce(${modelPricing.longCacheWrite1hPerMTokUsd}, excluded.long_cache_write_1h_per_mtok_usd)`,
+        batchMultiplier: sql`coalesce(${modelPricing.batchMultiplier}, excluded.batch_multiplier)`,
       },
-      setWhere: sql`${modelPricing.sourceUrl} is null or ${modelPricing.checkedOn} is null or (${modelPricing.cacheWrite1hPerMTokUsd} is null and excluded.cache_write_1h_per_mtok_usd is not null) or (${modelPricing.longCacheWrite1hPerMTokUsd} is null and excluded.long_cache_write_1h_per_mtok_usd is not null)`,
+      setWhere: sql`${modelPricing.sourceUrl} is null or ${modelPricing.checkedOn} is null or (${modelPricing.cacheWrite1hPerMTokUsd} is null and excluded.cache_write_1h_per_mtok_usd is not null) or (${modelPricing.longCacheWrite1hPerMTokUsd} is null and excluded.long_cache_write_1h_per_mtok_usd is not null) or (${modelPricing.batchMultiplier} is null and excluded.batch_multiplier is not null)`,
     })
     // xmax is 0 for a row this statement inserted, and set for one it updated.
     .returning({ inserted: sql<boolean>`(xmax = 0)` });

@@ -24,6 +24,11 @@ export interface SeedPrice {
     cacheWritePerMTokUsd?: string;
     cacheWrite1hPerMTokUsd?: string;
   };
+  /**
+   * Batch requests cost this share of the standard price (Anthropic's Batch
+   * API: "0.5"); omit when batch pricing wasn't verified.
+   */
+  batchMultiplier?: string;
   /** ISO timestamp the price applies from (inclusive). */
   effectiveFrom: string;
   /** ISO timestamp the price stops applying (exclusive); omit if open-ended. */
@@ -51,6 +56,11 @@ const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 // on 2026-11-06, checked against the same page; the rows keep their
 // original check date.
 //
+// Anthropic's Batch API costs 50% of every standard rate (cache rates
+// included, per the same page, checked 2026-11-06): batchMultiplier 0.5.
+// Other providers' batch prices weren't verified, so they aren't seeded
+// and their batch usage is refused until a batch price is added.
+//
 // Start dates before the check date aren't recorded, so prices apply from
 // the day they were checked. Usage before then has no price.
 const CHECKED_ON = "2026-10-28";
@@ -68,6 +78,7 @@ export const seedPrices: SeedPrice[] = [
     cachedInputPerMTokUsd: "0.25",
     cacheWritePerMTokUsd: "12.50",
     cacheWrite1hPerMTokUsd: "20",
+    batchMultiplier: "0.5",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -80,6 +91,7 @@ export const seedPrices: SeedPrice[] = [
     cachedInputPerMTokUsd: "0.20",
     cacheWritePerMTokUsd: "5",
     cacheWrite1hPerMTokUsd: "8",
+    batchMultiplier: "0.5",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -92,6 +104,7 @@ export const seedPrices: SeedPrice[] = [
     cachedInputPerMTokUsd: "0.10",
     cacheWritePerMTokUsd: "2.50",
     cacheWrite1hPerMTokUsd: "4",
+    batchMultiplier: "0.5",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -115,6 +128,7 @@ export const seedPrices: SeedPrice[] = [
       cacheWritePerMTokUsd: "0.625",
       cacheWrite1hPerMTokUsd: "1",
     },
+    batchMultiplier: "0.5",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,

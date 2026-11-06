@@ -122,6 +122,7 @@ describe("generateDemoData", () => {
         longCacheWritePerMTokUsd: p.longContext?.cacheWritePerMTokUsd ?? null,
         longCacheWrite1hPerMTokUsd:
           p.longContext?.cacheWrite1hPerMTokUsd ?? null,
+        batchMultiplier: p.batchMultiplier ?? null,
       });
     };
     for (const event of data.events) {

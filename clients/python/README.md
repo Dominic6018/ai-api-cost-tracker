@@ -65,6 +65,18 @@ scoped.track(reply, feature="summaries")
 
 Values passed to `track()` or `record()` win over a scoped tracker's. A scoped tracker shares its parent's background threads, so `flush()` and `close()` on either cover both. `Usage` has `customer_id`, `user_id`, `feature` and `run_id` fields for `record()`.
 
+## Batch API
+
+Usage from a provider's Batch API is billed at a discount (Anthropic: 50% of every rate). Say so when you report it, and it's priced at the model's batch price:
+
+```python
+for result in client.messages.batches.results(batch_id):
+    if result.result.type == "succeeded":
+        tracker.track(result.result.message, service_tier="batch")
+```
+
+`Usage` has a `service_tier` field for `record()`. Batch usage for a model without a batch price is refused (`no_batch_pricing`) rather than billed at the full price.
+
 ## Tags
 
 Free-form labels for anything attribution doesn't cover: up to 20, keys of 1–64 letters, digits and `_ . / -`, values up to 200 characters. Scoped trackers and calls merge tags key by key, the call's own values winning:

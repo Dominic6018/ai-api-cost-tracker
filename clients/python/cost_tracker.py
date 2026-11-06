@@ -75,6 +75,9 @@ class Usage:
     #: The part of cache_write_input_tokens written with a 1-hour TTL, which
     #: Anthropic bills at a higher rate. Last, so positional use is unchanged.
     cache_write_1h_input_tokens: int = 0
+    #: "batch" for a provider's discounted Batch API (Anthropic: 50%); None
+    #: means standard, the server's default.
+    service_tier: Optional[str] = None
 
     def to_payload(self) -> Dict[str, Any]:
         occurred_at = self.occurred_at
@@ -90,6 +93,7 @@ class Usage:
             "cachedInputTokens": self.cached_input_tokens,
             "cacheWriteInputTokens": self.cache_write_input_tokens,
             "cacheWrite1hInputTokens": self.cache_write_1h_input_tokens,
+            "serviceTier": self.service_tier,
             "requestId": self.request_id,
             "occurredAt": occurred_at,
             "metadata": self.metadata,
@@ -487,6 +491,7 @@ class CostTracker:
         feature: Optional[str] = None,
         run_id: Optional[str] = None,
         tags: Optional[Dict[str, str]] = None,
+        service_tier: Optional[str] = None,
     ) -> Any:
         """Reports a provider response's usage in the background and returns
         the response unchanged. Reporting errors go to ``on_error`` and never
@@ -496,6 +501,7 @@ class CostTracker:
         snapshots); ``provider`` is for OpenAI-compatible APIs such as Mistral's.
         ``customer_id``, ``user_id``, ``feature`` and ``run_id`` attribute the
         usage; ``tags`` label it, merged over a scoped tracker's tags.
+        ``service_tier="batch"`` records a Batch API response at the batch price.
         """
         usage = usage_from_response(response)
         if usage is None:
@@ -511,6 +517,7 @@ class CostTracker:
         usage.feature = feature
         usage.run_id = run_id
         usage.tags = tags
+        usage.service_tier = service_tier
 
         def report() -> None:
             try:

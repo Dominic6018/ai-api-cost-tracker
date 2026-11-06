@@ -144,6 +144,16 @@ export function PriceForm({ action }: { action: Action }) {
       </fieldset>
 
       <fieldset className="grid gap-5 sm:grid-cols-2">
+        <legend className="mb-3 text-sm font-medium">Batch (optional)</legend>
+        {field(
+          "batchMultiplier",
+          "Batch price multiplier",
+          { inputMode: "decimal", placeholder: "e.g. 0.5" },
+          "The share of the standard price a Batch API request costs, every rate included (Anthropic: 0.5). Leave empty and batch usage for the model is refused.",
+        )}
+      </fieldset>
+
+      <fieldset className="grid gap-5 sm:grid-cols-2">
         <legend className="mb-3 text-sm font-medium">Where it applies</legend>
         {field(
           "effectiveFrom",

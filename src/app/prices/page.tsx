@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { listModelPrices } from "@/db/pricing";
 import { requireUser } from "@/lib/auth";
 import {
+  formatBatchMultiplier,
   formatRate,
   needsRecheck,
   priceHistories,
@@ -95,7 +96,7 @@ export default async function PricesPage() {
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-foreground/10">
-          <table className="w-full min-w-[66rem] text-left text-sm">
+          <table className="w-full min-w-[72rem] text-left text-sm">
             <thead className="border-b border-foreground/10 text-foreground/60">
               <tr>
                 <th scope="col" className="px-4 py-3 font-medium">
@@ -118,6 +119,9 @@ export default async function PricesPage() {
                 </th>
                 <th scope="col" className="px-4 py-3 text-right font-medium">
                   Output
+                </th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">
+                  Batch
                 </th>
                 <th scope="col" className="px-4 py-3 font-medium">
                   Applies (UTC)
@@ -196,6 +200,16 @@ export default async function PricesPage() {
                             {rate(row.longOutputPerMTokUsd)} out
                           </span>
                         )}
+                      </td>
+                      <td
+                        className="px-4 py-3 text-right tabular-nums"
+                        title={
+                          row.batchMultiplier === null
+                            ? "No batch price: batch usage for this model is refused"
+                            : "Batch requests cost this share of every standard rate"
+                        }
+                      >
+                        {formatBatchMultiplier(row.batchMultiplier)}
                       </td>
                       <td className="px-4 py-3 text-xs">
                         from {utcDateTime.format(row.effectiveFrom)}

@@ -661,3 +661,29 @@ describe("checkBudget", () => {
     await expect(tracker.checkBudget()).rejects.toThrow("Unexpected response");
   });
 });
+
+describe("serviceTier", () => {
+  const bodyOf = (fetch: ReturnType<typeof setup>["fetch"], call = 0) =>
+    JSON.parse(
+      (fetch.mock.calls[call] as unknown as [string, RequestInit])[1]
+        .body as string,
+    );
+
+  it("sends batch usage from record() and track()", async () => {
+    const { tracker, fetch } = setup([stored(), stored(), stored()]);
+    await tracker.record({ ...usage, serviceTier: "batch" });
+    await tracker.track(anthropic, { serviceTier: "batch" });
+    await tracker.track(anthropic);
+    await tracker.flush();
+    expect(bodyOf(fetch, 0).serviceTier).toBe("batch");
+    expect(bodyOf(fetch, 1).serviceTier).toBe("batch");
+    // Standard is the server's default, so nothing is sent.
+    expect(bodyOf(fetch, 2)).not.toHaveProperty("serviceTier");
+  });
+
+  it("produces payloads the API accepts", () => {
+    expect(
+      usagePayloadSchema.safeParse({ ...usage, serviceTier: "batch" }).success,
+    ).toBe(true);
+  });
+});

@@ -52,6 +52,7 @@ describe("parsePriceForm", () => {
         longCachedInputPerMTokUsd: null,
         longCacheWritePerMTokUsd: null,
         longCacheWrite1hPerMTokUsd: null,
+        batchMultiplier: null,
         effectiveFrom: new Date("2026-12-01T00:00:00Z"),
         sourceUrl: valid.sourceUrl,
         checkedOn: "2026-11-06",
@@ -103,6 +104,28 @@ describe("parsePriceForm", () => {
   ])("rejects %s = %j", (field, value) => {
     expect(errors({ ...valid, [field]: value })).toHaveProperty(field);
   });
+
+  it.each([
+    ["0.5", "0.5"],
+    ["1", "1"],
+    ["0.125", "0.125"],
+    ["", null],
+  ])("accepts the batch multiplier %j", (value, parsed) => {
+    const result = parsePriceForm(
+      form({ ...valid, batchMultiplier: value }),
+      NOW,
+    );
+    expect(result.ok && result.input.batchMultiplier).toBe(parsed);
+  });
+
+  it.each(["0", "1.5", "2", "0.0001", "-0.5", "50%"])(
+    "rejects the batch multiplier %j",
+    (value) => {
+      expect(errors({ ...valid, batchMultiplier: value })).toHaveProperty(
+        "batchMultiplier",
+      );
+    },
+  );
 
   it("accepts 1-hour cache-write rates, which need a tier when long", () => {
     const result = parsePriceForm(

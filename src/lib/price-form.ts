@@ -28,6 +28,7 @@ export const PRICE_FIELDS = [
   "longCachedInputPerMTokUsd",
   "longCacheWritePerMTokUsd",
   "longCacheWrite1hPerMTokUsd",
+  "batchMultiplier",
   "effectiveFrom",
   "sourceUrl",
   "checkedOn",
@@ -54,6 +55,24 @@ const optionalRate = z
   .trim()
   .transform((value) => (value === "" ? null : value))
   .refine((value) => value === null || RATE.test(value), RATE_MESSAGE);
+
+/**
+ * The share of the standard price a batch request costs: more than 0, at
+ * most 1, up to 3 decimals (fits `numeric(4, 3)`). Empty means batch usage
+ * isn't priced and is refused.
+ */
+const batchMultiplier = z
+  .string()
+  .trim()
+  .transform((value) => (value === "" ? null : value))
+  .refine(
+    (value) =>
+      value === null ||
+      (/^[01](\.\d{1,3})?$/.test(value) &&
+        Number(value) > 0 &&
+        Number(value) <= 1),
+    "Enter the share of the standard price, more than 0 and at most 1, e.g. 0.5",
+  );
 
 const isRealDate = (text: string, date: Date) =>
   !Number.isNaN(date.getTime()) && date.toISOString().startsWith(text);
@@ -129,6 +148,7 @@ function priceFormSchema(now: Date) {
       longCachedInputPerMTokUsd: optionalRate,
       longCacheWritePerMTokUsd: optionalRate,
       longCacheWrite1hPerMTokUsd: optionalRate,
+      batchMultiplier,
       effectiveFrom: utcDateTimeField,
       sourceUrl: sourceUrlField(
         "Where was this price read? Enter the pricing page's URL",
