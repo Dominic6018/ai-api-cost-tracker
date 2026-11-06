@@ -174,6 +174,7 @@ step("the price list shows each seeded price with its source");
   const today = new Date().toISOString().slice(0, 10);
   const price = {
     provider: "openai",
+    serviceTier: "standard",
     model: priceModel,
     inputPerMTokUsd: "2",
     outputPerMTokUsd: "8",
@@ -188,6 +189,10 @@ step("the price list shows each seeded price with its source");
     const result = await submit("/prices/new", { ...price, sourceUrl: "" });
     assert.equal(result.status, 200);
     assert.match(result.html, /Where was this price read\?/);
+    // The tier is required too; the form's select always sends one.
+    const noTier = await submit("/prices/new", { ...price, serviceTier: "" });
+    assert.equal(noTier.status, 200);
+    assert.match(noTier.html, /Choose a tier/);
   }
 
   step(
