@@ -12,6 +12,8 @@ export interface TokenUsage {
    * bills these at 2× input, against 1.25× for 5-minute writes).
    */
   cacheWrite1hInputTokens?: number;
+  /** "batch" for a provider's discounted Batch API; defaults to standard. */
+  serviceTier?: "standard" | "batch";
 }
 
 /** One set of prices in USD per 1M tokens. */
@@ -34,6 +36,11 @@ export interface TokenPricing extends TokenRates {
    * to the long input rate.
    */
   longContext?: (TokenRates & { thresholdTokens: number }) | null;
+  /**
+   * Batch requests cost this share of the standard price, every rate and
+   * tier included (Anthropic: 0.5). Null when batch isn't priced.
+   */
+  batchMultiplier?: number | null;
 }
 
 const TOKENS_PER_MILLION = 1_000_000;
@@ -71,6 +78,8 @@ export function ratesForUsage(
  * Computes the USD cost of a request, rounded to 6 decimal places to match
  * the `cost_usd` column precision. Cached and cache-write input tokens are
  * billed at their own rates and not double-counted at the input rate.
+ * Batch usage costs the standard price times the model's batch multiplier;
+ * it throws when the model has none, which callers check first.
  */
 export function calculateCostUsd(
   usage: TokenUsage,
@@ -112,7 +121,7 @@ export function calculateCostUsd(
   assertPrice("cacheWritePerMTokUsd", writeRate);
   assertPrice("cacheWrite1hPerMTokUsd", write1hRate);
 
-  const raw =
+  const standard =
     ((usage.inputTokens - cached - writes) * inputRate +
       cached * cachedRate +
       (writes - writes1h) * writeRate +
@@ -120,7 +129,25 @@ export function calculateCostUsd(
       usage.outputTokens * rates.outputPerMTokUsd) /
     TOKENS_PER_MILLION;
 
-  return Number(raw.toFixed(USD_DECIMALS));
+  if (usage.serviceTier !== "batch") {
+    return Number(standard.toFixed(USD_DECIMALS));
+  }
+
+  // The batch discount applies to the whole request, before rounding.
+  const multiplier = pricing.batchMultiplier;
+  if (multiplier === null || multiplier === undefined) {
+    throw new RangeError("No batch price is configured for this model");
+  }
+  if (!(multiplier > 0 && multiplier <= 1)) {
+    throw new RangeError(
+      `batchMultiplier must be in (0, 1], got ${multiplier}`,
+    );
+  }
+  // Halving often lands exactly on half a micro-dollar, where float noise
+  // (427.4999… instead of 427.5) would decide the rounding. Drop the noise,
+  // then round half up, as the exact FOCUS export does.
+  const micros = Number((standard * multiplier * 1e6).toFixed(6));
+  return Math.round(micros) / 1e6;
 }
 
 const usdFormatter = new Intl.NumberFormat("en-US", {

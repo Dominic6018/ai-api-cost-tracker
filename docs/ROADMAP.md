@@ -93,7 +93,8 @@ Recording usage shouldn't require hand-written API calls.
   - [x] End a price without a replacement (a retired model) (#97)
 - Richer prices:
   - [x] Separate rates per cache duration: Anthropic 1-hour cache writes (#99)
-  - [ ] Batch, flex and priority tiers
+  - [x] Batch API usage at its discounted price (#101)
+  - [ ] Flex and priority tiers
   - [ ] Non-token charges (search, images, audio)
 - [ ] OpenAI long-context tiers, once their rates can be verified from the pricing page
 

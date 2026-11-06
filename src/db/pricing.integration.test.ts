@@ -75,6 +75,7 @@ describe("findEffectivePricing", () => {
       cachedInputPerMTokUsd: 0.3,
       cacheWritePerMTokUsd: null,
       cacheWrite1hPerMTokUsd: null,
+      batchMultiplier: null,
       longContext: null,
     });
     expect(result.row.model).toBe(model);

@@ -7,7 +7,12 @@ import {
   type UsageCursor,
   type UsageFilters,
 } from "@/lib/usage-filters";
-import { projects, usageEvents, type Provider } from "./schema";
+import {
+  projects,
+  usageEvents,
+  type Provider,
+  type ServiceTier,
+} from "./schema";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select" | "selectDistinct">;
@@ -23,6 +28,7 @@ export interface UsageEventRow {
   cachedInputTokens: number;
   cacheWriteInputTokens: number;
   cacheWrite1hInputTokens: number;
+  serviceTier: ServiceTier;
   outputTokens: number;
   costUsd: string;
   requestId: string | null;
@@ -72,6 +78,7 @@ export function usageEventsQuery(
         cachedInputTokens: usageEvents.cachedInputTokens,
         cacheWriteInputTokens: usageEvents.cacheWriteInputTokens,
         cacheWrite1hInputTokens: usageEvents.cacheWrite1hInputTokens,
+        serviceTier: usageEvents.serviceTier,
         outputTokens: usageEvents.outputTokens,
         costUsd: usageEvents.costUsd,
         requestId: usageEvents.requestId,

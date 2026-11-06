@@ -17,7 +17,11 @@ export type RecordUsageResult =
     }
   | {
       ok: false;
-      error: "no_pricing" | "project_not_found" | "request_id_conflict";
+      error:
+        | "no_pricing"
+        | "no_batch_pricing"
+        | "project_not_found"
+        | "request_id_conflict";
     };
 
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -62,7 +66,8 @@ function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
     existing.outputTokens === usage.outputTokens &&
     existing.cachedInputTokens === usage.cachedInputTokens &&
     existing.cacheWriteInputTokens === usage.cacheWriteInputTokens &&
-    existing.cacheWrite1hInputTokens === usage.cacheWrite1hInputTokens;
+    existing.cacheWrite1hInputTokens === usage.cacheWrite1hInputTokens &&
+    existing.serviceTier === usage.serviceTier;
   return sameUsage
     ? { ok: true, event: existing, replayed: true }
     : { ok: false, error: "request_id_conflict" };
@@ -91,6 +96,9 @@ export async function recordUsage(
     at: usage.occurredAt,
   });
   if (!lookup.found) return { ok: false, error: "no_pricing" };
+  if (usage.serviceTier === "batch" && lookup.pricing.batchMultiplier == null) {
+    return { ok: false, error: "no_batch_pricing" };
+  }
 
   const costUsd = calculateCostUsd(usage, lookup.pricing);
 
@@ -106,6 +114,7 @@ export async function recordUsage(
         cachedInputTokens: usage.cachedInputTokens,
         cacheWriteInputTokens: usage.cacheWriteInputTokens,
         cacheWrite1hInputTokens: usage.cacheWrite1hInputTokens,
+        serviceTier: usage.serviceTier,
         costUsd: costUsd.toFixed(6),
         requestId: usage.requestId ?? null,
         occurredAt: usage.occurredAt,

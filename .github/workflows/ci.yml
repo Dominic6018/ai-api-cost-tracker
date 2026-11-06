@@ -230,6 +230,19 @@ jobs:
           BODY='{"provider":"anthropic","model":"claude-sonnet-5-5","inputTokens":10000,"cacheWriteInputTokens":10,"cacheWrite1hInputTokens":11,"outputTokens":0}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
 
+          # Batch: the same usage through Anthropic's Batch API costs exactly
+          # half ($0.029 -> $0.0145), also dated yesterday
+          BODY="{\"provider\":\"anthropic\",\"model\":\"claude-sonnet-5-5\",\"inputTokens\":10000,\"cacheWriteInputTokens\":6000,\"cacheWrite1hInputTokens\":4000,\"outputTokens\":0,\"serviceTier\":\"batch\",\"requestId\":\"ci-batch-$GITHUB_RUN_ID\",\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"costUsd":"0.014500"' response.json
+          grep -q '"serviceTier":"batch"' response.json
+          # No batch price is seeded for OpenAI, so batch usage is refused
+          BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"serviceTier\":\"batch\",\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 422
+          grep -q '"no_batch_pricing"' response.json
+
           # Attribution is stored in its own columns and returned
           BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":100,"outputTokens":10,"customerId":" cus_ci ","userId":"u_ci","feature":"ci-smoke","runId":"run_ci"}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo

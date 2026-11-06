@@ -93,3 +93,12 @@ export function formatRate(value: string): string {
   const trimmed = fraction.replace(/0+$/, "").padEnd(2, "0");
   return `$${whole}.${trimmed}`;
 }
+
+/** A batch multiplier as a share of the standard price: "0.500" → "50%". */
+export function formatBatchMultiplier(value: string | null): string {
+  if (value === null) return "—";
+  const [whole, fraction = ""] = value.split(".");
+  // Exact: three decimals of a multiplier are a tenth of a percent.
+  const tenths = Number(whole) * 1000 + Number(fraction.padEnd(3, "0"));
+  return `${tenths / 10}%`;
+}

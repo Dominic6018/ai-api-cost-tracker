@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatBatchMultiplier,
   formatRate,
   needsRecheck,
   priceHistories,
@@ -31,6 +32,7 @@ const price = (
   longCachedInputPerMTokUsd: null,
   longCacheWritePerMTokUsd: null,
   longCacheWrite1hPerMTokUsd: null,
+  batchMultiplier: null,
   sourceUrl: "https://example.com/pricing",
   checkedOn: "2026-11-01",
 });
@@ -123,5 +125,21 @@ describe("formatRate", () => {
     ["5", "$5.00"],
   ])("shows %s as %s", (value, text) => {
     expect(formatRate(value)).toBe(text);
+  });
+});
+
+describe("formatBatchMultiplier", () => {
+  it.each([
+    ["0.500", "50%"],
+    ["0.5", "50%"],
+    ["1.000", "100%"],
+    ["0.125", "12.5%"],
+    ["0.001", "0.1%"],
+  ])("shows %s as %s", (value, text) => {
+    expect(formatBatchMultiplier(value)).toBe(text);
+  });
+
+  it("shows a dash without a batch price", () => {
+    expect(formatBatchMultiplier(null)).toBe("—");
   });
 });

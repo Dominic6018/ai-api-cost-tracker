@@ -96,6 +96,8 @@ export interface FocusUsage {
   cacheWriteInputTokens: number;
   /** The part of cacheWriteInputTokens written with a 1-hour TTL. */
   cacheWrite1hInputTokens: number;
+  /** "batch" usage is listed at the batch price. */
+  serviceTier: "standard" | "batch";
   outputTokens: number;
   requestId: string | null;
   customerId: string | null;
@@ -228,10 +230,29 @@ export function focusRows(
   const { chargeStart, chargeEnd, billingStart, billingEnd } = periods(
     usage.occurredAt,
   );
+  // Batch usage is listed at the batch price: each rate times the
+  // multiplier, exactly, as the cost code charges it.
+  const batch = usage.serviceTier === "batch";
+  let multiplier: Decimal | null = null;
+  if (batch) {
+    if (pricing.batchMultiplier === null) {
+      throw new TypeError("Batch usage needs a price with a batch multiplier");
+    }
+    multiplier = parseDecimal(pricing.batchMultiplier);
+  }
+  const unitPrice = (rate: string): Decimal => {
+    const standard = parseDecimal(rate);
+    return multiplier
+      ? {
+          units: standard.units * multiplier.units,
+          scale: standard.scale + multiplier.scale,
+        }
+      : standard;
+  };
 
   return TOKEN_TYPES.filter(({ key }) => tokens[key] > 0).map(
     ({ key, meter }) => {
-      const rate = parseDecimal(rates[key]);
+      const rate = unitPrice(rates[key]);
       const count = BigInt(tokens[key]);
       return {
         // Not the invoicing party: FOCUS requires 0 here (see above).
@@ -262,7 +283,7 @@ export function focusRows(
         // Only corrections to a closed billing period have a class.
         ChargeClass: null,
         ChargeFrequency: "Usage-Based",
-        ChargeDescription: `${usage.model} ${meter.toLowerCase()}`,
+        ChargeDescription: `${usage.model} ${meter.toLowerCase()}${batch ? " (batch)" : ""}`,
         InvoiceIssuerName: provider.name,
         ServiceProviderName: provider.name,
         HostProviderName: provider.name,
@@ -270,8 +291,9 @@ export function focusRows(
         ServiceCategory: "AI and Machine Learning",
         ServiceSubcategory: "Generative AI",
         SkuId: `${usage.provider}/${usage.model}/${key}`,
-        // One price per SKU: the stored price, and its long-prompt tier.
-        SkuPriceId: `${pricing.id}/${key}${long ? "/long-prompt" : ""}`,
+        // One price per SKU: the stored price, its long-prompt tier, and
+        // the batch price.
+        SkuPriceId: `${pricing.id}/${key}${long ? "/long-prompt" : ""}${batch ? "/batch" : ""}`,
         SkuMeter: meter,
         SubAccountId: usage.projectId,
         SubAccountName: usage.projectName,

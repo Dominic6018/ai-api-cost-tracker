@@ -15,6 +15,7 @@ export interface PricingRow {
   longCachedInputPerMTokUsd: string | null;
   longCacheWritePerMTokUsd: string | null;
   longCacheWrite1hPerMTokUsd: string | null;
+  batchMultiplier: string | null;
 }
 
 export type PricingLookupResult<Row extends PricingRow = PricingRow> =
@@ -83,6 +84,7 @@ export function toTokenPricing(row: PricingRow): TokenPricing {
       "cacheWrite1hPerMTokUsd",
       row.cacheWrite1hPerMTokUsd,
     ),
+    batchMultiplier: optionalUsd("batchMultiplier", row.batchMultiplier),
     longContext: null,
   };
 

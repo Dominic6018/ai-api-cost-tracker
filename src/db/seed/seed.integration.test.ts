@@ -173,6 +173,7 @@ describe("seed", () => {
     if (!result.found) throw new Error("expected pricing");
     expect(result.pricing.cacheWritePerMTokUsd).toBe(0.125);
     expect(result.pricing.cacheWrite1hPerMTokUsd).toBe(0.2);
+    expect(result.pricing.batchMultiplier).toBe(0.5);
     expect(result.pricing.longContext).toEqual({
       thresholdTokens: 100_000,
       inputPerMTokUsd: 0.5,
@@ -225,6 +226,36 @@ describe("seed", () => {
           cacheWrite1hPerMTokUsd: before.cacheWrite1hPerMTokUsd,
           longCacheWrite1hPerMTokUsd: before.longCacheWrite1hPerMTokUsd,
         })
+        .where(match);
+    }
+  });
+
+  it("fills a missing batch multiplier, keeping a recorded one", async () => {
+    const price = seedPrices.find((p) => p.model === "claude-sonnet-5-5");
+    if (!price) throw new Error("expected Claude Sonnet 5.5 in the seed data");
+    const match = and(
+      eq(modelPricing.provider, price.provider),
+      eq(modelPricing.model, price.model),
+      eq(modelPricing.effectiveFrom, new Date(price.effectiveFrom)),
+    );
+    const multiplier = async () =>
+      (await db.select().from(modelPricing).where(match))[0].batchMultiplier;
+    expect(await multiplier()).toBe("0.500");
+    try {
+      await db.update(modelPricing).set({ batchMultiplier: null }).where(match);
+      expect((await seed(db)).filled).toBe(1);
+      expect(await multiplier()).toBe("0.500");
+
+      await db
+        .update(modelPricing)
+        .set({ batchMultiplier: "0.4" })
+        .where(match);
+      expect((await seed(db)).filled).toBe(0);
+      expect(await multiplier()).toBe("0.400");
+    } finally {
+      await db
+        .update(modelPricing)
+        .set({ batchMultiplier: "0.5" })
         .where(match);
     }
   });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { providerEnum } from "@/db/schema";
+import { providerEnum, SERVICE_TIERS } from "@/db/schema";
 import { MAX_ATTRIBUTION_LENGTH } from "./attribution";
 import { tagsSchema } from "./tags";
 
@@ -35,6 +35,8 @@ export const usagePayloadSchema = z
     // Anthropic bills at a higher rate (usage.cache_creation
     // .ephemeral_1h_input_tokens).
     cacheWrite1hInputTokens: tokenCount.default(0),
+    // "batch" for a provider's discounted Batch API (Anthropic: 50%).
+    serviceTier: z.enum(SERVICE_TIERS).default("standard"),
     requestId: z.string().trim().min(1).max(200).optional(),
     customerId: attribution,
     userId: attribution,
