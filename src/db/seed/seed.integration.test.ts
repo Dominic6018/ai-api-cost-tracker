@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
+import { calculateCostUsd } from "@/lib/cost";
 import { parseEnv } from "@/lib/env";
 import { findEffectivePricing } from "../pricing";
 import { modelPricing, projects } from "../schema";
@@ -290,6 +291,68 @@ describe("seed", () => {
       await db
         .update(modelPricing)
         .set({ webSearchPer1kUsd: "10" })
+        .where(match);
+    }
+  });
+
+  it("prices gemini-2.5-pro at Gemini 3.8 Flash's rates once it's routed there", async () => {
+    const input = async (at: string, inputTokens = 1_000) => {
+      const result = await findEffectivePricing(db, {
+        provider: "google",
+        model: "gemini-2.5-pro",
+        at: new Date(at),
+        serviceTier: "standard",
+      });
+      if (!result.found) throw new Error(`no gemini-2.5-pro price at ${at}`);
+      return calculateCostUsd(
+        {
+          inputTokens,
+          outputTokens: 0,
+          cachedInputTokens: 0,
+          cacheWriteInputTokens: 0,
+          cacheWrite1hInputTokens: 0,
+        },
+        result.pricing,
+      );
+    };
+    // 100K input tokens at $1.25 per 1M; 300K is over 2.5 Pro's 200K
+    // threshold, so all of it pays the long $2.50.
+    expect(await input("2026-11-30T23:59:59Z", 100_000)).toBe(0.125);
+    expect(await input("2026-11-30T23:59:59Z", 300_000)).toBe(0.75);
+    // Routed: $0.75 per 1M, with no long tier, so 300K costs $0.225.
+    expect(await input("2026-12-01T00:00:00Z", 100_000)).toBe(0.075);
+    expect(await input("2026-12-01T00:00:00Z", 300_000)).toBe(0.225);
+    // Gemini 3.8 Flash's 2027 rate: $1.50 per 1M.
+    expect(await input("2027-01-01T00:00:00Z", 100_000)).toBe(0.15);
+  });
+
+  it("fills a missing end date, keeping a recorded one", async () => {
+    // A database seeded before the routing was announced has the old
+    // gemini-2.5-pro price open-ended.
+    const match = and(
+      eq(modelPricing.provider, "google"),
+      eq(modelPricing.model, "gemini-2.5-pro"),
+      eq(modelPricing.effectiveFrom, new Date("2026-10-28T00:00:00Z")),
+    );
+    const end = async () =>
+      (await db.select().from(modelPricing).where(match))[0].effectiveTo;
+    expect(await end()).toEqual(new Date("2026-12-01T00:00:00Z"));
+    try {
+      await db.update(modelPricing).set({ effectiveTo: null }).where(match);
+      expect((await seed(db)).filled).toBe(1);
+      expect(await end()).toEqual(new Date("2026-12-01T00:00:00Z"));
+
+      // An end someone recorded is kept.
+      await db
+        .update(modelPricing)
+        .set({ effectiveTo: new Date("2026-11-15T00:00:00Z") })
+        .where(match);
+      expect((await seed(db)).filled).toBe(0);
+      expect(await end()).toEqual(new Date("2026-11-15T00:00:00Z"));
+    } finally {
+      await db
+        .update(modelPricing)
+        .set({ effectiveTo: new Date("2026-12-01T00:00:00Z") })
         .where(match);
     }
   });

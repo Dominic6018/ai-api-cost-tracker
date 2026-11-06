@@ -78,9 +78,14 @@ const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 const CHECKED_ON = "2026-10-28";
 const FROM = `${CHECKED_ON}T00:00:00Z`;
 
-// The flex and fast tier rates at the end were checked on this day.
+// The flex and fast tier rates at the end, and gemini-2.5-pro's routing to
+// Gemini 3.8 Flash, were checked on this day.
 const TIERS_CHECKED_ON = "2026-11-07";
 const TIERS_FROM = `${TIERS_CHECKED_ON}T00:00:00Z`;
+
+// When Google starts routing gemini-2.5-pro to Gemini 3.8 Flash. The page
+// gives no time zone, so midnight UTC is used, as for its other dates.
+const GEMINI_25_PRO_ROUTED = "2026-12-01T00:00:00Z";
 
 export const seedPrices: SeedPrice[] = [
   // Anthropic: flat pricing across the full context window, except Haiku
@@ -245,8 +250,35 @@ export const seedPrices: SeedPrice[] = [
       cachedInputPerMTokUsd: "0.25",
     },
     effectiveFrom: FROM,
+    // Deprecated: "Effective December 1, 2026, all API requests to
+    // gemini-2.5-pro will automatically route to Gemini 3.8 Flash and be
+    // billed at Gemini 3.8 Flash rates" (checked 2026-11-07).
+    effectiveTo: GEMINI_25_PRO_ROUTED,
     source: GOOGLE,
     checkedOn: CHECKED_ON,
+  },
+  // From then on, Gemini 3.8 Flash's rates, which rise on 2027-01-01, with
+  // no long-prompt tier.
+  {
+    provider: "google",
+    model: "gemini-2.5-pro",
+    inputPerMTokUsd: "0.75",
+    outputPerMTokUsd: "3.75",
+    cachedInputPerMTokUsd: "0.075",
+    effectiveFrom: GEMINI_25_PRO_ROUTED,
+    effectiveTo: "2027-01-01T00:00:00Z",
+    source: GOOGLE,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "google",
+    model: "gemini-2.5-pro",
+    inputPerMTokUsd: "1.50",
+    outputPerMTokUsd: "7.50",
+    cachedInputPerMTokUsd: "0.15",
+    effectiveFrom: "2027-01-01T00:00:00Z",
+    source: GOOGLE,
+    checkedOn: TIERS_CHECKED_ON,
   },
 
   // Processing tiers, each at its own published rates. They apply from the

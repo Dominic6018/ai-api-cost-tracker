@@ -95,6 +95,7 @@ Recording usage shouldn't require hand-written API calls.
   - [x] Separate rates per cache duration: Anthropic 1-hour cache writes (#99)
   - [x] Batch API usage at its discounted price (#101)
   - [x] Flex and fast (formerly priority) tiers, at their own prices (#103)
+  - [x] Follow announced changes: Gemini 2.5 Pro billed at Gemini 3.8 Flash rates from 2026-12-01 (#107)
   - [ ] Non-token charges:
     - [x] Web search, per 1,000 searches (#105)
     - [ ] Images and audio
