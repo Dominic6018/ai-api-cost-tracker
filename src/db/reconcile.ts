@@ -11,7 +11,8 @@ const utcDay = sql<string>`to_char(${usageEvents.occurredAt} at time zone 'UTC',
 
 /**
  * Recorded cost per UTC day and model for one provider, across every
- * project, for usage in `[from, to)`. Sums are exact decimals.
+ * project, for usage in `[from, to)`: token cost and web search cost apart,
+ * as providers bill them. Sums are exact decimals.
  */
 export async function recordedDailyCost(
   db: Database,
@@ -21,7 +22,8 @@ export async function recordedDailyCost(
     .select({
       day: utcDay,
       model: usageEvents.model,
-      costUsd: sql<string>`sum(${usageEvents.costUsd})::numeric(14, 6)::text`,
+      costUsd: sql<string>`sum(${usageEvents.costUsd} - ${usageEvents.webSearchCostUsd})::numeric(14, 6)::text`,
+      webSearchCostUsd: sql<string>`sum(${usageEvents.webSearchCostUsd})::numeric(14, 6)::text`,
     })
     .from(usageEvents)
     .where(
@@ -37,5 +39,6 @@ export async function recordedDailyCost(
     day: row.day,
     model: row.model,
     micros: toMicros(row.costUsd),
+    webSearchMicros: toMicros(row.webSearchCostUsd),
   }));
 }

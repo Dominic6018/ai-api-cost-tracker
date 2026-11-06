@@ -27,6 +27,7 @@ describe("parseUsagePayload", () => {
         cacheWriteInputTokens: 0,
         cacheWrite1hInputTokens: 0,
         serviceTier: "standard",
+        webSearchRequests: 0,
         occurredAt: now,
       },
     });
@@ -86,6 +87,16 @@ describe("parseUsagePayload", () => {
     expect(fieldErrors({ ...valid, serviceTier: "scale" })).toHaveProperty(
       "serviceTier",
     );
+  });
+
+  it("accepts web search counts, and rejects negative or fractional ones", () => {
+    const searched = parseUsagePayload({ ...valid, webSearchRequests: 3 }, now);
+    expect(searched.ok && searched.usage.webSearchRequests).toBe(3);
+    for (const bad of [-1, 1.5, "3"]) {
+      expect(fieldErrors({ ...valid, webSearchRequests: bad })).toHaveProperty(
+        "webSearchRequests",
+      );
+    }
   });
 
   it("accepts 1-hour cache writes within cache writes, and rejects more", () => {

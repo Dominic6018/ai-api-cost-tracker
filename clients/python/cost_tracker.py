@@ -78,6 +78,9 @@ class Usage:
     #: "batch" for a provider's discounted Batch API (Anthropic: 50%); None
     #: means standard, the server's default.
     service_tier: Optional[str] = None
+    #: Server-side web searches the request ran, charged per 1,000 on top of
+    #: tokens (Anthropic: $10). Needs a web search price for the model.
+    web_search_requests: int = 0
 
     def to_payload(self) -> Dict[str, Any]:
         occurred_at = self.occurred_at
@@ -94,6 +97,8 @@ class Usage:
             "cacheWriteInputTokens": self.cache_write_input_tokens,
             "cacheWrite1hInputTokens": self.cache_write_1h_input_tokens,
             "serviceTier": self.service_tier,
+            # Sent only when there were searches.
+            "webSearchRequests": self.web_search_requests or None,
             "requestId": self.request_id,
             "occurredAt": occurred_at,
             "metadata": self.metadata,
@@ -260,6 +265,8 @@ def usage_from_anthropic(response: Any) -> Optional[Usage]:
         cached_input_tokens=cache_read,
         cache_write_input_tokens=cache_write,
         cache_write_1h_input_tokens=cache_write_1h,
+        # Billed per search, apart from tokens.
+        web_search_requests=_n(_get(_get(usage, "server_tool_use"), "web_search_requests")),
         request_id=_get(response, "id"),
     )
 

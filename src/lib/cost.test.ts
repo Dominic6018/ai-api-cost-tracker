@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { calculateCostUsd, formatUsd, ratesForUsage } from "./cost";
+import {
+  calculateCostUsd,
+  formatUsd,
+  ratesForUsage,
+  webSearchCostMicros,
+} from "./cost";
 
 const pricing = {
   inputPerMTokUsd: 3,
@@ -431,5 +436,25 @@ describe("calculateCostUsd for batch usage", () => {
     expect(calculateCostUsd(usage, { ...sonnet, batchMultiplier: null })).toBe(
       0.0297,
     );
+  });
+});
+
+describe("webSearchCostMicros", () => {
+  it("charges the per-1,000 price for each search, exactly", () => {
+    expect(webSearchCostMicros(1, "10")).toBe(10_000n);
+    expect(webSearchCostMicros(3, "10.000000")).toBe(30_000n);
+    expect(webSearchCostMicros(0, "10")).toBe(0n);
+    expect(webSearchCostMicros(1_000_000, "10")).toBe(10_000_000_000n);
+  });
+
+  it("rounds a fraction of a micro-dollar half up", () => {
+    // 1 search at $0.0015 per 1,000 is 1.5 micro-dollars.
+    expect(webSearchCostMicros(1, "0.0015")).toBe(2n);
+    expect(webSearchCostMicros(1, "0.0014")).toBe(1n);
+  });
+
+  it("rejects negative or fractional counts", () => {
+    expect(() => webSearchCostMicros(-1, "10")).toThrow();
+    expect(() => webSearchCostMicros(1.5, "10")).toThrow();
   });
 });

@@ -1,3 +1,5 @@
+import { toMicros } from "./budget";
+
 /** Token counts for a single request. */
 export interface TokenUsage {
   /** All input tokens, including cached and cache-write tokens. */
@@ -163,4 +165,18 @@ const usdFormatter = new Intl.NumberFormat("en-US", {
 /** Formats a USD amount for display, e.g. `$12.3456`. */
 export function formatUsd(amount: number): string {
   return usdFormatter.format(amount);
+}
+
+/**
+ * The exact cost of web searches, in micro-dollars: searches × the price
+ * per 1,000 ÷ 1,000, rounded half up. Charged on top of tokens, and not
+ * discounted with them (Anthropic: $10 per 1,000, so $0.01 a search).
+ */
+export function webSearchCostMicros(
+  searches: number,
+  per1kUsd: string,
+): bigint {
+  assertCount("webSearchRequests", searches);
+  const perThousand = toMicros(per1kUsd);
+  return (BigInt(searches) * perThousand + 500n) / 1000n;
 }

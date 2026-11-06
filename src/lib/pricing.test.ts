@@ -28,6 +28,7 @@ function row(
     longCacheWritePerMTokUsd: null,
     longCacheWrite1hPerMTokUsd: null,
     batchMultiplier: null,
+    webSearchPer1kUsd: null,
     ...overrides,
   };
 }

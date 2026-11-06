@@ -259,6 +259,19 @@ jobs:
           test "$STATUS" = 422
           grep -q '"no_batch_pricing"' response.json
 
+          # Web search: 3 searches at Anthropic's $10 per 1,000 = $0.03, on
+          # top of tokens (none here, so reconciliation's Sonnet token total
+          # is unchanged). Dated today: reconciliation compares it below.
+          BODY="{\"provider\":\"anthropic\",\"model\":\"claude-sonnet-5-5\",\"inputTokens\":0,\"outputTokens\":0,\"webSearchRequests\":3,\"requestId\":\"ci-search-$GITHUB_RUN_ID\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"webSearchRequests":3,"webSearchCostUsd":"0.030000","costUsd":"0.030000"' response.json
+          # No web search price is seeded for OpenAI, so searches are refused
+          BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"webSearchRequests\":1,\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 422
+          grep -q '"no_web_search_pricing"' response.json
+
           # Attribution is stored in its own columns and returned
           BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":100,"outputTokens":10,"customerId":" cus_ci ","userId":"u_ci","feature":"ci-smoke","runId":"run_ci"}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
@@ -402,7 +415,8 @@ jobs:
           # Reconciliation against a saved Anthropic cost report (cents as
           # decimal strings, grouped by description), never the live API.
           # Recorded today: Haiku $0.083750 (tier check above) and three
-          # Sonnet events at $0.009900 (TS, Python, OTel) = $0.029700.
+          # Sonnet events at $0.009900 (TS, Python, OTel) = $0.029700 of
+          # tokens, plus $0.03 of Sonnet web search (no tokens).
           TODAY=$(date -u +%F)
           cat > cost-report.json <<JSON
           {"data":[{"starting_at":"${TODAY}T00:00:00Z","ending_at":"x","results":[
@@ -410,16 +424,19 @@ jobs:
             {"amount":"2","currency":"USD","cost_type":"tokens","model":"claude-sonnet-5-5"},
             {"amount":"1","currency":"USD","cost_type":"tokens","model":"claude-sonnet-5-5"},
             {"amount":"250","currency":"USD","cost_type":"tokens","model":"claude-opus-5-5"},
-            {"amount":"10","currency":"USD","cost_type":"web_search","model":null}
+            {"amount":"3","currency":"USD","cost_type":"web_search","model":null},
+            {"amount":"10","currency":"USD","cost_type":"code_execution","model":null}
           ]}],"has_more":false,"next_page":null}
           JSON
           npm run --silent reconcile -- --provider anthropic --from "$TODAY" --report-file cost-report.json | tee reconcile.log
           # Haiku matches exactly; Sonnet is $0.0003 under (below a cent, not
-          # flagged); Opus was billed but never recorded (flagged).
+          # flagged); Opus was billed but never recorded (flagged). Web search
+          # matches in total, apart from tokens; code execution isn't tracked.
           grep -E 'claude-haiku-5-5.*\$0\.083750.*\$0\.083750.*\$0\.000000' reconcile.log
           grep -E 'claude-sonnet-5-5.*\$0\.030000.*\$0\.029700.*-\$0\.000300' reconcile.log | grep -v CHECK
           grep -E 'claude-opus-5-5.*\$2\.500000.*\$0\.000000.*-\$2\.500000.*CHECK' reconcile.log
-          grep -qF 'Billed but not tracked (web_search): $0.100000' reconcile.log
+          grep -qxF 'Web search: billed $0.030000, recorded $0.030000, diff $0.000000' reconcile.log
+          grep -qF 'Billed but not tracked (code_execution): $0.100000' reconcile.log
           # Without a report file it needs an Admin API key, and says so
           if npm run --silent reconcile -- --provider anthropic --from "$TODAY" 2> reconcile-err.log; then exit 1; fi
           grep -q ANTHROPIC_ADMIN_KEY reconcile-err.log

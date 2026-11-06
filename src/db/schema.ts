@@ -124,6 +124,12 @@ export const modelPricing = pgTable(
     // included (Anthropic's Batch API: 0.5). Null when no batch price is
     // configured, and batch usage for the model is refused.
     batchMultiplier: numeric("batch_multiplier", { precision: 4, scale: 3 }),
+    // Charged per 1,000 web searches, on top of tokens (Anthropic: $10).
+    // Null when searches aren't priced, and usage with searches is refused.
+    webSearchPer1kUsd: numeric("web_search_per_1k_usd", {
+      precision: 12,
+      scale: 6,
+    }),
     // The processing tier these rates are for: "standard", or a provider's
     // "flex" (cheaper, slower) or "fast" (premium; OpenAI's former priority
     // processing, Anthropic's fast mode), each with its own published rates.
@@ -220,6 +226,15 @@ export const usageEvents = pgTable(
       .$type<ServiceTier>()
       .notNull()
       .default("standard"),
+    // Web searches the request ran, and the part of cost_usd they cost
+    // (charged per search, on top of tokens).
+    webSearchRequests: integer("web_search_requests").notNull().default(0),
+    webSearchCostUsd: numeric("web_search_cost_usd", {
+      precision: 14,
+      scale: 6,
+    })
+      .notNull()
+      .default("0"),
     costUsd: numeric("cost_usd", { precision: 14, scale: 6 }).notNull(),
     // Provider request id, used to de-duplicate ingested events.
     requestId: text("request_id"),
@@ -259,6 +274,10 @@ export const usageEvents = pgTable(
     check(
       "usage_events_service_tier_valid",
       sql`${t.serviceTier} in ('standard', 'batch', 'flex', 'fast')`,
+    ),
+    check(
+      "usage_events_web_search_valid",
+      sql`${t.webSearchRequests} >= 0 AND ${t.webSearchCostUsd} >= 0 AND ${t.webSearchCostUsd} <= ${t.costUsd}`,
     ),
     uniqueIndex("usage_events_provider_request_idx")
       .on(t.provider, t.requestId)

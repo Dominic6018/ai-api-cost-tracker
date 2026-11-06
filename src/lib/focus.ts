@@ -108,6 +108,8 @@ export interface FocusUsage {
   feature: string | null;
   runId: string | null;
   tags: Record<string, string> | null;
+  /** Server-side web searches, listed as their own row. */
+  webSearchRequests: number;
 }
 
 /** A price row with its ID, which identifies the SKU price. */
@@ -137,6 +139,7 @@ export function formatDecimal({ units, scale }: Decimal): string {
 }
 
 const MILLION_SCALE = 6;
+const THOUSAND_SCALE = 3;
 
 /**
  * The per-million-token rate for each token type, as stored. Above the
@@ -213,8 +216,8 @@ function tags(usage: FocusUsage): string | null {
 
 /**
  * One FOCUS row per token type a usage event used, priced at `pricing`,
- * the price in effect when it occurred. Token types with no tokens get no
- * row.
+ * the price in effect when it occurred, plus a row for any web searches.
+ * Token types with no tokens get no row.
  */
 export function focusRows(
   usage: FocusUsage,
@@ -253,58 +256,108 @@ export function focusRows(
       : standard;
   };
 
-  return TOKEN_TYPES.filter(({ key }) => tokens[key] > 0).map(
+  const tier =
+    usage.serviceTier === "standard" ? "" : ` (${usage.serviceTier})`;
+  type Varying =
+    | "ListCost"
+    | "ListUnitPrice"
+    | "PricingQuantity"
+    | "PricingUnit"
+    | "ConsumedQuantity"
+    | "ConsumedUnit"
+    | "ChargeDescription"
+    | "SkuId"
+    | "SkuPriceId"
+    | "SkuMeter";
+  const row = (fields: Record<Varying, string>): FocusRow => {
+    const all: FocusRow = {
+      ...fields,
+      // Not the invoicing party: FOCUS requires 0 here (see above).
+      BilledCost: "0",
+      EffectiveCost: "0",
+      // No negotiated rate is known, so ContractedUnitPrice is left out
+      // and ContractedCost equals BilledCost, as FOCUS requires.
+      ContractedCost: "0",
+      PricingCategory: "Standard",
+      BillingCurrency: "USD",
+      BillingAccountId: UNKNOWN_BILLING_ACCOUNT.id,
+      BillingAccountName: UNKNOWN_BILLING_ACCOUNT.name,
+      BillingPeriodStart: billingStart,
+      BillingPeriodEnd: billingEnd,
+      ChargePeriodStart: chargeStart,
+      ChargePeriodEnd: chargeEnd,
+      ChargeCategory: "Usage",
+      // Only corrections to a closed billing period have a class.
+      ChargeClass: null,
+      ChargeFrequency: "Usage-Based",
+      InvoiceIssuerName: provider.name,
+      ServiceProviderName: provider.name,
+      HostProviderName: provider.name,
+      ServiceName: provider.service,
+      ServiceCategory: "AI and Machine Learning",
+      ServiceSubcategory: "Generative AI",
+      SubAccountId: usage.projectId,
+      SubAccountName: usage.projectName,
+      SubAccountType: "Project",
+      Tags: tags(usage),
+      x_UsageEventId: usage.id,
+      x_RequestId: usage.requestId,
+    };
+    // Columns in FOCUS_COLUMNS order.
+    return Object.fromEntries(
+      FOCUS_COLUMNS.map((column) => [column, all[column]]),
+    ) as FocusRow;
+  };
+
+  const rows = TOKEN_TYPES.filter(({ key }) => tokens[key] > 0).map(
     ({ key, meter }) => {
       const rate = unitPrice(rates[key]);
       const count = BigInt(tokens[key]);
-      return {
-        // Not the invoicing party: FOCUS requires 0 here (see above).
-        BilledCost: "0",
-        EffectiveCost: "0",
+      return row({
         // The estimate: ListUnitPrice × PricingQuantity, exactly.
         ListCost: formatDecimal({
           units: rate.units * count,
           scale: rate.scale + MILLION_SCALE,
         }),
-        // No negotiated rate is known, so ContractedUnitPrice is left out
-        // and ContractedCost equals BilledCost, as FOCUS requires.
-        ContractedCost: "0",
         ListUnitPrice: formatDecimal(rate),
         PricingQuantity: formatDecimal({ units: count, scale: MILLION_SCALE }),
         PricingUnit: "1000000 Tokens",
-        PricingCategory: "Standard",
         ConsumedQuantity: String(tokens[key]),
         ConsumedUnit: "Tokens",
-        BillingCurrency: "USD",
-        BillingAccountId: UNKNOWN_BILLING_ACCOUNT.id,
-        BillingAccountName: UNKNOWN_BILLING_ACCOUNT.name,
-        BillingPeriodStart: billingStart,
-        BillingPeriodEnd: billingEnd,
-        ChargePeriodStart: chargeStart,
-        ChargePeriodEnd: chargeEnd,
-        ChargeCategory: "Usage",
-        // Only corrections to a closed billing period have a class.
-        ChargeClass: null,
-        ChargeFrequency: "Usage-Based",
-        ChargeDescription: `${usage.model} ${meter.toLowerCase()}${usage.serviceTier === "standard" ? "" : ` (${usage.serviceTier})`}`,
-        InvoiceIssuerName: provider.name,
-        ServiceProviderName: provider.name,
-        HostProviderName: provider.name,
-        ServiceName: provider.service,
-        ServiceCategory: "AI and Machine Learning",
-        ServiceSubcategory: "Generative AI",
+        ChargeDescription: `${usage.model} ${meter.toLowerCase()}${tier}`,
         SkuId: `${usage.provider}/${usage.model}/${key}`,
         // One price per SKU: the stored price, its long-prompt tier, and
         // the batch price.
         SkuPriceId: `${pricing.id}/${key}${long ? "/long-prompt" : ""}${batch ? "/batch" : ""}`,
         SkuMeter: meter,
-        SubAccountId: usage.projectId,
-        SubAccountName: usage.projectName,
-        SubAccountType: "Project",
-        Tags: tags(usage),
-        x_UsageEventId: usage.id,
-        x_RequestId: usage.requestId,
-      };
+      });
     },
   );
+
+  // Web searches are priced per 1,000, the same in every tier.
+  if (usage.webSearchRequests > 0) {
+    if (pricing.webSearchPer1kUsd === null) {
+      throw new TypeError("Web search usage needs a web search price");
+    }
+    const rate = parseDecimal(pricing.webSearchPer1kUsd);
+    const count = BigInt(usage.webSearchRequests);
+    rows.push(
+      row({
+        ListCost: formatDecimal({
+          units: rate.units * count,
+          scale: rate.scale + THOUSAND_SCALE,
+        }),
+        ListUnitPrice: formatDecimal(rate),
+        PricingQuantity: formatDecimal({ units: count, scale: THOUSAND_SCALE }),
+        PricingUnit: "1000 Searches",
+        ConsumedQuantity: String(usage.webSearchRequests),
+        ConsumedUnit: "Requests",
+        ChargeDescription: `${usage.model} web searches${tier}`,
+        SkuId: `${usage.provider}/${usage.model}/web-search`,
+        SkuPriceId: `${pricing.id}/web-search`,
+        SkuMeter: "Web Searches",
+      }),
+    );
+  }
+  return rows;
 }

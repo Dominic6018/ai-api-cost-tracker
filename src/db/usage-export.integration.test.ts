@@ -76,7 +76,7 @@ describe("usageCsv", () => {
   it("writes exact costs, cache writes, quoted names and attribution", async () => {
     const lines = (await exportText(day)).trimEnd().split("\r\n");
     expect(lines[1]).toBe(
-      '2038-04-01T06:00:00.000Z,"Export, Inc.",anthropic,claude-haiku-5-5,1006,100,50,0,standard,10,0.000006,cus_0,,chat,,"{""env"":""prod"",""team"":""search""}",exp-6',
+      '2038-04-01T06:00:00.000Z,"Export, Inc.",anthropic,claude-haiku-5-5,1006,100,50,0,standard,0,10,0.000006,cus_0,,chat,,"{""env"":""prod"",""team"":""search""}",exp-6',
     );
   });
 

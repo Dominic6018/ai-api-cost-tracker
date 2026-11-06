@@ -91,6 +91,11 @@ export interface Usage extends Attribution {
   cacheWrite1hInputTokens?: number;
   /** Defaults to "standard"; "batch" for Batch API results. */
   serviceTier?: ServiceTier;
+  /**
+   * Server-side web searches the request ran, charged per 1,000 on top of
+   * tokens (Anthropic: $10). Needs a web search price for the model.
+   */
+  webSearchRequests?: number;
   /** The provider's ID for the request; makes retries safe. */
   requestId?: string;
   occurredAt?: string | Date;
@@ -298,6 +303,8 @@ export function usageFromAnthropic(response: AnyResponse): Usage | null {
     n(details(usage.cache_creation).ephemeral_1h_input_tokens),
     cacheWrite,
   );
+  // Billed per search, apart from tokens; sent only when there were any.
+  const searches = n(details(usage.server_tool_use).web_search_requests);
   return {
     provider: "anthropic",
     model: response.model ?? "",
@@ -306,6 +313,7 @@ export function usageFromAnthropic(response: AnyResponse): Usage | null {
     cachedInputTokens: cacheRead,
     cacheWriteInputTokens: cacheWrite,
     cacheWrite1hInputTokens: cacheWrite1h,
+    ...(searches > 0 && { webSearchRequests: searches }),
     requestId: response.id,
   };
 }
