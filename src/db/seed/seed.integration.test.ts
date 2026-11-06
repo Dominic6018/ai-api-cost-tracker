@@ -315,13 +315,15 @@ describe("seed", () => {
         result.pricing,
       );
     };
-    // Per 1M input tokens; 300K tokens is over 2.5 Pro's long threshold.
-    expect(await input("2026-11-30T23:59:59Z", 1_000_000)).toBe(1.25);
+    // 100K input tokens at $1.25 per 1M; 300K is over 2.5 Pro's 200K
+    // threshold, so all of it pays the long $2.50.
+    expect(await input("2026-11-30T23:59:59Z", 100_000)).toBe(0.125);
     expect(await input("2026-11-30T23:59:59Z", 300_000)).toBe(0.75);
-    expect(await input("2026-12-01T00:00:00Z", 1_000_000)).toBe(0.75);
-    // No long tier once routed: 300K tokens at $0.75.
+    // Routed: $0.75 per 1M, with no long tier, so 300K costs $0.225.
+    expect(await input("2026-12-01T00:00:00Z", 100_000)).toBe(0.075);
     expect(await input("2026-12-01T00:00:00Z", 300_000)).toBe(0.225);
-    expect(await input("2027-01-01T00:00:00Z", 1_000_000)).toBe(1.5);
+    // Gemini 3.8 Flash's 2027 rate: $1.50 per 1M.
+    expect(await input("2027-01-01T00:00:00Z", 100_000)).toBe(0.15);
   });
 
   it("fills a missing end date, keeping a recorded one", async () => {
