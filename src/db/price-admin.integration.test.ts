@@ -44,6 +44,7 @@ const at = (iso: string) => new Date(iso);
 
 const input = (model: string, from: string): PriceInput => ({
   provider: "openai",
+  serviceTier: "standard",
   model,
   inputPerMTokUsd: "2",
   outputPerMTokUsd: "8",
@@ -143,6 +144,35 @@ describe("addModelPrice", () => {
       [at("2026-03-01T00:00:00Z"), at("2026-06-01T00:00:00Z")],
       [at("2026-06-01T00:00:00Z"), null],
     ]);
+  });
+
+  it("keeps each tier's history apart: a fast price ends no standard one", async () => {
+    const model = `${prefix}-tier`;
+    await existing(model, "2026-01-01T00:00:00Z");
+
+    const result = await addModelPrice(
+      db,
+      { ...input(model, "2026-03-01T00:00:00Z"), serviceTier: "fast" },
+      userId,
+    );
+    expect(result).toMatchObject({ ok: true, ended: 0 });
+    expect(result.ok && result.price.serviceTier).toBe("fast");
+    // The standard price is still open, and each tier has its own lookup.
+    expect((await history(model)).map((r) => [r.from, r.to])).toEqual([
+      [at("2026-01-01T00:00:00Z"), null],
+      [at("2026-03-01T00:00:00Z"), null],
+    ]);
+    const lookup = (serviceTier: "standard" | "fast") =>
+      findEffectivePricing(db, {
+        provider: "openai",
+        model,
+        at: at("2026-04-01T00:00:00Z"),
+        serviceTier,
+      });
+    const standard = await lookup("standard");
+    const fast = await lookup("fast");
+    expect(standard.found && standard.row.inputPerMTokUsd).toBe("3.000000");
+    expect(fast.found && fast.row.inputPerMTokUsd).toBe("2.000000");
   });
 
   it("leaves a price that already ended before the new start", async () => {

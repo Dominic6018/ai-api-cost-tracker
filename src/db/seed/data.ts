@@ -29,6 +29,11 @@ export interface SeedPrice {
    * API: "0.5"); omit when batch pricing wasn't verified.
    */
   batchMultiplier?: string;
+  /**
+   * The processing tier these rates are for; omitted means standard. Flex
+   * and fast are separate rows, at their own published rates.
+   */
+  serviceTier?: "flex" | "fast";
   /** ISO timestamp the price applies from (inclusive). */
   effectiveFrom: string;
   /** ISO timestamp the price stops applying (exclusive); omit if open-ended. */
@@ -65,6 +70,10 @@ const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 // the day they were checked. Usage before then has no price.
 const CHECKED_ON = "2026-10-28";
 const FROM = `${CHECKED_ON}T00:00:00Z`;
+
+// The flex and fast tier rates at the end were checked on this day.
+const TIERS_CHECKED_ON = "2026-11-07";
+const TIERS_FROM = `${TIERS_CHECKED_ON}T00:00:00Z`;
 
 export const seedPrices: SeedPrice[] = [
   // Anthropic: flat pricing across the full context window, except Haiku
@@ -227,5 +236,85 @@ export const seedPrices: SeedPrice[] = [
     effectiveFrom: FROM,
     source: GOOGLE,
     checkedOn: CHECKED_ON,
+  },
+
+  // Processing tiers, each at its own published rates. They apply from the
+  // day they were checked, like the rates above.
+  //
+  // OpenAI's "Flex" and "Fast" tables (short context; "Priority processing
+  // was renamed Fast mode on July 30, 2026"). Only models seeded above and
+  // listed in a table are included.
+  {
+    provider: "openai",
+    model: "gpt-5.4-mini",
+    serviceTier: "flex",
+    inputPerMTokUsd: "0.375",
+    outputPerMTokUsd: "2.25",
+    cachedInputPerMTokUsd: "0.0375",
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.4-nano",
+    serviceTier: "flex",
+    inputPerMTokUsd: "0.10",
+    outputPerMTokUsd: "0.625",
+    cachedInputPerMTokUsd: "0.01",
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.4-mini",
+    serviceTier: "fast",
+    inputPerMTokUsd: "1.50",
+    outputPerMTokUsd: "9.00",
+    cachedInputPerMTokUsd: "0.15",
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-4.1",
+    serviceTier: "fast",
+    inputPerMTokUsd: "3.50",
+    outputPerMTokUsd: "14.00",
+    cachedInputPerMTokUsd: "0.875",
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    serviceTier: "fast",
+    inputPerMTokUsd: "0.25",
+    outputPerMTokUsd: "1.00",
+    cachedInputPerMTokUsd: "0.125",
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+
+  // Anthropic fast mode: Claude Opus 5.5 at $8 input and $40 output, and
+  // "Prompt caching multipliers apply on top of fast mode pricing": cache
+  // reads at 0.05× input ($0.40), 5-minute writes at 1.25× ($10), 1-hour
+  // writes at 2× ($16). Fast mode isn't available with the Batch API.
+  {
+    provider: "anthropic",
+    model: "claude-opus-5-5",
+    serviceTier: "fast",
+    inputPerMTokUsd: "8",
+    outputPerMTokUsd: "40",
+    cachedInputPerMTokUsd: "0.40",
+    cacheWritePerMTokUsd: "10",
+    cacheWrite1hPerMTokUsd: "16",
+    effectiveFrom: TIERS_FROM,
+    source: ANTHROPIC,
+    checkedOn: TIERS_CHECKED_ON,
   },
 ];

@@ -132,14 +132,18 @@ export default async function PricesPage() {
               </tr>
             </thead>
             <tbody>
-              {histories.flatMap(({ provider, model, prices }) =>
+              {histories.flatMap(({ provider, model, serviceTier, prices }) =>
                 prices.map(({ row, status }, index) => {
                   const recheck = needsRecheck(row.checkedOn, now);
+                  // Flex and fast prices are listed under their tier.
+                  const tier =
+                    serviceTier === "standard" ? "" : ` · ${serviceTier}`;
                   return (
                     <tr
                       key={row.id}
                       data-testid="price"
                       data-model={model}
+                      data-tier={serviceTier}
                       className="border-b border-foreground/10 align-top last:border-0"
                     >
                       <td className="px-4 py-3">
@@ -148,11 +152,13 @@ export default async function PricesPage() {
                             <span className="font-mono">{model}</span>
                             <span className="block text-xs text-foreground/60">
                               {provider}
+                              {tier}
                             </span>
                           </>
                         ) : (
                           <span className="sr-only">
                             {provider} {model}
+                            {tier}
                           </span>
                         )}
                       </td>

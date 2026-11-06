@@ -53,6 +53,7 @@ export async function seed(db: Database): Promise<SeedResult> {
         longCacheWrite1hPerMTokUsd:
           price.longContext?.cacheWrite1hPerMTokUsd ?? null,
         batchMultiplier: price.batchMultiplier ?? null,
+        serviceTier: price.serviceTier ?? ("standard" as const),
         effectiveFrom: new Date(price.effectiveFrom),
         effectiveTo: price.effectiveTo ? new Date(price.effectiveTo) : null,
         sourceUrl: price.source,
@@ -63,6 +64,7 @@ export async function seed(db: Database): Promise<SeedResult> {
       target: [
         modelPricing.provider,
         modelPricing.model,
+        modelPricing.serviceTier,
         modelPricing.effectiveFrom,
       ],
       // Fill in what's missing only; recorded values are kept. A 1-hour

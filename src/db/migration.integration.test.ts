@@ -201,7 +201,7 @@ describe("model_pricing constraints", () => {
     ).toBe(CHECK_VIOLATION);
   });
 
-  it("enforces one price per provider, model, and effective_from", async () => {
+  it("enforces one price per provider, model, tier and effective_from", async () => {
     const values = {
       provider: "anthropic" as const,
       model: `it-${randomUUID()}`,
@@ -214,6 +214,37 @@ describe("model_pricing constraints", () => {
     expect(await pgErrorCode(db.insert(modelPricing).values(values))).toBe(
       UNIQUE_VIOLATION,
     );
+    // Another tier can start at the same time.
+    const [fast] = await db
+      .insert(modelPricing)
+      .values({ ...values, serviceTier: "fast", inputPerMTokUsd: "6" })
+      .returning();
+    createdPricingIds.push(fast.id);
+    expect(fast.serviceTier).toBe("fast");
+  });
+
+  it("rejects unknown tiers, and a batch multiplier off the standard tier", async () => {
+    const values = {
+      provider: "anthropic" as const,
+      model: `it-${randomUUID()}`,
+      inputPerMTokUsd: "3",
+      outputPerMTokUsd: "15",
+      effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+    };
+    expect(
+      await pgErrorCode(
+        db
+          .insert(modelPricing)
+          .values({ ...values, serviceTier: "priority" as "fast" }),
+      ),
+    ).toBe(CHECK_VIOLATION);
+    expect(
+      await pgErrorCode(
+        db
+          .insert(modelPricing)
+          .values({ ...values, serviceTier: "flex", batchMultiplier: "0.5" }),
+      ),
+    ).toBe(CHECK_VIOLATION);
   });
 });
 
