@@ -29,6 +29,8 @@ export interface SeedPrice {
    * API: "0.5"); omit when batch pricing wasn't verified.
    */
   batchMultiplier?: string;
+  /** Charged per 1,000 web searches (Anthropic: "10"); omit when not verified. */
+  webSearchPer1kUsd?: string;
   /**
    * The processing tier these rates are for; omitted means standard. Flex
    * and fast are separate rows, at their own published rates.
@@ -66,6 +68,11 @@ const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 // Other providers' batch prices weren't verified, so they aren't seeded
 // and their batch usage is refused until a batch price is added.
 //
+// Anthropic charges $10 per 1,000 web searches on every Claude model, on
+// top of tokens and in fast mode too, and not discounted for batch
+// (checked 2026-11-07): webSearchPer1kUsd 10. Other providers search
+// prices weren't verified, so their searches are refused until one is added.
+//
 // Start dates before the check date aren't recorded, so prices apply from
 // the day they were checked. Usage before then has no price.
 const CHECKED_ON = "2026-10-28";
@@ -88,6 +95,7 @@ export const seedPrices: SeedPrice[] = [
     cacheWritePerMTokUsd: "12.50",
     cacheWrite1hPerMTokUsd: "20",
     batchMultiplier: "0.5",
+    webSearchPer1kUsd: "10",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -101,6 +109,7 @@ export const seedPrices: SeedPrice[] = [
     cacheWritePerMTokUsd: "5",
     cacheWrite1hPerMTokUsd: "8",
     batchMultiplier: "0.5",
+    webSearchPer1kUsd: "10",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -114,6 +123,7 @@ export const seedPrices: SeedPrice[] = [
     cacheWritePerMTokUsd: "2.50",
     cacheWrite1hPerMTokUsd: "4",
     batchMultiplier: "0.5",
+    webSearchPer1kUsd: "10",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -138,6 +148,7 @@ export const seedPrices: SeedPrice[] = [
       cacheWrite1hPerMTokUsd: "1",
     },
     batchMultiplier: "0.5",
+    webSearchPer1kUsd: "10",
     effectiveFrom: FROM,
     source: ANTHROPIC,
     checkedOn: CHECKED_ON,
@@ -313,6 +324,7 @@ export const seedPrices: SeedPrice[] = [
     cachedInputPerMTokUsd: "0.40",
     cacheWritePerMTokUsd: "10",
     cacheWrite1hPerMTokUsd: "16",
+    webSearchPer1kUsd: "10",
     effectiveFrom: TIERS_FROM,
     source: ANTHROPIC,
     checkedOn: TIERS_CHECKED_ON,

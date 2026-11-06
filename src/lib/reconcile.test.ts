@@ -148,8 +148,18 @@ describe("reconcile", () => {
         tokens("2026-11-01", "claude-haiku-5-5", 83_750n),
       ],
       [
-        { day: "2026-11-01", model: "claude-sonnet-5-5", micros: 1_000_000n },
-        { day: "2026-11-01", model: "claude-haiku-5-5", micros: 83_750n },
+        {
+          day: "2026-11-01",
+          model: "claude-sonnet-5-5",
+          micros: 1_000_000n,
+          webSearchMicros: 0n,
+        },
+        {
+          day: "2026-11-01",
+          model: "claude-haiku-5-5",
+          micros: 83_750n,
+          webSearchMicros: 0n,
+        },
       ],
     );
     expect(report.rows).toEqual([
@@ -185,9 +195,19 @@ describe("reconcile", () => {
         tokens("2026-11-01", "c", 100_000n), // $0.10 billed
       ],
       [
-        { day: "2026-11-01", model: "a", micros: 980_000n }, // -2%: within
-        { day: "2026-11-01", model: "b", micros: 970_000n }, // -3%: flagged
-        { day: "2026-11-01", model: "c", micros: 95_000n }, // -5% but under a cent
+        {
+          day: "2026-11-01",
+          model: "a",
+          micros: 980_000n,
+          webSearchMicros: 0n,
+        }, // -2%: within
+        {
+          day: "2026-11-01",
+          model: "b",
+          micros: 970_000n,
+          webSearchMicros: 0n,
+        }, // -3%: flagged
+        { day: "2026-11-01", model: "c", micros: 95_000n, webSearchMicros: 0n }, // -5% but under a cent
       ],
       2,
     );
@@ -201,7 +221,14 @@ describe("reconcile", () => {
   it("flags usage only one side has, such as unreported requests", () => {
     const report = reconcile(
       [tokens("2026-11-01", "claude-opus-5-5", 2_000_000n)],
-      [{ day: "2026-11-02", model: "claude-opus-5-5", micros: 50_000n }],
+      [
+        {
+          day: "2026-11-02",
+          model: "claude-opus-5-5",
+          micros: 50_000n,
+          webSearchMicros: 0n,
+        },
+      ],
     );
     expect(report.rows.map((r) => [r.day, r.diffMicros, r.flagged])).toEqual([
       ["2026-11-01", -2_000_000n, true],
@@ -209,34 +236,84 @@ describe("reconcile", () => {
     ]);
   });
 
-  it("lists non-token costs separately instead of as differences", () => {
+  it("compares web search in total, apart from token rows", () => {
+    const search = (day: string, micros: bigint) => ({
+      day,
+      model: null,
+      costType: "web_search",
+      micros,
+    });
+    const report = reconcile(
+      [search("2026-11-01", 500_000n), search("2026-11-02", 100_000n)],
+      [
+        {
+          day: "2026-11-01",
+          model: "claude-sonnet-5-5",
+          micros: 0n,
+          webSearchMicros: 400_000n,
+        },
+        {
+          day: "2026-11-02",
+          model: "claude-haiku-5-5",
+          micros: 0n,
+          webSearchMicros: 200_000n,
+        },
+      ],
+    );
+    expect(report.webSearch).toEqual({
+      billedMicros: 600_000n,
+      recordedMicros: 600_000n,
+      diffMicros: 0n,
+      flagged: false,
+    });
+    expect(report.otherCosts).toEqual([]);
+    // Token totals don't include search.
+    expect(report.totals.recordedMicros).toBe(0n);
+  });
+
+  it("flags web search the tracker missed", () => {
     const report = reconcile(
       [
         {
           day: "2026-11-01",
           model: null,
           costType: "web_search",
-          micros: 500_000n,
-        },
-        {
-          day: "2026-11-02",
-          model: null,
-          costType: "web_search",
           micros: 100_000n,
         },
+      ],
+      [],
+    );
+    expect(report.webSearch).toEqual({
+      billedMicros: 100_000n,
+      recordedMicros: 0n,
+      diffMicros: -100_000n,
+      flagged: true,
+    });
+  });
+
+  it("lists other non-token costs separately instead of as differences", () => {
+    const report = reconcile(
+      [
         {
           day: "2026-11-01",
           model: null,
           costType: "code_execution",
           micros: 1n,
         },
+        {
+          day: "2026-11-02",
+          model: null,
+          costType: "code_execution",
+          micros: 2n,
+        },
+        { day: "2026-11-01", model: null, costType: "storage", micros: 5n },
       ],
       [],
     );
     expect(report.rows).toEqual([]);
     expect(report.otherCosts).toEqual([
-      { costType: "code_execution", micros: 1n },
-      { costType: "web_search", micros: 600_000n },
+      { costType: "code_execution", micros: 3n },
+      { costType: "storage", micros: 5n },
     ]);
   });
 });

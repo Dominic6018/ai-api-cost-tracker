@@ -260,6 +260,40 @@ describe("seed", () => {
     }
   });
 
+  it("fills a missing web search price, keeping a recorded one", async () => {
+    const price = seedPrices.find((p) => p.model === "claude-fable-5-1");
+    if (!price) throw new Error("expected Claude Fable 5.1 in the seed data");
+    const match = and(
+      eq(modelPricing.provider, price.provider),
+      eq(modelPricing.model, price.model),
+      eq(modelPricing.effectiveFrom, new Date(price.effectiveFrom)),
+    );
+    const searchPrice = async () =>
+      (await db.select().from(modelPricing).where(match))[0].webSearchPer1kUsd;
+    expect(await searchPrice()).toBe("10.000000");
+    try {
+      // A row seeded before web search prices existed has none.
+      await db
+        .update(modelPricing)
+        .set({ webSearchPer1kUsd: null })
+        .where(match);
+      expect((await seed(db)).filled).toBe(1);
+      expect(await searchPrice()).toBe("10.000000");
+
+      await db
+        .update(modelPricing)
+        .set({ webSearchPer1kUsd: "12" })
+        .where(match);
+      expect((await seed(db)).filled).toBe(0);
+      expect(await searchPrice()).toBe("12.000000");
+    } finally {
+      await db
+        .update(modelPricing)
+        .set({ webSearchPer1kUsd: "10" })
+        .where(match);
+    }
+  });
+
   it("seeds flex and fast prices that the lookup finds per tier", async () => {
     const at = new Date("2026-11-08T00:00:00Z");
     const input = async (

@@ -79,6 +79,8 @@ for result in client.messages.batches.results(batch_id):
 
 Flex and fast processing (OpenAI's Flex and Fast, formerly Priority; Anthropic's fast mode) work the same way, with `service_tier="flex"` or `"fast"`, and are billed at that tier's own price. Usage for a tier without a price is refused (`no_tier_pricing`).
 
+Anthropic web searches are read from `usage.server_tool_use.web_search_requests` into `web_search_requests` and charged per 1,000 on top of tokens ($10 for Claude models). Searches for a model without a web search price are refused (`no_web_search_pricing`).
+
 ## Tags
 
 Free-form labels for anything attribution doesn't cover: up to 20, keys of 1–64 letters, digits and `_ . / -`, values up to 200 characters. Scoped trackers and calls merge tags key by key, the call's own values winning:

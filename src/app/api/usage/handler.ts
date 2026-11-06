@@ -24,6 +24,11 @@ const RECORD_ERRORS: Record<
     message:
       "No price for this model's serviceTier at occurredAt; flex and fast usage needs that tier's own price (add one at /prices/new)",
   },
+  no_web_search_pricing: {
+    status: 422,
+    message:
+      "No web search price is configured for this model at occurredAt; add one at /prices/new, or omit webSearchRequests",
+  },
   no_batch_pricing: {
     status: 422,
     message:
@@ -92,6 +97,8 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
           cacheWriteInputTokens: event.cacheWriteInputTokens,
           cacheWrite1hInputTokens: event.cacheWrite1hInputTokens,
           serviceTier: event.serviceTier,
+          webSearchRequests: event.webSearchRequests,
+          webSearchCostUsd: event.webSearchCostUsd,
           costUsd: event.costUsd,
           requestId: event.requestId,
           customerId: event.customerId,

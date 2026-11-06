@@ -38,9 +38,10 @@ beforeAll(async () => {
         inputPerMTokUsd: "3",
         outputPerMTokUsd: "15",
         cachedInputPerMTokUsd: "0.3",
+        webSearchPer1kUsd: "10",
         effectiveFrom: new Date("2026-01-01T00:00:00Z"),
       },
-      // The same model's fast tier, at its own (double) rates.
+      // The same model's fast tier, without a web search price, at its own (double) rates.
       {
         provider: "anthropic",
         model,
@@ -90,6 +91,7 @@ function usage(overrides: Partial<UsageInput> = {}): UsageInput {
     cacheWriteInputTokens: 0,
     cacheWrite1hInputTokens: 0,
     serviceTier: "standard",
+    webSearchRequests: 0,
     occurredAt: new Date("2026-06-01T00:00:00Z"),
     ...overrides,
   };
@@ -113,6 +115,44 @@ describe("recordUsage", () => {
       .where(eq(usageEvents.id, result.event.id));
     expect(stored.costUsd).toBe("3.420000");
     expect(stored.occurredAt.toISOString()).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  it("charges web searches per 1,000 on top of tokens, and keeps them apart", async () => {
+    const requestId = `req-search-${randomUUID()}`;
+    const result = await recordUsage(
+      db,
+      usage({ requestId, webSearchRequests: 3 }),
+    );
+    if (!result.ok) throw new Error(`expected success, got ${result.error}`);
+    // $3.42 of tokens + 3 searches at $10 per 1,000
+    expect(result.event).toMatchObject({
+      costUsd: "3.450000",
+      webSearchRequests: 3,
+      webSearchCostUsd: "0.030000",
+    });
+    // A retry with a different search count is a conflict, not a replay.
+    expect(
+      await recordUsage(db, usage({ requestId, webSearchRequests: 2 })),
+    ).toEqual({ ok: false, error: "request_id_conflict" });
+    expect(
+      await recordUsage(db, usage({ requestId, webSearchRequests: 3 })),
+    ).toMatchObject({ ok: true, replayed: true });
+  });
+
+  it("refuses web searches the matching price has no rate for", async () => {
+    // The fast row and the tiered model have no web search price.
+    for (const input of [
+      usage({ serviceTier: "fast", webSearchRequests: 1 }),
+      usage({ model: tieredModel, webSearchRequests: 1 }),
+    ]) {
+      expect(await recordUsage(db, input)).toEqual({
+        ok: false,
+        error: "no_web_search_pricing",
+      });
+    }
+    // Without searches the same usage is recorded, at no search cost.
+    const plain = await recordUsage(db, usage({ model: tieredModel }));
+    expect(plain.ok && plain.event.webSearchCostUsd).toBe("0.000000");
   });
 
   it("returns no_pricing before the model's first price", async () => {

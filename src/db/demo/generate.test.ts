@@ -123,6 +123,7 @@ describe("generateDemoData", () => {
         longCacheWrite1hPerMTokUsd:
           p.longContext?.cacheWrite1hPerMTokUsd ?? null,
         batchMultiplier: p.batchMultiplier ?? null,
+        webSearchPer1kUsd: p.webSearchPer1kUsd ?? null,
       });
     };
     for (const event of data.events) {
