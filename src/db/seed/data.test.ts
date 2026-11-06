@@ -147,6 +147,44 @@ describe("seed web search prices", () => {
   });
 });
 
+describe("gemini-2.5-pro routing to Gemini 3.8 Flash", () => {
+  const rows = (model: string) =>
+    seedPrices.filter((p) => p.provider === "google" && p.model === model);
+  const at = (model: string, iso: string) =>
+    rows(model).find(
+      (p) =>
+        Date.parse(p.effectiveFrom) <= Date.parse(iso) &&
+        (!p.effectiveTo || Date.parse(p.effectiveTo) > Date.parse(iso)),
+    );
+
+  it("keeps its own rates, long tier included, until 2026-12-01", () => {
+    const before = at("gemini-2.5-pro", "2026-11-30T23:59:59Z");
+    expect(before).toMatchObject({ inputPerMTokUsd: "1.25" });
+    expect(before?.effectiveTo).toBe("2026-12-01T00:00:00Z");
+    expect(before?.longContext?.thresholdTokens).toBe(200_000);
+  });
+
+  it.each([
+    "2026-12-01T00:00:00Z",
+    "2026-12-31T23:59:59Z",
+    "2027-01-01T00:00:00Z",
+    "2030-01-01T00:00:00Z",
+  ])("is billed at Gemini 3.8 Flash's rates at %s", (iso) => {
+    const routed = at("gemini-2.5-pro", iso);
+    const flash = at("gemini-3.8-flash", iso);
+    expect(routed).toBeDefined();
+    expect(flash).toBeDefined();
+    for (const key of [
+      "inputPerMTokUsd",
+      "outputPerMTokUsd",
+      "cachedInputPerMTokUsd",
+    ] as const) {
+      expect(Number(routed![key])).toBe(Number(flash![key]));
+    }
+    expect(routed!.longContext).toBeUndefined();
+  });
+});
+
 describe("sample projects", () => {
   it("has at least one project with unique slugs", () => {
     expect(sampleProjects.length).toBeGreaterThan(0);

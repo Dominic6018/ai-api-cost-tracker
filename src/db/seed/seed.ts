@@ -69,8 +69,10 @@ export async function seed(db: Database): Promise<SeedResult> {
         modelPricing.effectiveFrom,
       ],
       // Fill in what's missing only; recorded values are kept. A 1-hour
-      // rate, batch multiplier or web search price counts as missing only when the seed has
-      // one, so models without (OpenAI, Google) aren't rewritten every run.
+      // rate, batch multiplier, web search price or end date counts as
+      // missing only when the seed has one, so prices without aren't
+      // rewritten every run. An end date ends a price the provider has
+      // since changed, such as gemini-2.5-pro's before its routing.
       set: {
         sourceUrl: sql`coalesce(${modelPricing.sourceUrl}, excluded.source_url)`,
         checkedOn: sql`coalesce(${modelPricing.checkedOn}, excluded.checked_on)`,
@@ -78,8 +80,9 @@ export async function seed(db: Database): Promise<SeedResult> {
         longCacheWrite1hPerMTokUsd: sql`coalesce(${modelPricing.longCacheWrite1hPerMTokUsd}, excluded.long_cache_write_1h_per_mtok_usd)`,
         batchMultiplier: sql`coalesce(${modelPricing.batchMultiplier}, excluded.batch_multiplier)`,
         webSearchPer1kUsd: sql`coalesce(${modelPricing.webSearchPer1kUsd}, excluded.web_search_per_1k_usd)`,
+        effectiveTo: sql`coalesce(${modelPricing.effectiveTo}, excluded.effective_to)`,
       },
-      setWhere: sql`${modelPricing.sourceUrl} is null or ${modelPricing.checkedOn} is null or (${modelPricing.cacheWrite1hPerMTokUsd} is null and excluded.cache_write_1h_per_mtok_usd is not null) or (${modelPricing.longCacheWrite1hPerMTokUsd} is null and excluded.long_cache_write_1h_per_mtok_usd is not null) or (${modelPricing.batchMultiplier} is null and excluded.batch_multiplier is not null) or (${modelPricing.webSearchPer1kUsd} is null and excluded.web_search_per_1k_usd is not null)`,
+      setWhere: sql`${modelPricing.sourceUrl} is null or ${modelPricing.checkedOn} is null or (${modelPricing.cacheWrite1hPerMTokUsd} is null and excluded.cache_write_1h_per_mtok_usd is not null) or (${modelPricing.longCacheWrite1hPerMTokUsd} is null and excluded.long_cache_write_1h_per_mtok_usd is not null) or (${modelPricing.batchMultiplier} is null and excluded.batch_multiplier is not null) or (${modelPricing.webSearchPer1kUsd} is null and excluded.web_search_per_1k_usd is not null) or (${modelPricing.effectiveTo} is null and excluded.effective_to is not null)`,
     })
     // xmax is 0 for a row this statement inserted, and set for one it updated.
     .returning({ inserted: sql<boolean>`(xmax = 0)` });
