@@ -228,6 +228,7 @@ function seedPricing(price: SeedPrice): PricingRow {
     longCachedInputPerMTokUsd: long?.cachedInputPerMTokUsd ?? null,
     longCacheWritePerMTokUsd: long?.cacheWritePerMTokUsd ?? null,
     longCacheWrite1hPerMTokUsd: long?.cacheWrite1hPerMTokUsd ?? null,
+    batchMultiplier: price.batchMultiplier ?? null,
   };
 }
 

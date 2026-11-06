@@ -120,6 +120,13 @@
       "when": 1793901372557,
       "tag": "0016_cache_write_1h",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793951973062,
+      "tag": "0017_batch_pricing",
+      "breakpoints": true
     }
   ]
 }

@@ -20,7 +20,7 @@ async function main() {
         `${result.pricesInserted} of ${seedPrices.length} price(s); ` +
         "existing rows were left unchanged" +
         (result.filled > 0
-          ? `, except that ${result.filled} price(s) got a source, check date or 1-hour cache-write rate they were missing.`
+          ? `, except that ${result.filled} price(s) got a source, check date, 1-hour cache-write or batch rate they were missing.`
           : "."),
     );
   } finally {

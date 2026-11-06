@@ -386,6 +386,20 @@ class AttributionTest(unittest.TestCase):
 
 
 @mock.patch("cost_tracker.time.sleep", lambda seconds: None)
+class ServiceTierTest(unittest.TestCase):
+    def test_record_and_track_send_batch(self):
+        tracker, transport, _ = make(stored(), stored(), stored())
+        tracker.record(Usage("anthropic", "claude-sonnet-5-5", 1, 1, service_tier="batch"))
+        tracker.track(ANTHROPIC, service_tier="batch")
+        tracker.track(ANTHROPIC)
+        tracker.flush()
+        bodies = [call[1] for call in transport.calls]
+        self.assertEqual(bodies[0]["serviceTier"], "batch")
+        # Background reports may finish in any order.
+        self.assertEqual(sorted(str(body.get("serviceTier")) for body in bodies[1:]), ["None", "batch"])
+
+
+@mock.patch("cost_tracker.time.sleep", lambda seconds: None)
 class TagsTest(unittest.TestCase):
     def test_record_and_track_send_tags(self):
         tracker, transport, _ = make(stored(), stored())
