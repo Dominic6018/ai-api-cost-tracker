@@ -19,6 +19,11 @@ const RECORD_ERRORS: Record<
     status: 422,
     message: "No price is configured for this model at occurredAt",
   },
+  no_tier_pricing: {
+    status: 422,
+    message:
+      "No price for this model's serviceTier at occurredAt; flex and fast usage needs that tier's own price (add one at /prices/new)",
+  },
   no_batch_pricing: {
     status: 422,
     message:

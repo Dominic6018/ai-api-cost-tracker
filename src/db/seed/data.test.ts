@@ -47,10 +47,10 @@ describe("seed prices", () => {
     }
   });
 
-  it("has valid, non-overlapping date ranges per model", () => {
+  it("has valid, non-overlapping date ranges per model and tier", () => {
     const byModel = new Map<string, typeof seedPrices>();
     for (const price of seedPrices) {
-      const key = `${price.provider}/${price.model}`;
+      const key = `${price.provider}/${price.model}/${price.serviceTier ?? "standard"}`;
       byModel.set(key, [...(byModel.get(key) ?? []), price]);
     }
 

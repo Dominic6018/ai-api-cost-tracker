@@ -94,6 +94,8 @@ for (const result of batchResults) {
 
 `record()` takes `serviceTier: "batch"` on the usage too. Batch usage for a model without a batch price is refused (`no_batch_pricing`) rather than billed at the full price.
 
+Flex and fast processing (OpenAI's Flex and Fast, formerly Priority; Anthropic's fast mode) work the same way, with `serviceTier: "flex"` or `"fast"`, and are billed at that tier's own price. Usage for a tier without a price is refused (`no_tier_pricing`).
+
 ## Tags
 
 Free-form labels for anything attribution doesn't cover: up to 20, keys of 1–64 letters, digits and `_ . / -`, values up to 200 characters. Scoped trackers and calls merge tags key by key, the call's own values winning:

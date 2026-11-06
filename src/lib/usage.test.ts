@@ -80,10 +80,10 @@ describe("parseUsagePayload", () => {
     },
   );
 
-  it("accepts the batch service tier and rejects others", () => {
+  it("accepts the batch service tier and rejects unknown ones", () => {
     const batch = parseUsagePayload({ ...valid, serviceTier: "batch" }, now);
     expect(batch.ok && batch.usage.serviceTier).toBe("batch");
-    expect(fieldErrors({ ...valid, serviceTier: "flex" })).toHaveProperty(
+    expect(fieldErrors({ ...valid, serviceTier: "scale" })).toHaveProperty(
       "serviceTier",
     );
   });

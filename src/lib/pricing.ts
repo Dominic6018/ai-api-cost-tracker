@@ -118,3 +118,15 @@ export function toTokenPricing(row: PricingRow): TokenPricing {
   }
   return pricing;
 }
+
+/**
+ * The price rows a usage tier is billed from: flex and fast have their
+ * own; standard and batch use the standard row (batch at its multiplier).
+ */
+export function priceTierFor(
+  serviceTier: "standard" | "batch" | "flex" | "fast" | undefined,
+): "standard" | "flex" | "fast" {
+  return serviceTier === "flex" || serviceTier === "fast"
+    ? serviceTier
+    : "standard";
+}

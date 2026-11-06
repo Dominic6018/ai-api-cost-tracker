@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isEffectiveAt,
+  priceTierFor,
   selectEffectivePricing,
   toTokenPricing,
   type PricingRow,
@@ -179,5 +180,18 @@ describe("toTokenPricing", () => {
 
   it.each(["", "abc", "NaN"])("rejects the invalid value %j", (value) => {
     expect(() => toTokenPricing(row(jan, null, value))).toThrow(TypeError);
+  });
+});
+
+describe("priceTierFor", () => {
+  it.each([
+    [undefined, "standard"],
+    ["standard", "standard"],
+    // Batch is a multiplier on the standard price.
+    ["batch", "standard"],
+    ["flex", "flex"],
+    ["fast", "fast"],
+  ] as const)("bills %s usage from %s prices", (usageTier, priceTier) => {
+    expect(priceTierFor(usageTier)).toBe(priceTier);
   });
 });

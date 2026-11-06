@@ -19,6 +19,7 @@ const price = (
   id: `p${next++}`,
   provider,
   model,
+  serviceTier: "standard",
   effectiveFrom: new Date(effectiveFrom),
   effectiveTo: effectiveTo ? new Date(effectiveTo) : null,
   inputPerMTokUsd: "1.000000",
@@ -141,5 +142,28 @@ describe("formatBatchMultiplier", () => {
 
   it("shows a dash without a batch price", () => {
     expect(formatBatchMultiplier(null)).toBe("—");
+  });
+});
+
+describe("priceHistories with tiers", () => {
+  it("keeps each tier's history apart, standard first", () => {
+    const standard = price("openai", "gpt-4.1", "2026-01-01T00:00:00Z");
+    const fast = {
+      ...price("openai", "gpt-4.1", "2026-11-07T00:00:00Z"),
+      serviceTier: "fast",
+    };
+    const flex = {
+      ...price("openai", "gpt-4.1", "2026-11-07T00:00:00Z"),
+      serviceTier: "flex",
+    };
+    const histories = priceHistories([fast, flex, standard], NOW);
+    expect(
+      histories.map((h) => [h.serviceTier, h.prices.map((p) => p.status)]),
+    ).toEqual([
+      // A newer fast price doesn't supersede the standard one.
+      ["standard", ["current"]],
+      ["flex", ["scheduled"]],
+      ["fast", ["scheduled"]],
+    ]);
   });
 });

@@ -96,8 +96,11 @@ export interface FocusUsage {
   cacheWriteInputTokens: number;
   /** The part of cacheWriteInputTokens written with a 1-hour TTL. */
   cacheWrite1hInputTokens: number;
-  /** "batch" usage is listed at the batch price. */
-  serviceTier: "standard" | "batch";
+  /**
+   * "batch" usage is listed at the standard row's batch price; "flex" and
+   * "fast" usage at their own rows' rates.
+   */
+  serviceTier: "standard" | "batch" | "flex" | "fast";
   outputTokens: number;
   requestId: string | null;
   customerId: string | null;
@@ -283,7 +286,7 @@ export function focusRows(
         // Only corrections to a closed billing period have a class.
         ChargeClass: null,
         ChargeFrequency: "Usage-Based",
-        ChargeDescription: `${usage.model} ${meter.toLowerCase()}${batch ? " (batch)" : ""}`,
+        ChargeDescription: `${usage.model} ${meter.toLowerCase()}${usage.serviceTier === "standard" ? "" : ` (${usage.serviceTier})`}`,
         InvoiceIssuerName: provider.name,
         ServiceProviderName: provider.name,
         HostProviderName: provider.name,

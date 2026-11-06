@@ -12,6 +12,7 @@ function form(values: Record<string, string>) {
 
 const valid = {
   provider: "openai",
+  serviceTier: "standard",
   model: "gpt-4.1",
   inputPerMTokUsd: "2",
   outputPerMTokUsd: "8",
