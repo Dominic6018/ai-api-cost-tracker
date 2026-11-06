@@ -193,6 +193,18 @@ export function PriceForm({ action }: { action: Action }) {
       </fieldset>
 
       <fieldset className="grid gap-5 sm:grid-cols-2">
+        <legend className="mb-3 text-sm font-medium">
+          Web search (optional)
+        </legend>
+        {field(
+          "webSearchPer1kUsd",
+          "Web search, per 1,000 searches",
+          { inputMode: "decimal", placeholder: "e.g. 10" },
+          "Charged on top of tokens for server-side web searches (Anthropic: $10). Leave empty and usage with searches is refused for this price.",
+        )}
+      </fieldset>
+
+      <fieldset className="grid gap-5 sm:grid-cols-2">
         <legend className="mb-3 text-sm font-medium">Where it applies</legend>
         {field(
           "effectiveFrom",

@@ -29,6 +29,8 @@ export interface UsageEventRow {
   cacheWriteInputTokens: number;
   cacheWrite1hInputTokens: number;
   serviceTier: ServiceTier;
+  webSearchRequests: number;
+  webSearchCostUsd: string;
   outputTokens: number;
   costUsd: string;
   requestId: string | null;
@@ -79,6 +81,8 @@ export function usageEventsQuery(
         cacheWriteInputTokens: usageEvents.cacheWriteInputTokens,
         cacheWrite1hInputTokens: usageEvents.cacheWrite1hInputTokens,
         serviceTier: usageEvents.serviceTier,
+        webSearchRequests: usageEvents.webSearchRequests,
+        webSearchCostUsd: usageEvents.webSearchCostUsd,
         outputTokens: usageEvents.outputTokens,
         costUsd: usageEvents.costUsd,
         requestId: usageEvents.requestId,

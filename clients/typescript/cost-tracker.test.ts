@@ -133,6 +133,32 @@ describe("usageFromResponse", () => {
     ).toBe(0.01215);
   });
 
+  it("reads Anthropic's web searches from server_tool_use", () => {
+    const searched = {
+      ...anthropic,
+      usage: {
+        ...anthropic.usage,
+        server_tool_use: { web_search_requests: 3 },
+      },
+    };
+    const usage = usageFromResponse(searched)!;
+    expect(usage.webSearchRequests).toBe(3);
+    expect(usagePayloadSchema.safeParse(usage).success).toBe(true);
+    // Without searches the field is left out, as before.
+    expect(usageFromResponse(anthropic)).not.toHaveProperty(
+      "webSearchRequests",
+    );
+    expect(
+      usageFromResponse({
+        ...anthropic,
+        usage: {
+          ...anthropic.usage,
+          server_tool_use: { web_search_requests: 0 },
+        },
+      }),
+    ).not.toHaveProperty("webSearchRequests");
+  });
+
   it("maps Gemini, billing thinking as output and tool-use prompts as input", () => {
     expect(usageFromResponse(gemini)).toEqual({
       provider: "google",

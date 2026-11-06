@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { calculateCostUsd } from "@/lib/cost";
+import { microsToDecimal, toMicros } from "@/lib/budget";
+import { calculateCostUsd, webSearchCostMicros } from "@/lib/cost";
 import { priceTierFor } from "@/lib/pricing";
 import type { UsageInput } from "@/lib/usage";
 import { findEffectivePricing } from "./pricing";
@@ -22,6 +23,7 @@ export type RecordUsageResult =
         | "no_pricing"
         | "no_batch_pricing"
         | "no_tier_pricing"
+        | "no_web_search_pricing"
         | "project_not_found"
         | "request_id_conflict";
     };
@@ -69,7 +71,8 @@ function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
     existing.cachedInputTokens === usage.cachedInputTokens &&
     existing.cacheWriteInputTokens === usage.cacheWriteInputTokens &&
     existing.cacheWrite1hInputTokens === usage.cacheWrite1hInputTokens &&
-    existing.serviceTier === usage.serviceTier;
+    existing.serviceTier === usage.serviceTier &&
+    existing.webSearchRequests === usage.webSearchRequests;
   return sameUsage
     ? { ok: true, event: existing, replayed: true }
     : { ok: false, error: "request_id_conflict" };
@@ -109,8 +112,19 @@ export async function recordUsage(
   if (usage.serviceTier === "batch" && lookup.pricing.batchMultiplier == null) {
     return { ok: false, error: "no_batch_pricing" };
   }
+  // Searches are charged on top of tokens; without a price they'd be
+  // recorded as free.
+  const searchPrice = lookup.row.webSearchPer1kUsd;
+  if (usage.webSearchRequests > 0 && searchPrice === null) {
+    return { ok: false, error: "no_web_search_pricing" };
+  }
 
-  const costUsd = calculateCostUsd(usage, lookup.pricing);
+  const searchMicros =
+    usage.webSearchRequests > 0 && searchPrice !== null
+      ? webSearchCostMicros(usage.webSearchRequests, searchPrice)
+      : 0n;
+  const costMicros =
+    toMicros(calculateCostUsd(usage, lookup.pricing).toFixed(6)) + searchMicros;
 
   try {
     const [event] = await db
@@ -125,7 +139,9 @@ export async function recordUsage(
         cacheWriteInputTokens: usage.cacheWriteInputTokens,
         cacheWrite1hInputTokens: usage.cacheWrite1hInputTokens,
         serviceTier: usage.serviceTier,
-        costUsd: costUsd.toFixed(6),
+        costUsd: microsToDecimal(costMicros),
+        webSearchRequests: usage.webSearchRequests,
+        webSearchCostUsd: microsToDecimal(searchMicros),
         requestId: usage.requestId ?? null,
         occurredAt: usage.occurredAt,
         metadata: usage.metadata ?? null,

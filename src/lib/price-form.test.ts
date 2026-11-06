@@ -59,6 +59,7 @@ describe("parsePriceForm", () => {
         longCacheWritePerMTokUsd: null,
         longCacheWrite1hPerMTokUsd: null,
         batchMultiplier: null,
+        webSearchPer1kUsd: null,
         effectiveFrom: new Date("2026-12-01T00:00:00Z"),
         sourceUrl: valid.sourceUrl,
         checkedOn: "2026-11-06",
@@ -123,6 +124,27 @@ describe("parsePriceForm", () => {
     );
     expect(result.ok && result.input.batchMultiplier).toBe(parsed);
   });
+
+  it.each([
+    ["10", "10"],
+    [" 12.5 ", "12.5"],
+    ["", null],
+  ])("accepts the web search price %j", (value, parsed) => {
+    const result = parsePriceForm(
+      form({ ...valid, webSearchPer1kUsd: value }),
+      NOW,
+    );
+    expect(result.ok && result.input.webSearchPer1kUsd).toBe(parsed);
+  });
+
+  it.each(["-1", "$10", "1234567", "0.0000001"])(
+    "rejects the web search price %j",
+    (value) => {
+      expect(errors({ ...valid, webSearchPer1kUsd: value })).toEqual({
+        webSearchPer1kUsd: "Enter a USD amount per 1,000 searches, like 10",
+      });
+    },
+  );
 
   it.each(["0", "1.5", "2", "0.0001", "-0.5", "50%"])(
     "rejects the batch multiplier %j",

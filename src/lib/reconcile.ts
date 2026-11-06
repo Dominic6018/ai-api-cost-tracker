@@ -18,7 +18,10 @@ export interface BilledCost {
 export interface RecordedCost {
   day: string;
   model: string;
+  /** Token cost: everything recorded except web search. */
   micros: bigint;
+  /** Web search cost, which providers bill apart from tokens. */
+  webSearchMicros: bigint;
 }
 
 /**
@@ -109,7 +112,12 @@ export interface ReconcileRow {
 
 export interface ReconcileReport {
   rows: ReconcileRow[];
-  /** Billed costs the tracker doesn't record, such as web search. */
+  /**
+   * Web search, which Anthropic bills per day without a model, so it's
+   * compared in total across the range.
+   */
+  webSearch: Omit<ReconcileRow, "day" | "model">;
+  /** Billed costs the tracker doesn't record, such as code execution. */
   otherCosts: { costType: string; micros: bigint }[];
   totals: { billedMicros: bigint; recordedMicros: bigint; diffMicros: bigint };
 }
@@ -118,7 +126,8 @@ export interface ReconcileReport {
 const MIN_FLAGGED_MICROS = 10_000n;
 
 /**
- * Lines up billed token costs with recorded costs by day and model. A row
+ * Lines up billed token costs with recorded costs by day and model, and
+ * billed web search with recorded web search in total. A row
  * is flagged when the difference exceeds `tolerancePercent` of the billed
  * amount and is at least one cent.
  */
@@ -146,36 +155,52 @@ export function reconcile(
   };
 
   const other = new Map<string, bigint>();
+  const webSearch = {
+    billedMicros: 0n,
+    recordedMicros: 0n,
+    diffMicros: 0n,
+    flagged: false,
+  };
   for (const cost of billed) {
     if (cost.costType === "tokens" && cost.model) {
       row(cost.day, cost.model).billedMicros += cost.micros;
+    } else if (cost.costType === "web_search") {
+      webSearch.billedMicros += cost.micros;
     } else {
       other.set(cost.costType, (other.get(cost.costType) ?? 0n) + cost.micros);
     }
   }
   for (const cost of recorded) {
     row(cost.day, cost.model).recordedMicros += cost.micros;
+    webSearch.recordedMicros += cost.webSearchMicros;
   }
 
   // Tolerance in hundredths of a percent, so the check stays in integers.
   const toleranceBasisPoints = BigInt(Math.round(tolerancePercent * 100));
   const totals = { billedMicros: 0n, recordedMicros: 0n, diffMicros: 0n };
+  const flag = (diff: bigint, billedMicros: bigint) => {
+    const abs = diff < 0n ? -diff : diff;
+    return (
+      abs >= MIN_FLAGGED_MICROS &&
+      abs * 10_000n > billedMicros * toleranceBasisPoints
+    );
+  };
   const sorted = [...rows.values()].sort(
     (a, b) => a.day.localeCompare(b.day) || a.model.localeCompare(b.model),
   );
   for (const r of sorted) {
     r.diffMicros = r.recordedMicros - r.billedMicros;
-    const abs = r.diffMicros < 0n ? -r.diffMicros : r.diffMicros;
-    r.flagged =
-      abs >= MIN_FLAGGED_MICROS &&
-      abs * 10_000n > r.billedMicros * toleranceBasisPoints;
+    r.flagged = flag(r.diffMicros, r.billedMicros);
     totals.billedMicros += r.billedMicros;
     totals.recordedMicros += r.recordedMicros;
   }
   totals.diffMicros = totals.recordedMicros - totals.billedMicros;
+  webSearch.diffMicros = webSearch.recordedMicros - webSearch.billedMicros;
+  webSearch.flagged = flag(webSearch.diffMicros, webSearch.billedMicros);
 
   return {
     rows: sorted,
+    webSearch,
     otherCosts: [...other]
       .map(([costType, micros]) => ({ costType, micros }))
       .sort((a, b) => a.costType.localeCompare(b.costType)),

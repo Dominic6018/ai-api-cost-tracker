@@ -95,6 +95,8 @@ export function createUsageReportHandler(deps: ReportHandlerDeps) {
         cacheWriteInputTokens: row.cacheWriteInputTokens,
         cacheWrite1hInputTokens: row.cacheWrite1hInputTokens,
         serviceTier: row.serviceTier,
+        webSearchRequests: row.webSearchRequests,
+        webSearchCostUsd: row.webSearchCostUsd,
         outputTokens: row.outputTokens,
         costUsd: row.costUsd,
         requestId: row.requestId,

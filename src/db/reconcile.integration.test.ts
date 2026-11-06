@@ -38,6 +38,7 @@ beforeAll(async () => {
     costUsd: string,
     occurredAt: string,
     provider: "anthropic" | "openai" = "anthropic",
+    webSearchCostUsd = "0",
   ) => ({
     projectId,
     provider,
@@ -45,12 +46,22 @@ beforeAll(async () => {
     inputTokens: 1,
     outputTokens: 1,
     costUsd,
+    webSearchCostUsd,
+    webSearchRequests: webSearchCostUsd === "0" ? 0 : 1,
     occurredAt: new Date(occurredAt),
   });
   await db.insert(usageEvents).values([
     // Two projects, same day and model: summed exactly.
     event(a, sonnet, "0.100001", "2041-03-01T00:00:00Z"),
-    event(b, sonnet, "0.200002", "2041-03-01T23:59:59.999Z"),
+    // $0.01 of this one is web search, kept apart from tokens.
+    event(
+      b,
+      sonnet,
+      "0.200002",
+      "2041-03-01T23:59:59.999Z",
+      "anthropic",
+      "0.010000",
+    ),
     event(a, haiku, "0.083750", "2041-03-01T12:00:00Z"),
     // The next UTC day.
     event(a, sonnet, "1.000000", "2041-03-02T00:00:00Z"),
@@ -69,7 +80,7 @@ afterAll(async () => {
 });
 
 describe("recordedDailyCost", () => {
-  it("sums one provider's cost per UTC day and model, across projects", async () => {
+  it("sums one provider's token and web search cost per UTC day and model, across projects", async () => {
     const rows = await recordedDailyCost(db, {
       provider: "anthropic",
       from: new Date("2041-03-01T00:00:00Z"),
@@ -78,9 +89,24 @@ describe("recordedDailyCost", () => {
     const ours = rows.filter((r) => r.model === sonnet || r.model === haiku);
     expect(ours).toEqual(
       expect.arrayContaining([
-        { day: "2041-03-01", model: sonnet, micros: 300_003n },
-        { day: "2041-03-01", model: haiku, micros: 83_750n },
-        { day: "2041-03-02", model: sonnet, micros: 1_000_000n },
+        {
+          day: "2041-03-01",
+          model: sonnet,
+          micros: 290_003n,
+          webSearchMicros: 10_000n,
+        },
+        {
+          day: "2041-03-01",
+          model: haiku,
+          micros: 83_750n,
+          webSearchMicros: 0n,
+        },
+        {
+          day: "2041-03-02",
+          model: sonnet,
+          micros: 1_000_000n,
+          webSearchMicros: 0n,
+        },
       ]),
     );
     expect(ours).toHaveLength(3);

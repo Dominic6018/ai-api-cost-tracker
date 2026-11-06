@@ -148,7 +148,13 @@ async function main() {
       to,
     });
     if (provider === "openai") {
-      recorded = recorded.map((cost) => ({ ...cost, model: ALL_MODELS }));
+      // OpenAI's line items include any web search, so compare in full.
+      recorded = recorded.map((cost) => ({
+        ...cost,
+        model: ALL_MODELS,
+        micros: cost.micros + cost.webSearchMicros,
+        webSearchMicros: 0n,
+      }));
     }
     const report = reconcile(billed, recorded, tolerance);
 
@@ -166,6 +172,12 @@ async function main() {
     }));
     if (table.length > 0) console.table(table);
     else console.log(`No ${name} costs billed or recorded.`);
+    const { webSearch } = report;
+    if (webSearch.billedMicros !== 0n || webSearch.recordedMicros !== 0n) {
+      console.log(
+        `Web search: billed ${formatMicros(webSearch.billedMicros)}, recorded ${formatMicros(webSearch.recordedMicros)}, diff ${formatMicros(webSearch.diffMicros)}${webSearch.flagged ? " CHECK" : ""}`,
+      );
+    }
     for (const other of report.otherCosts) {
       console.log(
         `Billed but not tracked (${other.costType}): ${formatMicros(other.micros)}`,
