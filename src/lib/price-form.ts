@@ -13,10 +13,14 @@ export const PRICE_PROVIDERS = [
   "other",
 ] as const;
 
+/** The tiers a price can be for, pinned to `PRICE_TIERS` by a test. */
+export const PRICE_FORM_TIERS = ["standard", "flex", "fast"] as const;
+
 /** Every field of the add-price form, as submitted. */
 export const PRICE_FIELDS = [
   "provider",
   "model",
+  "serviceTier",
   "inputPerMTokUsd",
   "outputPerMTokUsd",
   "cachedInputPerMTokUsd",
@@ -120,6 +124,7 @@ function priceFormSchema(now: Date) {
   return z
     .object({
       provider: z.enum(PRICE_PROVIDERS, { error: "Choose a provider" }),
+      serviceTier: z.enum(PRICE_FORM_TIERS, { error: "Choose a tier" }),
       model: z
         .string()
         .trim()
@@ -156,6 +161,17 @@ function priceFormSchema(now: Date) {
       checkedOn: checkedOnField(now),
     })
     .superRefine((values, ctx) => {
+      // Batch is a discount on the standard price (as the database requires).
+      if (
+        values.batchMultiplier !== null &&
+        values.serviceTier !== "standard"
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["batchMultiplier"],
+          message: "Only standard prices have a batch price",
+        });
+      }
       // A tier needs its threshold and both long rates (as the database
       // requires); long cache rates are optional.
       const anyLong = LONG_FIELDS.some((field) => values[field] !== null);
@@ -185,9 +201,13 @@ export interface PriceFormState {
   values: Record<PriceField, string>;
 }
 
-export const EMPTY_PRICE_FORM: Record<PriceField, string> = Object.fromEntries(
-  PRICE_FIELDS.map((field) => [field, ""]),
-) as Record<PriceField, string>;
+export const EMPTY_PRICE_FORM: Record<PriceField, string> = {
+  ...(Object.fromEntries(PRICE_FIELDS.map((field) => [field, ""])) as Record<
+    PriceField,
+    string
+  >),
+  serviceTier: "standard",
+};
 
 export type ParsePriceFormResult =
   { ok: true; input: PriceInput } | { ok: false; state: PriceFormState };

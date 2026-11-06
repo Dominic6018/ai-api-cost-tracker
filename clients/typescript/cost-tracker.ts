@@ -12,8 +12,12 @@
 
 export type Provider = "openai" | "anthropic" | "google" | "mistral" | "other";
 
-/** "batch" for a provider's discounted Batch API (Anthropic: 50%). */
-export type ServiceTier = "standard" | "batch";
+/**
+ * How the request was processed: "batch" for a provider's discounted Batch
+ * API (Anthropic: 50%), or "flex" or "fast" for those processing tiers,
+ * which are billed at their own prices.
+ */
+export type ServiceTier = "standard" | "batch" | "flex" | "fast";
 
 /**
  * Who and what the usage is for, beyond the API key's project. Each is an

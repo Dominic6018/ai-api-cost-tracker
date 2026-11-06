@@ -40,6 +40,16 @@ beforeAll(async () => {
         cachedInputPerMTokUsd: "0.3",
         effectiveFrom: new Date("2026-01-01T00:00:00Z"),
       },
+      // The same model's fast tier, at its own (double) rates.
+      {
+        provider: "anthropic",
+        model,
+        serviceTier: "fast",
+        inputPerMTokUsd: "6",
+        outputPerMTokUsd: "30",
+        cachedInputPerMTokUsd: "0.6",
+        effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+      },
       // Claude Haiku 5.5's rates: higher for prompts over 100,000 tokens.
       {
         provider: "anthropic",
@@ -180,6 +190,26 @@ describe("recordUsage with tiered pricing and cache writes", () => {
     expect(
       await recordUsage(db, { ...batch, serviceTier: "standard" }),
     ).toEqual({ ok: false, error: "request_id_conflict" });
+  });
+
+  it("prices fast usage from the fast tier's own rates", async () => {
+    // 600k uncached * $6 + 400k cached * $0.60 + 100k out * $30
+    const fast = await recordUsage(db, usage({ serviceTier: "fast" }));
+    if (!fast.ok) throw new Error(fast.error);
+    expect(fast.event).toMatchObject({
+      costUsd: "6.840000",
+      serviceTier: "fast",
+    });
+    // The standard tier is unaffected: 600k * $3 + 400k * $0.30 + 100k * $15
+    const standard = await recordUsage(db, usage());
+    expect(standard.ok && standard.event.costUsd).toBe("3.420000");
+  });
+
+  it("refuses a tier without its own price, never billing it at standard", async () => {
+    expect(await recordUsage(db, usage({ serviceTier: "flex" }))).toEqual({
+      ok: false,
+      error: "no_tier_pricing",
+    });
   });
 
   it("refuses batch usage for a model without a batch price", async () => {

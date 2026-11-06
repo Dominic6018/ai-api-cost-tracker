@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import {
   EMPTY_PRICE_FORM,
+  PRICE_FORM_TIERS,
   PRICE_PROVIDERS,
   type PriceField,
   type PriceFormState,
@@ -94,6 +95,44 @@ export function PriceForm({ action }: { action: Action }) {
           { autoComplete: "off", maxLength: 100 },
           "The model ID as the API takes it, e.g. claude-sonnet-5-5.",
         )}
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="serviceTier" className="text-sm font-medium">
+            Tier
+          </label>
+          <select
+            id="serviceTier"
+            name="serviceTier"
+            key={state.values.serviceTier}
+            defaultValue={state.values.serviceTier}
+            aria-invalid={state.fieldErrors.serviceTier ? true : undefined}
+            aria-describedby={[
+              "serviceTier-hint",
+              state.fieldErrors.serviceTier && "serviceTier-error",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            className={inputClass}
+          >
+            {PRICE_FORM_TIERS.map((tier) => (
+              <option key={tier} value={tier}>
+                {tier}
+              </option>
+            ))}
+          </select>
+          <p id="serviceTier-hint" className="text-xs text-foreground/60">
+            Flex and fast (OpenAI&apos;s former priority processing,
+            Anthropic&apos;s fast mode) have their own published rates. Batch is
+            a multiplier on the standard price, below.
+          </p>
+          {state.fieldErrors.serviceTier && (
+            <p
+              id="serviceTier-error"
+              className="text-sm text-red-700 dark:text-red-400"
+            >
+              {state.fieldErrors.serviceTier}
+            </p>
+          )}
+        </div>
       </div>
 
       <fieldset className="grid gap-5 sm:grid-cols-2">

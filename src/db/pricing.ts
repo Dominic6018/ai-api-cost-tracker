@@ -10,7 +10,12 @@ import {
 } from "@/lib/pricing";
 import type { EndPriceInput } from "@/lib/price-end-form";
 import type { PriceInput } from "@/lib/price-form";
-import { modelPricing, users, type ModelPricing } from "./schema";
+import {
+  modelPricing,
+  users,
+  type ModelPricing,
+  type PriceTier,
+} from "./schema";
 
 type Provider = ModelPricing["provider"];
 
@@ -21,16 +26,19 @@ export interface PricingLookup {
   provider: Provider;
   model: string;
   at: Date;
+  /** The tier's own prices; defaults to standard (batch uses standard). */
+  serviceTier?: PriceTier;
 }
 
 /**
- * Finds the `model_pricing` row in effect for a model at a point in time.
- * SQL narrows to prices that started on or before `at`; the range check on
- * `effective_to` lives in `selectEffectivePricing` so it is defined once.
+ * Finds the `model_pricing` row in effect for a model and tier at a point
+ * in time. SQL narrows to prices that started on or before `at`; the range
+ * check on `effective_to` lives in `selectEffectivePricing` so it is
+ * defined once.
  */
 export async function findEffectivePricing(
   db: Database,
-  { provider, model, at }: PricingLookup,
+  { provider, model, at, serviceTier = "standard" }: PricingLookup,
 ): Promise<PricingLookupResult<ModelPricing>> {
   const candidates = await db
     .select()
@@ -39,6 +47,7 @@ export async function findEffectivePricing(
       and(
         eq(modelPricing.provider, provider),
         eq(modelPricing.model, model),
+        eq(modelPricing.serviceTier, serviceTier),
         lte(modelPricing.effectiveFrom, at),
       ),
     )
@@ -99,8 +108,9 @@ export type AddPriceResult =
 /**
  * Adds a price from the price screen, in one transaction:
  *
- * - earlier prices for the model that would still apply at its start are
- *   ended there, so the history reads as one price after another;
+ * - earlier prices for the model and tier that would still apply at its
+ *   start are ended there, so the history reads as one price after
+ *   another;
  * - if a later price is already scheduled, the new one ends where that
  *   one starts, so ranges never overlap;
  * - recorded usage keeps its stored cost; the price applies to usage
@@ -121,6 +131,9 @@ export async function addModelPrice<
   const sameModel = and(
     eq(modelPricing.provider, input.provider),
     eq(modelPricing.model, input.model),
+    // Each tier has its own price history; a new fast price doesn't end
+    // the standard one.
+    eq(modelPricing.serviceTier, input.serviceTier),
   );
   try {
     return await db.transaction(async (tx) => {

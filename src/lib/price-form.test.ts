@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { providerEnum } from "@/db/schema";
-import { parsePriceForm, PRICE_PROVIDERS } from "./price-form";
+import { PRICE_TIERS, providerEnum } from "@/db/schema";
+import {
+  parsePriceForm,
+  PRICE_FORM_TIERS,
+  PRICE_PROVIDERS,
+} from "./price-form";
 
 const NOW = new Date("2026-11-06T12:00:00Z");
 
 const valid = {
   provider: "anthropic",
+  serviceTier: "standard",
   model: "claude-sonnet-5-5",
   inputPerMTokUsd: "2",
   outputPerMTokUsd: "10",
@@ -40,6 +45,7 @@ describe("parsePriceForm", () => {
       ok: true,
       input: {
         provider: "anthropic",
+        serviceTier: "standard",
         model: "claude-sonnet-5-5",
         inputPerMTokUsd: "2",
         outputPerMTokUsd: "10",
@@ -165,5 +171,27 @@ describe("parsePriceForm", () => {
     expect(result.state.values.sourceUrl).toBe("nope");
     expect(result.state.values.model).toBe("claude-sonnet-5-5");
     expect(result.state.values.cacheWritePerMTokUsd).toBe("");
+  });
+});
+
+describe("parsePriceForm tiers", () => {
+  it("lists the same tiers as the database", () => {
+    expect([...PRICE_FORM_TIERS]).toEqual([...PRICE_TIERS]);
+  });
+
+  it("reads a flex or fast price, and rejects other tiers", () => {
+    const fast = parsePriceForm(form({ ...valid, serviceTier: "fast" }), NOW);
+    expect(fast.ok && fast.input.serviceTier).toBe("fast");
+    for (const tier of ["batch", "priority", ""]) {
+      expect(errors({ ...valid, serviceTier: tier })).toHaveProperty(
+        "serviceTier",
+      );
+    }
+  });
+
+  it("only takes a batch multiplier on a standard price", () => {
+    expect(
+      errors({ ...valid, serviceTier: "flex", batchMultiplier: "0.5" }),
+    ).toHaveProperty("batchMultiplier");
   });
 });

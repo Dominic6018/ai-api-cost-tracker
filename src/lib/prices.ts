@@ -19,20 +19,30 @@ export interface PriceListRow extends PricingRow {
   sourceUrl: string | null;
   /** "YYYY-MM-DD", or null when not recorded. */
   checkedOn: string | null;
+  /** "standard", "flex" or "fast"; each has its own price history. */
+  serviceTier: string;
 }
 
 export interface ModelPriceHistory<Row extends PriceListRow> {
   provider: string;
   model: string;
+  serviceTier: string;
   /** Newest start first, each with its status at `now`. */
   prices: Array<{ row: Row; status: PriceStatus }>;
 }
 
+const TIER_ORDER = ["standard", "flex", "fast"];
+const tierRank = (tier: string) => {
+  const rank = TIER_ORDER.indexOf(tier);
+  return rank === -1 ? TIER_ORDER.length : rank;
+};
+
 /**
- * Groups prices by provider and model, newest first. A price is current
+ * Groups prices by provider, model and tier, newest first; a model's
+ * standard prices come before its flex and fast ones. A price is current
  * when the cost lookup would use it at `now` (the most recently started
- * price in effect), scheduled when it starts later, and ended otherwise:
- * past its end, or superseded by a newer price.
+ * price in effect for its tier), scheduled when it starts later, and ended
+ * otherwise: past its end, or superseded by a newer price.
  */
 export function priceHistories<Row extends PriceListRow>(
   rows: readonly Row[],
@@ -40,7 +50,7 @@ export function priceHistories<Row extends PriceListRow>(
 ): ModelPriceHistory<Row>[] {
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
-    const key = `${row.provider}\u0000${row.model}`;
+    const key = `${row.provider}\u0000${row.model}\u0000${row.serviceTier}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   return [...groups.values()]
@@ -50,6 +60,7 @@ export function priceHistories<Row extends PriceListRow>(
       return {
         provider: history[0].provider,
         model: history[0].model,
+        serviceTier: history[0].serviceTier,
         prices: [...history]
           .sort((a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime())
           .map((row) => ({
@@ -64,7 +75,9 @@ export function priceHistories<Row extends PriceListRow>(
     })
     .sort(
       (a, b) =>
-        a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model),
+        a.provider.localeCompare(b.provider) ||
+        a.model.localeCompare(b.model) ||
+        tierRank(a.serviceTier) - tierRank(b.serviceTier),
     );
 }
 
