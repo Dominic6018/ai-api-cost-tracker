@@ -27,6 +27,7 @@ const pricing: FocusPricing = {
   longCacheWritePerMTokUsd: "0.625",
   longCacheWrite1hPerMTokUsd: null,
   batchMultiplier: null,
+  webSearchPer1kUsd: null,
 };
 
 const usage: FocusUsage = {
@@ -48,6 +49,7 @@ const usage: FocusUsage = {
   feature: "support-chat",
   runId: null,
   tags: null,
+  webSearchRequests: 0,
 };
 
 /** Sum of ListCost in micro-dollars, rounded half up like stored costs. */
@@ -112,6 +114,39 @@ describe("focusRows", () => {
     expect(input?.ChargeDescription).toMatch(/\(batch\)$/);
     const recorded = calculateCostUsd(batchUsage, toTokenPricing(withBatch));
     expect(listCostMicros(batchRows)).toBe(Math.round(recorded * 1e6));
+  });
+
+  it("lists web searches as their own row, per 1,000", () => {
+    const withSearch = { ...pricing, webSearchPer1kUsd: "10.000000" };
+    const searched = { ...usage, webSearchRequests: 3 };
+    const searchRows = focusRows(searched, withSearch);
+    expect(searchRows).toHaveLength(rows.length + 1);
+    const search = searchRows.at(-1)!;
+    expect(Object.keys(search)).toEqual(FOCUS_COLUMNS);
+    expect(search).toMatchObject({
+      ListUnitPrice: "10",
+      PricingQuantity: "0.003",
+      PricingUnit: "1000 Searches",
+      ListCost: "0.03",
+      ConsumedQuantity: "3",
+      ConsumedUnit: "Requests",
+      SkuId: "anthropic/claude-haiku-5-5/web-search",
+      SkuPriceId: `${pricing.id}/web-search`,
+      SkuMeter: "Web Searches",
+      ChargeDescription: "claude-haiku-5-5 web searches",
+      BilledCost: "0",
+    });
+    // Tokens plus $0.03 of searches, as recorded.
+    const recorded = calculateCostUsd(usage, toTokenPricing(pricing));
+    expect(listCostMicros(searchRows)).toBe(
+      Math.round(recorded * 1e6) + 30_000,
+    );
+  });
+
+  it("refuses web searches without a web search price", () => {
+    expect(() =>
+      focusRows({ ...usage, webSearchRequests: 1 }, pricing),
+    ).toThrow(TypeError);
   });
 
   it("refuses batch usage without a batch price", () => {

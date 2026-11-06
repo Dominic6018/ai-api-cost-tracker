@@ -16,6 +16,7 @@ export interface PricingRow {
   longCacheWritePerMTokUsd: string | null;
   longCacheWrite1hPerMTokUsd: string | null;
   batchMultiplier: string | null;
+  webSearchPer1kUsd: string | null;
 }
 
 export type PricingLookupResult<Row extends PricingRow = PricingRow> =

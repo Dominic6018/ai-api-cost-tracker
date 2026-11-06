@@ -28,6 +28,8 @@ const storedEvent: UsageEvent = {
   cacheWriteInputTokens: 0,
   cacheWrite1hInputTokens: 0,
   serviceTier: "standard",
+  webSearchRequests: 0,
+  webSearchCostUsd: "0.000000",
   costUsd: "0.006000",
   requestId: "req_1",
   occurredAt: now,
@@ -104,6 +106,8 @@ describe("POST /api/usage handler", () => {
         cacheWriteInputTokens: 0,
         cacheWrite1hInputTokens: 0,
         serviceTier: "standard",
+        webSearchRequests: 0,
+        webSearchCostUsd: "0.000000",
         costUsd: "0.006000",
         requestId: "req_1",
         customerId: null,
@@ -124,6 +128,7 @@ describe("POST /api/usage handler", () => {
       cacheWriteInputTokens: 0,
       cacheWrite1hInputTokens: 0,
       serviceTier: "standard",
+      webSearchRequests: 0,
       occurredAt: now,
     });
   });
@@ -298,6 +303,9 @@ describe("POST /api/usage handler", () => {
 
   it.each([
     ["no_pricing", 422],
+    ["no_tier_pricing", 422],
+    ["no_batch_pricing", 422],
+    ["no_web_search_pricing", 422],
     ["project_not_found", 404],
     ["request_id_conflict", 409],
   ] as const)("maps %s to HTTP %d", async (error, status) => {

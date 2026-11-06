@@ -33,6 +33,7 @@ export const PRICE_FIELDS = [
   "longCacheWritePerMTokUsd",
   "longCacheWrite1hPerMTokUsd",
   "batchMultiplier",
+  "webSearchPer1kUsd",
   "effectiveFrom",
   "sourceUrl",
   "checkedOn",
@@ -59,6 +60,14 @@ const optionalRate = z
   .trim()
   .transform((value) => (value === "" ? null : value))
   .refine((value) => value === null || RATE.test(value), RATE_MESSAGE);
+
+/** USD per 1,000 web searches, also within `numeric(12, 6)`; empty means none. */
+const SEARCH_MESSAGE = "Enter a USD amount per 1,000 searches, like 10";
+const optionalSearchRate = z
+  .string()
+  .trim()
+  .transform((value) => (value === "" ? null : value))
+  .refine((value) => value === null || RATE.test(value), SEARCH_MESSAGE);
 
 /**
  * The share of the standard price a batch request costs: more than 0, at
@@ -154,6 +163,7 @@ function priceFormSchema(now: Date) {
       longCacheWritePerMTokUsd: optionalRate,
       longCacheWrite1hPerMTokUsd: optionalRate,
       batchMultiplier,
+      webSearchPer1kUsd: optionalSearchRate,
       effectiveFrom: utcDateTimeField,
       sourceUrl: sourceUrlField(
         "Where was this price read? Enter the pricing page's URL",

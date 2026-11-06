@@ -133,6 +133,20 @@ describe("seed price tiers and cache writes", () => {
   });
 });
 
+describe("seed web search prices", () => {
+  it("prices Anthropic searches at $10 per 1,000 on every Claude row", () => {
+    for (const price of seedPrices.filter((p) => p.provider === "anthropic")) {
+      expect(price.webSearchPer1kUsd).toBe("10");
+    }
+  });
+
+  it("leaves unverified providers' searches unpriced", () => {
+    for (const price of seedPrices.filter((p) => p.provider !== "anthropic")) {
+      expect(price.webSearchPer1kUsd).toBeUndefined();
+    }
+  });
+});
+
 describe("sample projects", () => {
   it("has at least one project with unique slugs", () => {
     expect(sampleProjects.length).toBeGreaterThan(0);

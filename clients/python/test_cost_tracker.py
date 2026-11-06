@@ -117,6 +117,16 @@ class UsageFromResponseTest(unittest.TestCase):
         # Without the breakdown, every write is a 5-minute write.
         self.assertEqual(usage_from_response(ANTHROPIC).cache_write_1h_input_tokens, 0)
 
+    def test_anthropic_web_searches_from_server_tool_use(self):
+        as_dict = {**ANTHROPIC, "usage": {**ANTHROPIC["usage"], "server_tool_use": {"web_search_requests": 3}}}
+        usage = usage_from_response(as_dict)
+        self.assertEqual(usage.web_search_requests, 3)
+        self.assertEqual(usage.to_payload()["webSearchRequests"], 3)
+        # Without searches the field is left out of the payload.
+        plain = usage_from_response(ANTHROPIC)
+        self.assertEqual(plain.web_search_requests, 0)
+        self.assertNotIn("webSearchRequests", plain.to_payload())
+
     def test_gemini_rest_bills_thinking_as_output(self):
         self.assertEqual(
             usage_from_response(GEMINI_REST),

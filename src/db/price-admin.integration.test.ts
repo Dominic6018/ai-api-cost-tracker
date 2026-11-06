@@ -58,6 +58,7 @@ const input = (model: string, from: string): PriceInput => ({
   longCacheWritePerMTokUsd: null,
   longCacheWrite1hPerMTokUsd: null,
   batchMultiplier: null,
+  webSearchPer1kUsd: null,
   effectiveFrom: at(from),
   sourceUrl: "https://developers.openai.com/api/docs/pricing",
   checkedOn: "2026-11-06",

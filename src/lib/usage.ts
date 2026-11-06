@@ -35,6 +35,9 @@ export const usagePayloadSchema = z
     // Anthropic bills at a higher rate (usage.cache_creation
     // .ephemeral_1h_input_tokens).
     cacheWrite1hInputTokens: tokenCount.default(0),
+    // Web searches the request ran (Anthropic: usage.server_tool_use
+    // .web_search_requests), charged per search on top of tokens.
+    webSearchRequests: tokenCount.default(0),
     // "batch" for a provider's discounted Batch API (Anthropic: 50%).
     serviceTier: z.enum(SERVICE_TIERS).default("standard"),
     requestId: z.string().trim().min(1).max(200).optional(),

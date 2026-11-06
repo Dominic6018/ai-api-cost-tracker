@@ -123,6 +123,12 @@ export default async function PricesPage() {
                 <th scope="col" className="px-4 py-3 text-right font-medium">
                   Batch
                 </th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">
+                  Web search
+                  <span className="block text-xs font-normal text-foreground/60">
+                    per 1,000
+                  </span>
+                </th>
                 <th scope="col" className="px-4 py-3 font-medium">
                   Applies (UTC)
                 </th>
@@ -216,6 +222,16 @@ export default async function PricesPage() {
                         }
                       >
                         {formatBatchMultiplier(row.batchMultiplier)}
+                      </td>
+                      <td
+                        className="px-4 py-3 text-right tabular-nums"
+                        title={
+                          row.webSearchPer1kUsd === null
+                            ? "No web search price: usage with searches is refused"
+                            : "Charged per 1,000 web searches, on top of tokens"
+                        }
+                      >
+                        {rate(row.webSearchPer1kUsd)}
                       </td>
                       <td className="px-4 py-3 text-xs">
                         from {utcDateTime.format(row.effectiveFrom)}
