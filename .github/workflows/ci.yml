@@ -237,6 +237,22 @@ jobs:
           test "$STATUS" = 201
           grep -q '"costUsd":"0.014500"' response.json
           grep -q '"serviceTier":"batch"' response.json
+          # Flex and fast tiers have their own price rows. A model of the
+          # "other" provider keeps reconciliation's totals unchanged, and an
+          # early start date keeps the check independent of today's date.
+          psql "$DATABASE_URL" -qc "INSERT INTO model_pricing (provider, model, service_tier, input_per_mtok_usd, output_per_mtok_usd, effective_from) VALUES ('other', 'ci-tiers', 'standard', 1, 2, '2026-01-01'), ('other', 'ci-tiers', 'fast', 3, 6, '2026-01-01')"
+          tier_body() { echo "{\"provider\":\"other\",\"model\":\"ci-tiers\",\"inputTokens\":1000,\"outputTokens\":500,\"serviceTier\":\"$1\",\"occurredAt\":\"$YESTERDAY\"}"; }
+          # Fast: 1,000 * $3 + 500 * $6 per 1M = $0.006; standard would be $0.002
+          BODY=$(tier_body fast); STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"costUsd":"0.006000"' response.json
+          grep -q '"serviceTier":"fast"' response.json
+          BODY=$(tier_body standard); STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 201
+          grep -q '"costUsd":"0.002000"' response.json
+          # No flex price: refused, not billed at the standard price
+          BODY=$(tier_body flex); STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 422
+          grep -q '"no_tier_pricing"' response.json
           # No batch price is seeded for OpenAI, so batch usage is refused
           BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"serviceTier\":\"batch\",\"occurredAt\":\"$YESTERDAY\"}"
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo

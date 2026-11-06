@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { calculateCostUsd } from "@/lib/cost";
+import { priceTierFor } from "@/lib/pricing";
 import type { UsageInput } from "@/lib/usage";
 import { findEffectivePricing } from "./pricing";
 import { usageEvents, type UsageEvent } from "./schema";
@@ -20,6 +21,7 @@ export type RecordUsageResult =
       error:
         | "no_pricing"
         | "no_batch_pricing"
+        | "no_tier_pricing"
         | "project_not_found"
         | "request_id_conflict";
     };
@@ -90,12 +92,20 @@ export async function recordUsage(
     if (existing) return replay(existing, usage);
   }
 
+  const tier = priceTierFor(usage.serviceTier);
   const lookup = await findEffectivePricing(db, {
     provider: usage.provider,
     model: usage.model,
     at: usage.occurredAt,
+    serviceTier: tier,
   });
-  if (!lookup.found) return { ok: false, error: "no_pricing" };
+  if (!lookup.found) {
+    // A flex or fast request is never billed at the standard price.
+    return {
+      ok: false,
+      error: tier === "standard" ? "no_pricing" : "no_tier_pricing",
+    };
+  }
   if (usage.serviceTier === "batch" && lookup.pricing.batchMultiplier == null) {
     return { ok: false, error: "no_batch_pricing" };
   }

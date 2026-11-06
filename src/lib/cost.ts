@@ -12,8 +12,11 @@ export interface TokenUsage {
    * bills these at 2× input, against 1.25× for 5-minute writes).
    */
   cacheWrite1hInputTokens?: number;
-  /** "batch" for a provider's discounted Batch API; defaults to standard. */
-  serviceTier?: "standard" | "batch";
+  /**
+   * Defaults to standard. "batch" applies the batch multiplier; "flex" and
+   * "fast" are priced from their own rows, so pass their pricing.
+   */
+  serviceTier?: "standard" | "batch" | "flex" | "fast";
 }
 
 /** One set of prices in USD per 1M tokens. */

@@ -243,7 +243,13 @@ function currentPricing(
   threshold: number | null;
 } {
   const rows = seedPrices
-    .filter((p) => p.provider === model.provider && p.model === model.model)
+    // Demo usage is all standard tier.
+    .filter(
+      (p) =>
+        p.provider === model.provider &&
+        p.model === model.model &&
+        (p.serviceTier ?? "standard") === "standard",
+    )
     .map(seedPricing);
   const result = selectEffectivePricing(rows, at);
   if (!result.found) {

@@ -127,6 +127,13 @@
       "when": 1793951973062,
       "tag": "0017_batch_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793992931027,
+      "tag": "0018_flex_fast_tiers",
+      "breakpoints": true
     }
   ]
 }

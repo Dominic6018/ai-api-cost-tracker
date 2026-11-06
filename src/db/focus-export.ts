@@ -1,10 +1,10 @@
 import { and, eq, or } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { csvRow } from "@/lib/csv";
-import { FOCUS_COLUMNS, focusRows, type FocusPricing } from "@/lib/focus";
-import { selectEffectivePricing } from "@/lib/pricing";
+import { FOCUS_COLUMNS, focusRows } from "@/lib/focus";
+import { priceTierFor, selectEffectivePricing } from "@/lib/pricing";
 import type { UsageFilters } from "@/lib/usage-filters";
-import { modelPricing } from "./schema";
+import { modelPricing, type ModelPricing } from "./schema";
 import { listUsageEvents } from "./usage-events";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
@@ -25,7 +25,7 @@ export async function* focusCsv(
 ): AsyncGenerator<string> {
   yield csvRow(FOCUS_COLUMNS);
   // Every price row for a provider/model, fetched once per export.
-  const prices = new Map<string, FocusPricing[]>();
+  const prices = new Map<string, ModelPricing[]>();
   const key = (provider: string, model: string) => `${provider}\u0000${model}`;
 
   let cursor: UsageFilters["cursor"];
@@ -58,8 +58,12 @@ export async function* focusCsv(
     }
 
     const lines = page.rows.flatMap((event) => {
+      // Each tier has its own prices; batch uses the standard row.
+      const tier = priceTierFor(event.serviceTier);
       const lookup = selectEffectivePricing(
-        prices.get(key(event.provider, event.model))!,
+        prices
+          .get(key(event.provider, event.model))!
+          .filter((row) => row.serviceTier === tier),
         event.occurredAt,
       );
       if (!lookup.found) return [];

@@ -259,4 +259,35 @@ describe("seed", () => {
         .where(match);
     }
   });
+
+  it("seeds flex and fast prices that the lookup finds per tier", async () => {
+    const at = new Date("2026-11-08T00:00:00Z");
+    const input = async (
+      provider: "anthropic" | "openai",
+      model: string,
+      serviceTier: "standard" | "flex" | "fast",
+    ) => {
+      const result = await findEffectivePricing(db, {
+        provider,
+        model,
+        at,
+        serviceTier,
+      });
+      return result.found ? result.pricing.inputPerMTokUsd : null;
+    };
+    expect(await input("anthropic", "claude-opus-5-5", "standard")).toBe(4);
+    expect(await input("anthropic", "claude-opus-5-5", "fast")).toBe(8);
+    expect(await input("openai", "gpt-4.1", "fast")).toBe(3.5);
+    expect(await input("openai", "gpt-5.4-mini", "flex")).toBe(0.375);
+    // Not in OpenAI's Flex table, so not seeded.
+    expect(await input("openai", "gpt-4.1", "flex")).toBeNull();
+    // Tier prices apply from the day they were checked.
+    const before = await findEffectivePricing(db, {
+      provider: "openai",
+      model: "gpt-4.1",
+      at: new Date("2026-11-06T23:59:59Z"),
+      serviceTier: "fast",
+    });
+    expect(before.found).toBe(false);
+  });
 });

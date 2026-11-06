@@ -124,6 +124,13 @@ export const modelPricing = pgTable(
     // included (Anthropic's Batch API: 0.5). Null when no batch price is
     // configured, and batch usage for the model is refused.
     batchMultiplier: numeric("batch_multiplier", { precision: 4, scale: 3 }),
+    // The processing tier these rates are for: "standard", or a provider's
+    // "flex" (cheaper, slower) or "fast" (premium; OpenAI's former priority
+    // processing, Anthropic's fast mode), each with its own published rates.
+    serviceTier: text("service_tier")
+      .$type<PriceTier>()
+      .notNull()
+      .default("standard"),
     effectiveFrom: timestamp("effective_from", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -148,14 +155,21 @@ export const modelPricing = pgTable(
     ...timestamps,
   },
   (t) => [
-    uniqueIndex("model_pricing_provider_model_from_idx").on(
+    uniqueIndex("model_pricing_provider_model_tier_from_idx").on(
       t.provider,
       t.model,
+      t.serviceTier,
       t.effectiveFrom,
     ),
     check(
+      "model_pricing_service_tier_valid",
+      sql`${t.serviceTier} in ('standard', 'flex', 'fast')`,
+    ),
+    // Batch is a discount on the standard price, so only standard rows
+    // carry it.
+    check(
       "model_pricing_batch_multiplier_range",
-      sql`${t.batchMultiplier} IS NULL OR (${t.batchMultiplier} > 0 AND ${t.batchMultiplier} <= 1)`,
+      sql`${t.batchMultiplier} IS NULL OR (${t.serviceTier} = 'standard' AND ${t.batchMultiplier} > 0 AND ${t.batchMultiplier} <= 1)`,
     ),
     check(
       "model_pricing_source_url_http",
@@ -199,7 +213,9 @@ export const usageEvents = pgTable(
     cacheWrite1hInputTokens: integer("cache_write_1h_input_tokens")
       .notNull()
       .default(0),
-    // "standard", or "batch" for a provider's discounted Batch API.
+    // "standard"; "batch" for a provider's discounted Batch API (the standard
+    // price times its batch multiplier); or "flex" or "fast", priced from
+    // that tier's own price rows.
     serviceTier: text("service_tier")
       .$type<ServiceTier>()
       .notNull()
@@ -242,7 +258,7 @@ export const usageEvents = pgTable(
     index("usage_events_provider_model_idx").on(t.provider, t.model),
     check(
       "usage_events_service_tier_valid",
-      sql`${t.serviceTier} in ('standard', 'batch')`,
+      sql`${t.serviceTier} in ('standard', 'batch', 'flex', 'fast')`,
     ),
     uniqueIndex("usage_events_provider_request_idx")
       .on(t.provider, t.requestId)
@@ -369,8 +385,13 @@ export const rateLimits = pgTable(
   (t) => [index("rate_limits_reset_at_idx").on(t.resetAt)],
 );
 
-export const SERVICE_TIERS = ["standard", "batch"] as const;
+/** How a request was processed, which decides its price. */
+export const SERVICE_TIERS = ["standard", "batch", "flex", "fast"] as const;
 export type ServiceTier = (typeof SERVICE_TIERS)[number];
+
+/** The tiers with their own price rows; batch uses the standard row. */
+export const PRICE_TIERS = ["standard", "flex", "fast"] as const;
+export type PriceTier = (typeof PRICE_TIERS)[number];
 
 export const ALERT_CHANNELS = ["webhook", "slack"] as const;
 export type AlertChannel = (typeof ALERT_CHANNELS)[number];
