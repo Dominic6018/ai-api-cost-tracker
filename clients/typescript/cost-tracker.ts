@@ -12,6 +12,9 @@
 
 export type Provider = "openai" | "anthropic" | "google" | "mistral" | "other";
 
+/** "batch" for a provider's discounted Batch API (Anthropic: 50%). */
+export type ServiceTier = "standard" | "batch";
+
 /**
  * Who and what the usage is for, beyond the API key's project. Each is an
  * ID you choose, up to 200 characters; the dashboard filters by them.
@@ -82,6 +85,8 @@ export interface Usage extends Attribution {
    * Anthropic bills at a higher rate than 5-minute writes.
    */
   cacheWrite1hInputTokens?: number;
+  /** Defaults to "standard"; "batch" for Batch API results. */
+  serviceTier?: ServiceTier;
   /** The provider's ID for the request; makes retries safe. */
   requestId?: string;
   occurredAt?: string | Date;
@@ -174,6 +179,8 @@ export interface TrackOptions extends Attribution {
   /** For OpenAI-compatible APIs, such as Mistral's. */
   provider?: Provider;
   metadata?: Record<string, unknown>;
+  /** "batch" when the response came from a Batch API. */
+  serviceTier?: ServiceTier;
   /** Merged over a scoped tracker's tags, key by key. */
   tags?: Tags;
 }
@@ -458,7 +465,8 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       onError(new CostTrackerError("No usage in response", null, null), null);
       return response;
     }
-    const { model, provider, metadata, tags, ...attribution } = trackOptions;
+    const { model, provider, metadata, tags, serviceTier, ...attribution } =
+      trackOptions;
     const tracked = usageWithDefaults(
       {
         ...usage,
@@ -467,6 +475,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
         provider: provider ?? usage.provider,
         metadata,
         tags,
+        ...(serviceTier && { serviceTier }),
       },
       defaults,
     );

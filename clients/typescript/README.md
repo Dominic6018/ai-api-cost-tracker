@@ -80,6 +80,20 @@ await scoped.track(anthropic.messages.create({ ... }), { feature: "summaries" })
 
 Values passed to `track()` or `record()` win over a scoped tracker's, and scoped trackers can be nested. They share the parent's background reports, so `tracker.flush()` waits for all of them.
 
+## Batch API
+
+Usage from a provider's Batch API is billed at a discount (Anthropic: 50% of every rate). Say so when you report it, and it's priced at the model's batch price:
+
+```ts
+for (const result of batchResults) {
+  if (result.result.type === "succeeded") {
+    await tracker.track(result.result.message, { serviceTier: "batch" });
+  }
+}
+```
+
+`record()` takes `serviceTier: "batch"` on the usage too. Batch usage for a model without a batch price is refused (`no_batch_pricing`) rather than billed at the full price.
+
 ## Tags
 
 Free-form labels for anything attribution doesn't cover: up to 20, keys of 1–64 letters, digits and `_ . / -`, values up to 200 characters. Scoped trackers and calls merge tags key by key, the call's own values winning:

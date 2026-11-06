@@ -19,6 +19,11 @@ const RECORD_ERRORS: Record<
     status: 422,
     message: "No price is configured for this model at occurredAt",
   },
+  no_batch_pricing: {
+    status: 422,
+    message:
+      "No batch price is configured for this model at occurredAt; add one at /prices/new or send serviceTier standard",
+  },
   project_not_found: { status: 404, message: "Project not found" },
   request_id_conflict: {
     status: 409,
@@ -81,6 +86,7 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
           cachedInputTokens: event.cachedInputTokens,
           cacheWriteInputTokens: event.cacheWriteInputTokens,
           cacheWrite1hInputTokens: event.cacheWrite1hInputTokens,
+          serviceTier: event.serviceTier,
           costUsd: event.costUsd,
           requestId: event.requestId,
           customerId: event.customerId,

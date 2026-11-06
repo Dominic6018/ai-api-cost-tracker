@@ -26,6 +26,7 @@ const pricing: FocusPricing = {
   longCachedInputPerMTokUsd: null,
   longCacheWritePerMTokUsd: "0.625",
   longCacheWrite1hPerMTokUsd: null,
+  batchMultiplier: null,
 };
 
 const usage: FocusUsage = {
@@ -39,6 +40,7 @@ const usage: FocusUsage = {
   cachedInputTokens: 8_000,
   cacheWriteInputTokens: 1_000,
   cacheWrite1hInputTokens: 0,
+  serviceTier: "standard",
   outputTokens: 700,
   requestId: "msg_01abc",
   customerId: "cus_42",
@@ -95,6 +97,27 @@ describe("focusRows", () => {
   it("adds up to the cost the tracker records for the request", () => {
     const recorded = calculateCostUsd(usage, toTokenPricing(pricing));
     expect(listCostMicros(rows)).toBe(Math.round(recorded * 1e6));
+  });
+
+  it("lists batch usage at the batch price, still adding up", () => {
+    const withBatch = { ...pricing, batchMultiplier: "0.500" };
+    const batchUsage = { ...usage, serviceTier: "batch" as const };
+    const batchRows = focusRows(batchUsage, withBatch);
+    const input = batchRows.find((row) => row.SkuId?.endsWith("/input"));
+    // Haiku's $0.10 input at 0.500 is $0.05, written exactly.
+    expect(input).toMatchObject({
+      ListUnitPrice: "0.05",
+      SkuPriceId: `${pricing.id}/input/batch`,
+    });
+    expect(input?.ChargeDescription).toMatch(/\(batch\)$/);
+    const recorded = calculateCostUsd(batchUsage, toTokenPricing(withBatch));
+    expect(listCostMicros(batchRows)).toBe(Math.round(recorded * 1e6));
+  });
+
+  it("refuses batch usage without a batch price", () => {
+    expect(() =>
+      focusRows({ ...usage, serviceTier: "batch" }, pricing),
+    ).toThrow(TypeError);
   });
 
   it("splits 1-hour cache writes into their own row, still adding up", () => {

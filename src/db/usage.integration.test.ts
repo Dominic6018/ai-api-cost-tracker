@@ -49,6 +49,7 @@ beforeAll(async () => {
         cachedInputPerMTokUsd: "0.01",
         cacheWritePerMTokUsd: "0.125",
         cacheWrite1hPerMTokUsd: "0.20",
+        batchMultiplier: "0.5",
         longContextThresholdTokens: 100_000,
         longInputPerMTokUsd: "0.50",
         longOutputPerMTokUsd: "2.50",
@@ -78,6 +79,7 @@ function usage(overrides: Partial<UsageInput> = {}): UsageInput {
     cachedInputTokens: 400_000,
     cacheWriteInputTokens: 0,
     cacheWrite1hInputTokens: 0,
+    serviceTier: "standard",
     occurredAt: new Date("2026-06-01T00:00:00Z"),
     ...overrides,
   };
@@ -150,6 +152,43 @@ describe("recordUsage with tiered pricing and cache writes", () => {
     if (!result.ok) throw new Error(result.error);
     expect(result.event.costUsd).toBe("0.508950");
     expect(result.event.cacheWriteInputTokens).toBe(30_000);
+  });
+
+  it("prices batch usage at the batch multiplier, and replays only the same tier", async () => {
+    // The same usage as the 1-hour test below costs $0.509700 at standard
+    // prices; batch is half: $0.254850.
+    const requestId = `req-batch-${randomUUID()}`;
+    const batch = tiered({
+      inputTokens: 100_000,
+      cacheWriteInputTokens: 30_000,
+      cacheWrite1hInputTokens: 10_000,
+      cachedInputTokens: 20_000,
+      serviceTier: "batch",
+      requestId,
+    });
+    const result = await recordUsage(db, batch);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.event).toMatchObject({
+      costUsd: "0.254850",
+      serviceTier: "batch",
+    });
+
+    expect(await recordUsage(db, batch)).toMatchObject({
+      ok: true,
+      replayed: true,
+    });
+    expect(
+      await recordUsage(db, { ...batch, serviceTier: "standard" }),
+    ).toEqual({ ok: false, error: "request_id_conflict" });
+  });
+
+  it("refuses batch usage for a model without a batch price", async () => {
+    expect(await recordUsage(db, usage({ serviceTier: "batch" }))).toEqual({
+      ok: false,
+      error: "no_batch_pricing",
+    });
+    // The same usage at standard prices is recorded.
+    expect((await recordUsage(db, usage())).ok).toBe(true);
   });
 
   it("prices 1-hour cache writes at their rate, and replays only the same split", async () => {

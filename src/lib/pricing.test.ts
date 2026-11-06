@@ -26,6 +26,7 @@ function row(
     longCachedInputPerMTokUsd: null,
     longCacheWritePerMTokUsd: null,
     longCacheWrite1hPerMTokUsd: null,
+    batchMultiplier: null,
     ...overrides,
   };
 }
@@ -124,6 +125,7 @@ describe("toTokenPricing", () => {
       cachedInputPerMTokUsd: null,
       cacheWritePerMTokUsd: null,
       cacheWrite1hPerMTokUsd: null,
+      batchMultiplier: null,
       longContext: null,
     });
   });
@@ -150,6 +152,7 @@ describe("toTokenPricing", () => {
       cachedInputPerMTokUsd: 0.01,
       cacheWritePerMTokUsd: 0.125,
       cacheWrite1hPerMTokUsd: 0.2,
+      batchMultiplier: null,
       longContext: {
         thresholdTokens: 100_000,
         inputPerMTokUsd: 0.5,

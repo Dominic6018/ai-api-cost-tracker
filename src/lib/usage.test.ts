@@ -26,6 +26,7 @@ describe("parseUsagePayload", () => {
         cachedInputTokens: 0,
         cacheWriteInputTokens: 0,
         cacheWrite1hInputTokens: 0,
+        serviceTier: "standard",
         occurredAt: now,
       },
     });
@@ -78,6 +79,14 @@ describe("parseUsagePayload", () => {
       expect(fieldErrors(body)).toHaveProperty(field);
     },
   );
+
+  it("accepts the batch service tier and rejects others", () => {
+    const batch = parseUsagePayload({ ...valid, serviceTier: "batch" }, now);
+    expect(batch.ok && batch.usage.serviceTier).toBe("batch");
+    expect(fieldErrors({ ...valid, serviceTier: "flex" })).toHaveProperty(
+      "serviceTier",
+    );
+  });
 
   it("accepts 1-hour cache writes within cache writes, and rejects more", () => {
     const writes = { ...valid, inputTokens: 10, cacheWriteInputTokens: 6 };

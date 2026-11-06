@@ -120,6 +120,10 @@ export const modelPricing = pgTable(
       precision: 12,
       scale: 6,
     }),
+    // Batch requests cost this share of the standard price, every rate
+    // included (Anthropic's Batch API: 0.5). Null when no batch price is
+    // configured, and batch usage for the model is refused.
+    batchMultiplier: numeric("batch_multiplier", { precision: 4, scale: 3 }),
     effectiveFrom: timestamp("effective_from", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -148,6 +152,10 @@ export const modelPricing = pgTable(
       t.provider,
       t.model,
       t.effectiveFrom,
+    ),
+    check(
+      "model_pricing_batch_multiplier_range",
+      sql`${t.batchMultiplier} IS NULL OR (${t.batchMultiplier} > 0 AND ${t.batchMultiplier} <= 1)`,
     ),
     check(
       "model_pricing_source_url_http",
@@ -191,6 +199,11 @@ export const usageEvents = pgTable(
     cacheWrite1hInputTokens: integer("cache_write_1h_input_tokens")
       .notNull()
       .default(0),
+    // "standard", or "batch" for a provider's discounted Batch API.
+    serviceTier: text("service_tier")
+      .$type<ServiceTier>()
+      .notNull()
+      .default("standard"),
     costUsd: numeric("cost_usd", { precision: 14, scale: 6 }).notNull(),
     // Provider request id, used to de-duplicate ingested events.
     requestId: text("request_id"),
@@ -227,6 +240,10 @@ export const usageEvents = pgTable(
     // Spend totals across all projects filter by time alone.
     index("usage_events_occurred_idx").on(t.occurredAt),
     index("usage_events_provider_model_idx").on(t.provider, t.model),
+    check(
+      "usage_events_service_tier_valid",
+      sql`${t.serviceTier} in ('standard', 'batch')`,
+    ),
     uniqueIndex("usage_events_provider_request_idx")
       .on(t.provider, t.requestId)
       .where(sql`${t.requestId} IS NOT NULL`),
@@ -351,6 +368,9 @@ export const rateLimits = pgTable(
   },
   (t) => [index("rate_limits_reset_at_idx").on(t.resetAt)],
 );
+
+export const SERVICE_TIERS = ["standard", "batch"] as const;
+export type ServiceTier = (typeof SERVICE_TIERS)[number];
 
 export const ALERT_CHANNELS = ["webhook", "slack"] as const;
 export type AlertChannel = (typeof ALERT_CHANNELS)[number];
