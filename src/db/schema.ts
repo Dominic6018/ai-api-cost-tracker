@@ -130,6 +130,22 @@ export const modelPricing = pgTable(
       precision: 12,
       scale: 6,
     }),
+    // Audio tokens' own rates (OpenAI's audio and realtime models charge
+    // far more for audio than text). Null when audio isn't priced, and usage
+    // with audio tokens is refused. The long-prompt tier doesn't change them.
+    audioInputPerMTokUsd: numeric("audio_input_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    // Falls back to the audio input rate.
+    cachedAudioInputPerMTokUsd: numeric("cached_audio_input_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    audioOutputPerMTokUsd: numeric("audio_output_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
     // The processing tier these rates are for: "standard", or a provider's
     // "flex" (cheaper, slower) or "fast" (premium; OpenAI's former priority
     // processing, Anthropic's fast mode), each with its own published rates.
@@ -191,6 +207,12 @@ export const modelPricing = pgTable(
     ),
     // A threshold needs long input and output rates; without one, no long
     // rates may be set.
+    // Audio input and output rates come together; a cached audio rate
+    // needs them.
+    check(
+      "model_pricing_audio_complete",
+      sql`(${t.audioInputPerMTokUsd} IS NULL AND ${t.audioOutputPerMTokUsd} IS NULL AND ${t.cachedAudioInputPerMTokUsd} IS NULL) OR (${t.audioInputPerMTokUsd} IS NOT NULL AND ${t.audioOutputPerMTokUsd} IS NOT NULL)`,
+    ),
     check(
       "model_pricing_long_context_complete",
       sql`(${t.longContextThresholdTokens} IS NULL AND ${t.longInputPerMTokUsd} IS NULL AND ${t.longOutputPerMTokUsd} IS NULL AND ${t.longCachedInputPerMTokUsd} IS NULL AND ${t.longCacheWritePerMTokUsd} IS NULL AND ${t.longCacheWrite1hPerMTokUsd} IS NULL) OR (${t.longContextThresholdTokens} > 0 AND ${t.longInputPerMTokUsd} IS NOT NULL AND ${t.longOutputPerMTokUsd} IS NOT NULL)`,
@@ -229,6 +251,13 @@ export const usageEvents = pgTable(
     // Web searches the request ran, and the part of cost_usd they cost
     // (charged per search, on top of tokens).
     webSearchRequests: integer("web_search_requests").notNull().default(0),
+    // Audio tokens, billed at the price's audio rates: part of input_tokens,
+    // of cached_input_tokens (and of the audio input), and of output_tokens.
+    audioInputTokens: integer("audio_input_tokens").notNull().default(0),
+    cachedAudioInputTokens: integer("cached_audio_input_tokens")
+      .notNull()
+      .default(0),
+    audioOutputTokens: integer("audio_output_tokens").notNull().default(0),
     webSearchCostUsd: numeric("web_search_cost_usd", {
       precision: 14,
       scale: 6,
@@ -278,6 +307,10 @@ export const usageEvents = pgTable(
     check(
       "usage_events_web_search_valid",
       sql`${t.webSearchRequests} >= 0 AND ${t.webSearchCostUsd} >= 0 AND ${t.webSearchCostUsd} <= ${t.costUsd}`,
+    ),
+    check(
+      "usage_events_audio_valid",
+      sql`${t.cachedAudioInputTokens} >= 0 AND ${t.cachedAudioInputTokens} <= ${t.audioInputTokens} AND ${t.cachedAudioInputTokens} <= ${t.cachedInputTokens} AND (${t.audioInputTokens} = 0 OR ${t.audioInputTokens} - ${t.cachedAudioInputTokens} <= ${t.inputTokens} - ${t.cachedInputTokens} - ${t.cacheWriteInputTokens}) AND ${t.audioOutputTokens} >= 0 AND ${t.audioOutputTokens} <= ${t.outputTokens}`,
     ),
     uniqueIndex("usage_events_provider_request_idx")
       .on(t.provider, t.requestId)

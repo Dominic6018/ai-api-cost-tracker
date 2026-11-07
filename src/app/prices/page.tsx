@@ -212,6 +212,14 @@ export default async function PricesPage() {
                             {rate(row.longOutputPerMTokUsd)} out
                           </span>
                         )}
+                        {row.audioInputPerMTokUsd !== null && (
+                          <span className="block text-xs text-foreground/60">
+                            Audio: {rate(row.audioInputPerMTokUsd)} in,{" "}
+                            {row.cachedAudioInputPerMTokUsd !== null &&
+                              `${rate(row.cachedAudioInputPerMTokUsd)} cached, `}
+                            {rate(row.audioOutputPerMTokUsd)} out
+                          </span>
+                        )}
                       </td>
                       <td
                         className="px-4 py-3 text-right tabular-nums"

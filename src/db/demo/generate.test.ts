@@ -124,6 +124,9 @@ describe("generateDemoData", () => {
           p.longContext?.cacheWrite1hPerMTokUsd ?? null,
         batchMultiplier: p.batchMultiplier ?? null,
         webSearchPer1kUsd: p.webSearchPer1kUsd ?? null,
+        audioInputPerMTokUsd: p.audio?.inputPerMTokUsd ?? null,
+        cachedAudioInputPerMTokUsd: p.audio?.cachedInputPerMTokUsd ?? null,
+        audioOutputPerMTokUsd: p.audio?.outputPerMTokUsd ?? null,
       });
     };
     for (const event of data.events) {

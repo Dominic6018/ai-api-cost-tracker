@@ -71,6 +71,9 @@ export const TOKEN_TYPES = [
   { key: "cache-write", meter: "Cache Write Input Tokens" },
   { key: "cache-write-1h", meter: "1-Hour Cache Write Input Tokens" },
   { key: "output", meter: "Output Tokens" },
+  { key: "audio-input", meter: "Audio Input Tokens" },
+  { key: "cached-audio-input", meter: "Cached Audio Input Tokens" },
+  { key: "audio-output", meter: "Audio Output Tokens" },
 ] as const;
 type TokenType = (typeof TOKEN_TYPES)[number]["key"];
 
@@ -110,6 +113,10 @@ export interface FocusUsage {
   tags: Record<string, string> | null;
   /** Server-side web searches, listed as their own row. */
   webSearchRequests: number;
+  /** Audio tokens, part of the input, cached input and output counts. */
+  audioInputTokens: number;
+  cachedAudioInputTokens: number;
+  audioOutputTokens: number;
 }
 
 /** A price row with its ID, which identifies the SKU price. */
@@ -172,6 +179,14 @@ export function ratesFor(
           ? pricing.longCacheWrite1hPerMTokUsd
           : pricing.cacheWrite1hPerMTokUsd) ?? cacheWrite,
       output: long ? pricing.longOutputPerMTokUsd! : pricing.outputPerMTokUsd,
+      // Audio rates don't change for long prompts. Without them a row
+      // with audio tokens throws in focusRows; "0" is never listed.
+      "audio-input": pricing.audioInputPerMTokUsd ?? "0",
+      "cached-audio-input":
+        pricing.cachedAudioInputPerMTokUsd ??
+        pricing.audioInputPerMTokUsd ??
+        "0",
+      "audio-output": pricing.audioOutputPerMTokUsd ?? "0",
     },
   };
 }
@@ -225,13 +240,26 @@ export function focusRows(
 ): FocusRow[] {
   const provider = PROVIDERS[usage.provider];
   const { long, rates } = ratesFor(pricing, usage.inputTokens);
+  const uncachedAudio = usage.audioInputTokens - usage.cachedAudioInputTokens;
+  if (
+    (usage.audioInputTokens > 0 || usage.audioOutputTokens > 0) &&
+    pricing.audioInputPerMTokUsd === null
+  ) {
+    throw new TypeError("Audio usage needs a price with audio rates");
+  }
   const tokens: Record<TokenType, number> = {
     input:
-      usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens,
-    "cached-input": usage.cachedInputTokens,
+      usage.inputTokens -
+      usage.cachedInputTokens -
+      usage.cacheWriteInputTokens -
+      uncachedAudio,
+    "cached-input": usage.cachedInputTokens - usage.cachedAudioInputTokens,
     "cache-write": usage.cacheWriteInputTokens - usage.cacheWrite1hInputTokens,
     "cache-write-1h": usage.cacheWrite1hInputTokens,
-    output: usage.outputTokens,
+    output: usage.outputTokens - usage.audioOutputTokens,
+    "audio-input": uncachedAudio,
+    "cached-audio-input": usage.cachedAudioInputTokens,
+    "audio-output": usage.audioOutputTokens,
   };
   const { chargeStart, chargeEnd, billingStart, billingEnd } = periods(
     usage.occurredAt,
@@ -327,8 +355,8 @@ export function focusRows(
         ChargeDescription: `${usage.model} ${meter.toLowerCase()}${tier}`,
         SkuId: `${usage.provider}/${usage.model}/${key}`,
         // One price per SKU: the stored price, its long-prompt tier, and
-        // the batch price.
-        SkuPriceId: `${pricing.id}/${key}${long ? "/long-prompt" : ""}${batch ? "/batch" : ""}`,
+        // the batch price (audio rates have no long-prompt tier).
+        SkuPriceId: `${pricing.id}/${key}${long && !key.includes("audio") ? "/long-prompt" : ""}${batch ? "/batch" : ""}`,
         SkuMeter: meter,
       });
     },

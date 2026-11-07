@@ -193,6 +193,18 @@ export function PriceForm({ action }: { action: Action }) {
       </fieldset>
 
       <fieldset className="grid gap-5 sm:grid-cols-2">
+        <legend className="mb-3 text-sm font-medium">Audio (optional)</legend>
+        <p className="text-sm text-foreground/70 sm:col-span-2">
+          For audio and realtime models, which bill audio tokens at their own
+          rates. Leave empty and usage with audio tokens is refused for this
+          price.
+        </p>
+        {field("audioInputPerMTokUsd", "Audio input", RATE_PROPS)}
+        {field("cachedAudioInputPerMTokUsd", "Cached audio input", RATE_PROPS)}
+        {field("audioOutputPerMTokUsd", "Audio output", RATE_PROPS)}
+      </fieldset>
+
+      <fieldset className="grid gap-5 sm:grid-cols-2">
         <legend className="mb-3 text-sm font-medium">
           Web search (optional)
         </legend>

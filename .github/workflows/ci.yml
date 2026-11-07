@@ -272,6 +272,24 @@ jobs:
           test "$STATUS" = 422
           grep -q '"no_web_search_pricing"' response.json
 
+          # Audio tokens at their own rates (gpt-realtime-2.1's), on an "other"
+          # model so reconciliation is unaffected. Text: 1,000 x $4 + 500
+          # cached x $0.40 + 200 out x $24; audio: 2,000 x $32 + 1,000 cached
+          # x $0.40 + 800 out x $64, per 1M = $0.1246
+          psql "$DATABASE_URL" -qc "INSERT INTO model_pricing (provider, model, service_tier, input_per_mtok_usd, output_per_mtok_usd, cached_input_per_mtok_usd, audio_input_per_mtok_usd, cached_audio_input_per_mtok_usd, audio_output_per_mtok_usd, effective_from) VALUES ('other', 'ci-audio', 'standard', 4, 24, 0.4, 32, 0.4, 64, '2026-01-01')"
+          BODY="{\"provider\":\"other\",\"model\":\"ci-audio\",\"inputTokens\":4500,\"cachedInputTokens\":1500,\"audioInputTokens\":3000,\"cachedAudioInputTokens\":1000,\"outputTokens\":1000,\"audioOutputTokens\":800,\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"audioInputTokens":3000,"cachedAudioInputTokens":1000,"audioOutputTokens":800,"costUsd":"0.124600"' response.json
+          # More audio output than output is invalid
+          BODY='{"provider":"other","model":"ci-audio","inputTokens":10,"outputTokens":10,"audioOutputTokens":11}'
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
+          # gpt-4.1 has no audio rates, so audio usage is refused, not billed as text
+          BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"audioInputTokens\":500,\"outputTokens\":100,\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 422
+          grep -q '"no_audio_pricing"' response.json
+
           # Attribution is stored in its own columns and returned
           BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":100,"outputTokens":10,"customerId":" cus_ci ","userId":"u_ci","feature":"ci-smoke","runId":"run_ci"}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo

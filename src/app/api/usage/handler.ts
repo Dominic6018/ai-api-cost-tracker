@@ -29,6 +29,11 @@ const RECORD_ERRORS: Record<
     message:
       "No web search price is configured for this model at occurredAt; add one at /prices/new, or omit webSearchRequests",
   },
+  no_audio_pricing: {
+    status: 422,
+    message:
+      "No audio price is configured for this model at occurredAt; add the audio rates at /prices/new, or send the usage without audio token counts",
+  },
   no_batch_pricing: {
     status: 422,
     message:
@@ -99,6 +104,9 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
           serviceTier: event.serviceTier,
           webSearchRequests: event.webSearchRequests,
           webSearchCostUsd: event.webSearchCostUsd,
+          audioInputTokens: event.audioInputTokens,
+          cachedAudioInputTokens: event.cachedAudioInputTokens,
+          audioOutputTokens: event.audioOutputTokens,
           costUsd: event.costUsd,
           requestId: event.requestId,
           customerId: event.customerId,

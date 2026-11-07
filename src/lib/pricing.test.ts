@@ -29,6 +29,9 @@ function row(
     longCacheWrite1hPerMTokUsd: null,
     batchMultiplier: null,
     webSearchPer1kUsd: null,
+    audioInputPerMTokUsd: null,
+    cachedAudioInputPerMTokUsd: null,
+    audioOutputPerMTokUsd: null,
     ...overrides,
   };
 }
@@ -129,7 +132,26 @@ describe("toTokenPricing", () => {
       cacheWrite1hPerMTokUsd: null,
       batchMultiplier: null,
       longContext: null,
+      audio: null,
     });
+  });
+
+  it("reads audio rates, with an optional cached audio rate", () => {
+    expect(
+      toTokenPricing(
+        row(jan, null, "2.5", {
+          audioInputPerMTokUsd: "32.000000",
+          audioOutputPerMTokUsd: "64.000000",
+        }),
+      ).audio,
+    ).toEqual({
+      inputPerMTokUsd: 32,
+      cachedInputPerMTokUsd: null,
+      outputPerMTokUsd: 64,
+    });
+    expect(() =>
+      toTokenPricing(row(jan, null, "1", { audioInputPerMTokUsd: "32" })),
+    ).toThrow(TypeError);
   });
 
   it("builds the long-prompt tier from the long columns", () => {
@@ -163,6 +185,7 @@ describe("toTokenPricing", () => {
         cacheWritePerMTokUsd: null,
         cacheWrite1hPerMTokUsd: 1,
       },
+      audio: null,
     });
   });
 

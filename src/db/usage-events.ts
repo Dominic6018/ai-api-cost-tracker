@@ -31,6 +31,9 @@ export interface UsageEventRow {
   serviceTier: ServiceTier;
   webSearchRequests: number;
   webSearchCostUsd: string;
+  audioInputTokens: number;
+  cachedAudioInputTokens: number;
+  audioOutputTokens: number;
   outputTokens: number;
   costUsd: string;
   requestId: string | null;
@@ -83,6 +86,9 @@ export function usageEventsQuery(
         serviceTier: usageEvents.serviceTier,
         webSearchRequests: usageEvents.webSearchRequests,
         webSearchCostUsd: usageEvents.webSearchCostUsd,
+        audioInputTokens: usageEvents.audioInputTokens,
+        cachedAudioInputTokens: usageEvents.cachedAudioInputTokens,
+        audioOutputTokens: usageEvents.audioOutputTokens,
         outputTokens: usageEvents.outputTokens,
         costUsd: usageEvents.costUsd,
         requestId: usageEvents.requestId,

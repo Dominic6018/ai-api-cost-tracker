@@ -35,6 +35,9 @@ const price = (
   longCacheWrite1hPerMTokUsd: null,
   batchMultiplier: null,
   webSearchPer1kUsd: null,
+  audioInputPerMTokUsd: null,
+  cachedAudioInputPerMTokUsd: null,
+  audioOutputPerMTokUsd: null,
   sourceUrl: "https://example.com/pricing",
   checkedOn: "2026-11-01",
 });
