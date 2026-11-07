@@ -38,6 +38,9 @@ const price = (
   audioInputPerMTokUsd: null,
   cachedAudioInputPerMTokUsd: null,
   audioOutputPerMTokUsd: null,
+  imageInputPerMTokUsd: null,
+  cachedImageInputPerMTokUsd: null,
+  imageOutputPerMTokUsd: null,
   sourceUrl: "https://example.com/pricing",
   checkedOn: "2026-11-01",
 });

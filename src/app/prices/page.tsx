@@ -212,6 +212,15 @@ export default async function PricesPage() {
                             {rate(row.longOutputPerMTokUsd)} out
                           </span>
                         )}
+                        {(row.imageInputPerMTokUsd !== null ||
+                          row.imageOutputPerMTokUsd !== null) && (
+                          <span className="block text-xs text-foreground/60">
+                            Image: {rate(row.imageInputPerMTokUsd)} in,{" "}
+                            {row.cachedImageInputPerMTokUsd !== null &&
+                              `${rate(row.cachedImageInputPerMTokUsd)} cached, `}
+                            {rate(row.imageOutputPerMTokUsd)} out
+                          </span>
+                        )}
                         {row.audioInputPerMTokUsd !== null && (
                           <span className="block text-xs text-foreground/60">
                             Audio: {rate(row.audioInputPerMTokUsd)} in,{" "}

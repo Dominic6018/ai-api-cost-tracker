@@ -45,6 +45,12 @@ export const usagePayloadSchema = z
     audioInputTokens: tokenCount.default(0),
     cachedAudioInputTokens: tokenCount.default(0),
     audioOutputTokens: tokenCount.default(0),
+    // Image tokens (OpenAI's Images API: usage.input_tokens_details
+    // .image_tokens and the image output), billed at the model's image rates
+    // or, without them, as text. Parts of the same totals, alongside audio.
+    imageInputTokens: tokenCount.default(0),
+    cachedImageInputTokens: tokenCount.default(0),
+    imageOutputTokens: tokenCount.default(0),
     // "batch" for a provider's discounted Batch API (Anthropic: 50%).
     serviceTier: z.enum(SERVICE_TIERS).default("standard"),
     requestId: z.string().trim().min(1).max(200).optional(),
@@ -110,7 +116,40 @@ export const usagePayloadSchema = z
   .refine((usage) => usage.audioOutputTokens <= usage.outputTokens, {
     path: ["audioOutputTokens"],
     message: "audioOutputTokens is part of outputTokens and cannot exceed it",
-  });
+  })
+  .refine(
+    (usage) =>
+      usage.cachedImageInputTokens <= usage.imageInputTokens &&
+      usage.cachedAudioInputTokens + usage.cachedImageInputTokens <=
+        usage.cachedInputTokens,
+    {
+      path: ["cachedImageInputTokens"],
+      message:
+        "cachedImageInputTokens is part of imageInputTokens, and with any cached audio of cachedInputTokens, and cannot exceed either",
+    },
+  )
+  .refine(
+    (usage) =>
+      usage.audioInputTokens -
+        usage.cachedAudioInputTokens +
+        usage.imageInputTokens -
+        usage.cachedImageInputTokens <=
+      usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens,
+    {
+      path: ["imageInputTokens"],
+      message:
+        "Uncached image and audio input tokens together cannot exceed the uncached input tokens",
+    },
+  )
+  .refine(
+    (usage) =>
+      usage.audioOutputTokens + usage.imageOutputTokens <= usage.outputTokens,
+    {
+      path: ["imageOutputTokens"],
+      message:
+        "imageOutputTokens, with any audio output, is part of outputTokens and cannot exceed it",
+    },
+  );
 
 export type UsagePayload = z.infer<typeof usagePayloadSchema>;
 

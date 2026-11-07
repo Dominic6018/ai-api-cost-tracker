@@ -119,6 +119,41 @@ describe("usageFromResponse", () => {
     expect(usagePayloadSchema.safeParse(cachedAudio).success).toBe(true);
   });
 
+  it("reads an Images API response, all output as image without a split", () => {
+    const generated = {
+      created: 1_794_000_000,
+      data: [{ b64_json: "..." }],
+      usage: {
+        total_tokens: 5_000,
+        input_tokens: 1_000,
+        input_tokens_details: { text_tokens: 200, image_tokens: 800 },
+        output_tokens: 4_000,
+      },
+    };
+    const usage = usageFromResponse(generated)!;
+    expect(usage).toEqual({
+      provider: "openai",
+      model: "",
+      inputTokens: 1_000,
+      outputTokens: 4_000,
+      imageInputTokens: 800,
+      imageOutputTokens: 4_000,
+    });
+    expect(
+      usagePayloadSchema.safeParse({ ...usage, model: "gpt-image-2" }).success,
+    ).toBe(true);
+    // With an output split, only the image part is image.
+    expect(
+      usageFromResponse({
+        ...generated,
+        usage: {
+          ...generated.usage,
+          output_tokens_details: { image_tokens: 3_900, text_tokens: 100 },
+        },
+      })?.imageOutputTokens,
+    ).toBe(3_900);
+  });
+
   it("reads a Realtime response, cached audio included", () => {
     const realtime = {
       object: "realtime.response",

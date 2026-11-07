@@ -78,6 +78,7 @@ describe("findEffectivePricing", () => {
       batchMultiplier: null,
       longContext: null,
       audio: null,
+      image: null,
     });
     expect(result.row.model).toBe(model);
   });

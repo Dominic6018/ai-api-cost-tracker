@@ -281,7 +281,8 @@ jobs:
           BODY="{\"provider\":\"other\",\"model\":\"ci-audio\",\"inputTokens\":4500,\"cachedInputTokens\":1500,\"audioInputTokens\":3000,\"cachedAudioInputTokens\":1000,\"outputTokens\":1000,\"audioOutputTokens\":800,\"occurredAt\":\"$YESTERDAY\"}"
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
           test "$STATUS" = 201
-          grep -q '"audioInputTokens":3000,"cachedAudioInputTokens":1000,"audioOutputTokens":800,"costUsd":"0.124600"' response.json
+          grep -q '"audioInputTokens":3000,"cachedAudioInputTokens":1000,"audioOutputTokens":800' response.json
+          grep -q '"costUsd":"0.124600"' response.json
           # More audio output than output is invalid
           BODY='{"provider":"other","model":"ci-audio","inputTokens":10,"outputTokens":10,"audioOutputTokens":11}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
@@ -290,6 +291,25 @@ jobs:
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
           test "$STATUS" = 422
           grep -q '"no_audio_pricing"' response.json
+
+          # Image tokens at their own rates (gpt-image-2's), on an "other"
+          # model: 200 text x $5 + 800 image x $8 in, 4,000 image out x $30,
+          # per 1M = $0.1274
+          psql "$DATABASE_URL" -qc "INSERT INTO model_pricing (provider, model, service_tier, input_per_mtok_usd, output_per_mtok_usd, cached_input_per_mtok_usd, image_input_per_mtok_usd, cached_image_input_per_mtok_usd, image_output_per_mtok_usd, effective_from) VALUES ('other', 'ci-image', 'standard', 5, 30, 1.25, 8, 2, 30, '2026-01-01')"
+          BODY="{\"provider\":\"other\",\"model\":\"ci-image\",\"inputTokens\":1000,\"imageInputTokens\":800,\"outputTokens\":4000,\"imageOutputTokens\":4000,\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"imageInputTokens":800,"cachedImageInputTokens":0,"imageOutputTokens":4000' response.json
+          grep -q '"costUsd":"0.127400"' response.json
+          # Image and audio output together beyond the output is invalid
+          BODY='{"provider":"other","model":"ci-image","inputTokens":10,"outputTokens":10,"imageOutputTokens":6,"audioOutputTokens":5}'
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
+          # Vision input on gpt-4.1 (no image rates) is billed as text:
+          # 1,000 x $2 + 100 x $8 per 1M = $0.0028
+          BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"imageInputTokens\":500,\"outputTokens\":100,\"occurredAt\":\"$YESTERDAY\"}"
+          STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
+          test "$STATUS" = 201
+          grep -q '"costUsd":"0.002800"' response.json
 
           # Attribution is stored in its own columns and returned
           BODY='{"provider":"google","model":"gemini-3.5-flash-lite","inputTokens":100,"outputTokens":10,"customerId":" cus_ci ","userId":"u_ci","feature":"ci-smoke","runId":"run_ci"}'

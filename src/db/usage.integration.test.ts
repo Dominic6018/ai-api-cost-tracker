@@ -20,6 +20,7 @@ const db = drizzle(client);
 const model = `it-usage-${randomUUID()}`;
 const tieredModel = `it-usage-tiered-${randomUUID()}`;
 const audioModel = `it-usage-audio-${randomUUID()}`;
+const imageModel = `it-usage-image-${randomUUID()}`;
 let projectId: string;
 const pricingIds: string[] = [];
 
@@ -50,6 +51,18 @@ beforeAll(async () => {
         inputPerMTokUsd: "6",
         outputPerMTokUsd: "30",
         cachedInputPerMTokUsd: "0.6",
+        effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+      },
+      // gpt-image-1.5's rates: image tokens above text.
+      {
+        provider: "openai",
+        model: imageModel,
+        inputPerMTokUsd: "5",
+        outputPerMTokUsd: "10",
+        cachedInputPerMTokUsd: "1.25",
+        imageInputPerMTokUsd: "8",
+        cachedImageInputPerMTokUsd: "2",
+        imageOutputPerMTokUsd: "32",
         effectiveFrom: new Date("2026-01-01T00:00:00Z"),
       },
       // gpt-realtime-2.1's rates: audio far above text.
@@ -109,6 +122,9 @@ function usage(overrides: Partial<UsageInput> = {}): UsageInput {
     audioInputTokens: 0,
     cachedAudioInputTokens: 0,
     audioOutputTokens: 0,
+    imageInputTokens: 0,
+    cachedImageInputTokens: 0,
+    imageOutputTokens: 0,
     occurredAt: new Date("2026-06-01T00:00:00Z"),
     ...overrides,
   };
@@ -195,6 +211,49 @@ describe("recordUsage", () => {
       spoken({ requestId: undefined, serviceTier: "batch" }),
     );
     expect(batch.ok && batch.event.costUsd).toBe("0.062300");
+  });
+
+  it("bills image tokens at the image rates, and replays only the same split", async () => {
+    const requestId = `req-image-${randomUUID()}`;
+    const imaged = (overrides: Partial<UsageInput> = {}) =>
+      usage({
+        provider: "openai",
+        model: imageModel,
+        requestId,
+        inputTokens: 1_000,
+        cachedInputTokens: 300,
+        imageInputTokens: 800,
+        cachedImageInputTokens: 200,
+        outputTokens: 4_050,
+        imageOutputTokens: 4_000,
+        ...overrides,
+      });
+    const result = await recordUsage(db, imaged());
+    if (!result.ok) throw new Error(`expected success, got ${result.error}`);
+    // Text: 100 x $5 + 100 cached x $1.25 + 50 out x $10; image: 600 x $8
+    // + 200 cached x $2 + 4,000 out x $32, per 1M
+    expect(result.event).toMatchObject({
+      costUsd: "0.134325",
+      imageInputTokens: 800,
+      cachedImageInputTokens: 200,
+      imageOutputTokens: 4_000,
+    });
+    expect(await recordUsage(db, imaged({ imageOutputTokens: 3_999 }))).toEqual(
+      {
+        ok: false,
+        error: "request_id_conflict",
+      },
+    );
+  });
+
+  it("bills image tokens as text when the price has no image rates", async () => {
+    // Vision input: the same cost as without the split.
+    const plain = await recordUsage(db, usage());
+    const vision = await recordUsage(db, usage({ imageInputTokens: 500_000 }));
+    expect(vision.ok && vision.event.costUsd).toBe(
+      plain.ok && plain.event.costUsd,
+    );
+    expect(vision.ok && vision.event.imageInputTokens).toBe(500_000);
   });
 
   it("refuses audio tokens when the price has no audio rates", async () => {

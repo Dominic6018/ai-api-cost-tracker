@@ -127,6 +127,9 @@ describe("generateDemoData", () => {
         audioInputPerMTokUsd: p.audio?.inputPerMTokUsd ?? null,
         cachedAudioInputPerMTokUsd: p.audio?.cachedInputPerMTokUsd ?? null,
         audioOutputPerMTokUsd: p.audio?.outputPerMTokUsd ?? null,
+        imageInputPerMTokUsd: p.image?.inputPerMTokUsd ?? null,
+        cachedImageInputPerMTokUsd: p.image?.cachedInputPerMTokUsd ?? null,
+        imageOutputPerMTokUsd: p.image?.outputPerMTokUsd ?? null,
       });
     };
     for (const event of data.events) {
