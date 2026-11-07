@@ -1,0 +1,8 @@
+ALTER TABLE "model_pricing" ADD COLUMN "audio_input_per_mtok_usd" numeric(12, 6);--> statement-breakpoint
+ALTER TABLE "model_pricing" ADD COLUMN "cached_audio_input_per_mtok_usd" numeric(12, 6);--> statement-breakpoint
+ALTER TABLE "model_pricing" ADD COLUMN "audio_output_per_mtok_usd" numeric(12, 6);--> statement-breakpoint
+ALTER TABLE "usage_events" ADD COLUMN "audio_input_tokens" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "usage_events" ADD COLUMN "cached_audio_input_tokens" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "usage_events" ADD COLUMN "audio_output_tokens" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "model_pricing" ADD CONSTRAINT "model_pricing_audio_complete" CHECK (("model_pricing"."audio_input_per_mtok_usd" IS NULL AND "model_pricing"."audio_output_per_mtok_usd" IS NULL AND "model_pricing"."cached_audio_input_per_mtok_usd" IS NULL) OR ("model_pricing"."audio_input_per_mtok_usd" IS NOT NULL AND "model_pricing"."audio_output_per_mtok_usd" IS NOT NULL));--> statement-breakpoint
+ALTER TABLE "usage_events" ADD CONSTRAINT "usage_events_audio_valid" CHECK ("usage_events"."cached_audio_input_tokens" >= 0 AND "usage_events"."cached_audio_input_tokens" <= "usage_events"."audio_input_tokens" AND "usage_events"."cached_audio_input_tokens" <= "usage_events"."cached_input_tokens" AND ("usage_events"."audio_input_tokens" = 0 OR "usage_events"."audio_input_tokens" - "usage_events"."cached_audio_input_tokens" <= "usage_events"."input_tokens" - "usage_events"."cached_input_tokens" - "usage_events"."cache_write_input_tokens") AND "usage_events"."audio_output_tokens" >= 0 AND "usage_events"."audio_output_tokens" <= "usage_events"."output_tokens");

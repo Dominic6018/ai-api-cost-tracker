@@ -28,6 +28,9 @@ describe("parseUsagePayload", () => {
         cacheWrite1hInputTokens: 0,
         serviceTier: "standard",
         webSearchRequests: 0,
+        audioInputTokens: 0,
+        cachedAudioInputTokens: 0,
+        audioOutputTokens: 0,
         occurredAt: now,
       },
     });
@@ -87,6 +90,51 @@ describe("parseUsagePayload", () => {
     expect(fieldErrors({ ...valid, serviceTier: "scale" })).toHaveProperty(
       "serviceTier",
     );
+  });
+
+  it("accepts audio tokens within the input, cached and output counts", () => {
+    const spoken = parseUsagePayload(
+      {
+        ...valid,
+        inputTokens: 1000,
+        cachedInputTokens: 300,
+        audioInputTokens: 800,
+        cachedAudioInputTokens: 200,
+        outputTokens: 500,
+        audioOutputTokens: 500,
+      },
+      now,
+    );
+    expect(spoken.ok && spoken.usage).toMatchObject({
+      audioInputTokens: 800,
+      cachedAudioInputTokens: 200,
+      audioOutputTokens: 500,
+    });
+    const base = { ...valid, inputTokens: 1000, outputTokens: 500 };
+    expect(fieldErrors({ ...base, audioOutputTokens: 501 })).toHaveProperty(
+      "audioOutputTokens",
+    );
+    // 900 uncached audio, but only 800 uncached input.
+    expect(
+      fieldErrors({ ...base, cachedInputTokens: 200, audioInputTokens: 900 }),
+    ).toHaveProperty("audioInputTokens");
+    // Cached audio beyond the cached tokens, or beyond the audio.
+    expect(
+      fieldErrors({
+        ...base,
+        cachedInputTokens: 100,
+        audioInputTokens: 300,
+        cachedAudioInputTokens: 200,
+      }),
+    ).toHaveProperty("cachedAudioInputTokens");
+    expect(
+      fieldErrors({
+        ...base,
+        cachedInputTokens: 300,
+        audioInputTokens: 100,
+        cachedAudioInputTokens: 200,
+      }),
+    ).toHaveProperty("cachedAudioInputTokens");
   });
 
   it("accepts web search counts, and rejects negative or fractional ones", () => {

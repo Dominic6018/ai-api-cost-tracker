@@ -34,6 +34,9 @@ export const PRICE_FIELDS = [
   "longCacheWrite1hPerMTokUsd",
   "batchMultiplier",
   "webSearchPer1kUsd",
+  "audioInputPerMTokUsd",
+  "cachedAudioInputPerMTokUsd",
+  "audioOutputPerMTokUsd",
   "effectiveFrom",
   "sourceUrl",
   "checkedOn",
@@ -164,6 +167,9 @@ function priceFormSchema(now: Date) {
       longCacheWrite1hPerMTokUsd: optionalRate,
       batchMultiplier,
       webSearchPer1kUsd: optionalSearchRate,
+      audioInputPerMTokUsd: optionalRate,
+      cachedAudioInputPerMTokUsd: optionalRate,
+      audioOutputPerMTokUsd: optionalRate,
       effectiveFrom: utcDateTimeField,
       sourceUrl: sourceUrlField(
         "Where was this price read? Enter the pricing page's URL",
@@ -181,6 +187,26 @@ function priceFormSchema(now: Date) {
           path: ["batchMultiplier"],
           message: "Only standard prices have a batch price",
         });
+      }
+      // Audio needs both its input and output rates (as the database
+      // requires); the cached audio rate is optional.
+      const anyAudio =
+        values.audioInputPerMTokUsd !== null ||
+        values.audioOutputPerMTokUsd !== null ||
+        values.cachedAudioInputPerMTokUsd !== null;
+      if (anyAudio) {
+        for (const field of [
+          "audioInputPerMTokUsd",
+          "audioOutputPerMTokUsd",
+        ] as const) {
+          if (values[field] === null) {
+            ctx.addIssue({
+              code: "custom",
+              path: [field],
+              message: "Required for audio pricing",
+            });
+          }
+        }
       }
       // A tier needs its threshold and both long rates (as the database
       // requires); long cache rates are optional.

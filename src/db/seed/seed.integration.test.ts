@@ -357,6 +357,20 @@ describe("seed", () => {
     }
   });
 
+  it("seeds audio rates that the lookup returns", async () => {
+    const result = await findEffectivePricing(db, {
+      provider: "openai",
+      model: "gpt-realtime-2.1",
+      at: new Date("2026-11-08T00:00:00Z"),
+      serviceTier: "standard",
+    });
+    expect(result.found && result.pricing.audio).toEqual({
+      inputPerMTokUsd: 32,
+      cachedInputPerMTokUsd: 0.4,
+      outputPerMTokUsd: 64,
+    });
+  });
+
   it("seeds flex and fast prices that the lookup finds per tier", async () => {
     const at = new Date("2026-11-08T00:00:00Z");
     const input = async (

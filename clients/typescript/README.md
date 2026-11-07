@@ -98,6 +98,8 @@ Flex and fast processing (OpenAI's Flex and Fast, formerly Priority; Anthropic's
 
 Anthropic web searches are read from `usage.server_tool_use.web_search_requests` into `webSearchRequests` and charged per 1,000 on top of tokens ($10 for Claude models). Searches for a model without a web search price are refused (`no_web_search_pricing`).
 
+OpenAI audio tokens are read from Chat Completions (`prompt_tokens_details.audio_tokens`, `completion_tokens_details.audio_tokens`) and from a Realtime API `response.done` event's response (`input_token_details`, cached audio included), and billed at the model's audio rates. A Realtime response names no model, so pass it to `track()` (`{ model: "gpt-realtime-2.1" }`). Audio for a model without audio rates is refused (`no_audio_pricing`).
+
 ## Tags
 
 Free-form labels for anything attribution doesn't cover: up to 20, keys of 1–64 letters, digits and `_ . / -`, values up to 200 characters. Scoped trackers and calls merge tags key by key, the call's own values winning:

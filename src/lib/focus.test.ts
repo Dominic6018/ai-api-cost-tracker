@@ -28,6 +28,9 @@ const pricing: FocusPricing = {
   longCacheWrite1hPerMTokUsd: null,
   batchMultiplier: null,
   webSearchPer1kUsd: null,
+  audioInputPerMTokUsd: null,
+  cachedAudioInputPerMTokUsd: null,
+  audioOutputPerMTokUsd: null,
 };
 
 const usage: FocusUsage = {
@@ -50,6 +53,9 @@ const usage: FocusUsage = {
   runId: null,
   tags: null,
   webSearchRequests: 0,
+  audioInputTokens: 0,
+  cachedAudioInputTokens: 0,
+  audioOutputTokens: 0,
 };
 
 /** Sum of ListCost in micro-dollars, rounded half up like stored costs. */
@@ -141,6 +147,58 @@ describe("focusRows", () => {
     expect(listCostMicros(searchRows)).toBe(
       Math.round(recorded * 1e6) + 30_000,
     );
+  });
+
+  it("lists audio tokens at the audio rates, apart from text", () => {
+    // gpt-realtime-2.1-like rates, at Haiku's text rates.
+    const withAudio = {
+      ...pricing,
+      longContextThresholdTokens: null,
+      longInputPerMTokUsd: null,
+      longOutputPerMTokUsd: null,
+      longCacheWritePerMTokUsd: null,
+      audioInputPerMTokUsd: "32",
+      cachedAudioInputPerMTokUsd: "0.40",
+      audioOutputPerMTokUsd: "64",
+    };
+    // 12,000 input: 8,000 cached (2,000 of them audio), 1,000 cache writes,
+    // 1,500 uncached audio; 700 output, 300 of it audio.
+    const spoken = {
+      ...usage,
+      audioInputTokens: 3_500,
+      cachedAudioInputTokens: 2_000,
+      audioOutputTokens: 300,
+    };
+    const audioRows = focusRows(spoken, withAudio);
+    const byKey: Record<string, (typeof audioRows)[number]> =
+      Object.fromEntries(audioRows.map((r) => [r.SkuId!.split("/").at(-1), r]));
+    expect(
+      Object.fromEntries(
+        Object.entries(byKey).map(
+          ([k, r]: [string, (typeof audioRows)[number]]) => [
+            k,
+            [r.ConsumedQuantity, r.ListUnitPrice],
+          ],
+        ),
+      ),
+    ).toEqual({
+      input: ["1500", "0.1"],
+      "cached-input": ["6000", "0.01"],
+      "cache-write": ["1000", "0.125"],
+      output: ["400", "0.5"],
+      "audio-input": ["1500", "32"],
+      "cached-audio-input": ["2000", "0.4"],
+      "audio-output": ["300", "64"],
+    });
+    expect(byKey["audio-output"].SkuMeter).toBe("Audio Output Tokens");
+    const recorded = calculateCostUsd(spoken, toTokenPricing(withAudio));
+    expect(listCostMicros(audioRows)).toBe(Math.round(recorded * 1e6));
+  });
+
+  it("refuses audio tokens without audio rates", () => {
+    expect(() =>
+      focusRows({ ...usage, audioOutputTokens: 1 }, pricing),
+    ).toThrow(TypeError);
   });
 
   it("refuses web searches without a web search price", () => {
@@ -299,6 +357,10 @@ describe("ratesFor", () => {
       "cache-write": "0.10",
       "cache-write-1h": "0.10",
       output: "0.50",
+      // Not priced: never listed (audio usage without them throws).
+      "audio-input": "0",
+      "cached-audio-input": "0",
+      "audio-output": "0",
     });
   });
 
