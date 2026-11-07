@@ -19,6 +19,7 @@ const db = drizzle(client);
 // Unique per run so tests never collide with seed or leftover rows.
 const model = `it-usage-${randomUUID()}`;
 const tieredModel = `it-usage-tiered-${randomUUID()}`;
+const audioModel = `it-usage-audio-${randomUUID()}`;
 let projectId: string;
 const pricingIds: string[] = [];
 
@@ -49,6 +50,19 @@ beforeAll(async () => {
         inputPerMTokUsd: "6",
         outputPerMTokUsd: "30",
         cachedInputPerMTokUsd: "0.6",
+        effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+      },
+      // gpt-realtime-2.1's rates: audio far above text.
+      {
+        provider: "openai",
+        model: audioModel,
+        inputPerMTokUsd: "4",
+        outputPerMTokUsd: "24",
+        cachedInputPerMTokUsd: "0.4",
+        audioInputPerMTokUsd: "32",
+        cachedAudioInputPerMTokUsd: "0.4",
+        audioOutputPerMTokUsd: "64",
+        batchMultiplier: "0.5",
         effectiveFrom: new Date("2026-01-01T00:00:00Z"),
       },
       // Claude Haiku 5.5's rates: higher for prompts over 100,000 tokens.
@@ -92,6 +106,9 @@ function usage(overrides: Partial<UsageInput> = {}): UsageInput {
     cacheWrite1hInputTokens: 0,
     serviceTier: "standard",
     webSearchRequests: 0,
+    audioInputTokens: 0,
+    cachedAudioInputTokens: 0,
+    audioOutputTokens: 0,
     occurredAt: new Date("2026-06-01T00:00:00Z"),
     ...overrides,
   };
@@ -137,6 +154,64 @@ describe("recordUsage", () => {
     expect(
       await recordUsage(db, usage({ requestId, webSearchRequests: 3 })),
     ).toMatchObject({ ok: true, replayed: true });
+  });
+
+  it("bills audio tokens at the audio rates, and replays only the same split", async () => {
+    const requestId = `req-audio-${randomUUID()}`;
+    const spoken = (overrides: Partial<UsageInput> = {}) =>
+      usage({
+        provider: "openai",
+        model: audioModel,
+        requestId,
+        inputTokens: 4_500,
+        cachedInputTokens: 1_500,
+        audioInputTokens: 3_000,
+        cachedAudioInputTokens: 1_000,
+        outputTokens: 1_000,
+        audioOutputTokens: 800,
+        ...overrides,
+      });
+    const result = await recordUsage(db, spoken());
+    if (!result.ok) throw new Error(`expected success, got ${result.error}`);
+    // Text: 1,000 × $4 + 500 × $0.40 + 200 × $24; audio: 2,000 × $32
+    // + 1,000 × $0.40 + 800 × $64, per 1M
+    expect(result.event).toMatchObject({
+      costUsd: "0.124600",
+      audioInputTokens: 3_000,
+      cachedAudioInputTokens: 1_000,
+      audioOutputTokens: 800,
+    });
+    expect(await recordUsage(db, spoken({ audioOutputTokens: 700 }))).toEqual({
+      ok: false,
+      error: "request_id_conflict",
+    });
+    expect(await recordUsage(db, spoken())).toMatchObject({
+      ok: true,
+      replayed: true,
+    });
+    // Batch halves audio too.
+    const batch = await recordUsage(
+      db,
+      spoken({ requestId: undefined, serviceTier: "batch" }),
+    );
+    expect(batch.ok && batch.event.costUsd).toBe("0.062300");
+  });
+
+  it("refuses audio tokens when the price has no audio rates", async () => {
+    expect(
+      await recordUsage(
+        db,
+        usage({
+          inputTokens: 1_000_000,
+          cachedInputTokens: 0,
+          audioInputTokens: 10,
+        }),
+      ),
+    ).toEqual({ ok: false, error: "no_audio_pricing" });
+    expect(await recordUsage(db, usage({ audioOutputTokens: 1 }))).toEqual({
+      ok: false,
+      error: "no_audio_pricing",
+    });
   });
 
   it("refuses web searches the matching price has no rate for", async () => {

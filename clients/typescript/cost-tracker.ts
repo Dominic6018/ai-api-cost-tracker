@@ -96,6 +96,14 @@ export interface Usage extends Attribution {
    * tokens (Anthropic: $10). Needs a web search price for the model.
    */
   webSearchRequests?: number;
+  /**
+   * Audio tokens, billed at the model's audio rates (OpenAI's audio and
+   * realtime models): parts of inputTokens, cachedInputTokens and
+   * outputTokens. Needs audio rates for the model.
+   */
+  audioInputTokens?: number;
+  cachedAudioInputTokens?: number;
+  audioOutputTokens?: number;
   /** The provider's ID for the request; makes retries safe. */
   requestId?: string;
   occurredAt?: string | Date;
@@ -260,31 +268,85 @@ const n = (value: unknown): number =>
 const details = (value: unknown): Record<string, Num> =>
   (value && typeof value === "object" ? value : {}) as Record<string, Num>;
 
-/** OpenAI Chat Completions: cached tokens are part of `prompt_tokens`. */
+/**
+ * Audio token counts, sent only when there are any. Without a reported
+ * cached split, the cached audio is the least the totals allow.
+ */
+function audioUsage(
+  inputTokens: number,
+  cachedInputTokens: number,
+  audioIn: number,
+  audioOut: number,
+  cachedAudio?: number,
+): Partial<Usage> {
+  if (audioIn === 0 && audioOut === 0) return {};
+  const cached = Math.min(
+    cachedAudio ?? Math.max(0, audioIn - (inputTokens - cachedInputTokens)),
+    audioIn,
+    cachedInputTokens,
+  );
+  return {
+    audioInputTokens: audioIn,
+    ...(cached > 0 && { cachedAudioInputTokens: cached }),
+    ...(audioOut > 0 && { audioOutputTokens: audioOut }),
+  };
+}
+
+/**
+ * OpenAI Chat Completions: cached tokens are part of `prompt_tokens`, and
+ * audio tokens (gpt-audio) are reported in the token details.
+ */
 export function usageFromOpenAIChat(response: AnyResponse): Usage | null {
   const usage = response.usage;
   if (!usage || typeof usage.prompt_tokens !== "number") return null;
+  const inputTokens = n(usage.prompt_tokens);
+  const promptDetails = details(usage.prompt_tokens_details);
+  const cachedInputTokens = n(promptDetails.cached_tokens);
   return {
     provider: "openai",
     model: response.model ?? "",
-    inputTokens: n(usage.prompt_tokens),
+    inputTokens,
     // Includes reasoning tokens, which are billed as output.
     outputTokens: n(usage.completion_tokens),
-    cachedInputTokens: n(details(usage.prompt_tokens_details).cached_tokens),
+    cachedInputTokens,
+    ...audioUsage(
+      inputTokens,
+      cachedInputTokens,
+      n(promptDetails.audio_tokens),
+      n(details(usage.completion_tokens_details).audio_tokens),
+    ),
     requestId: response.id,
   };
 }
 
-/** OpenAI Responses API: cached tokens are part of `input_tokens`. */
+/**
+ * OpenAI Responses API: cached tokens are part of `input_tokens`. Also
+ * reads a Realtime API response (from `response.done`), whose
+ * `input_token_details` split audio from text, cached included.
+ */
 export function usageFromOpenAIResponse(response: AnyResponse): Usage | null {
   const usage = response.usage;
   if (!usage || typeof usage.input_tokens !== "number") return null;
+  const inputTokens = n(usage.input_tokens);
+  const realtime = usage.input_token_details;
+  const inputDetails = details(usage.input_tokens_details ?? realtime);
+  const cachedInputTokens = n(inputDetails.cached_tokens);
+  const cachedDetails = details(
+    (realtime as Record<string, unknown> | undefined)?.cached_tokens_details,
+  );
   return {
     provider: "openai",
     model: response.model ?? "",
-    inputTokens: n(usage.input_tokens),
+    inputTokens,
     outputTokens: n(usage.output_tokens),
-    cachedInputTokens: n(details(usage.input_tokens_details).cached_tokens),
+    cachedInputTokens,
+    ...audioUsage(
+      inputTokens,
+      cachedInputTokens,
+      n(inputDetails.audio_tokens),
+      n(details(usage.output_token_details).audio_tokens),
+      realtime ? n(cachedDetails.audio_tokens) : undefined,
+    ),
     requestId: response.id,
   };
 }
@@ -345,7 +407,11 @@ export function usageFromResponse(response: unknown): Usage | null {
   const r = response as AnyResponse;
   if (r.usageMetadata) return usageFromGemini(r);
   if (r.type === "message") return usageFromAnthropic(r);
-  if (r.object === "response") return usageFromOpenAIResponse(r);
+  // A Realtime `response.done` event's response; it names no model, so
+  // pass one to track().
+  if (r.object === "response" || r.object === "realtime.response") {
+    return usageFromOpenAIResponse(r);
+  }
   if (r.object === "chat.completion") return usageFromOpenAIChat(r);
   return null;
 }

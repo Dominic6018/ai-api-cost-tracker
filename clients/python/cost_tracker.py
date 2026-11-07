@@ -81,6 +81,12 @@ class Usage:
     #: Server-side web searches the request ran, charged per 1,000 on top of
     #: tokens (Anthropic: $10). Needs a web search price for the model.
     web_search_requests: int = 0
+    #: Audio tokens, billed at the model's audio rates (OpenAI's audio and
+    #: realtime models): parts of input_tokens, cached_input_tokens and
+    #: output_tokens. Needs audio rates for the model.
+    audio_input_tokens: int = 0
+    cached_audio_input_tokens: int = 0
+    audio_output_tokens: int = 0
 
     def to_payload(self) -> Dict[str, Any]:
         occurred_at = self.occurred_at
@@ -99,6 +105,10 @@ class Usage:
             "serviceTier": self.service_tier,
             # Sent only when there were searches.
             "webSearchRequests": self.web_search_requests or None,
+            # Sent only when there are any.
+            "audioInputTokens": self.audio_input_tokens or None,
+            "cachedAudioInputTokens": self.cached_audio_input_tokens or None,
+            "audioOutputTokens": self.audio_output_tokens or None,
             "requestId": self.request_id,
             "occurredAt": occurred_at,
             "metadata": self.metadata,
@@ -216,33 +226,59 @@ def _n(value: Any) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+def _cached_audio(input_tokens: int, cached: int, audio_in: int, reported: Optional[int]) -> int:
+    """Cached audio input: as reported, or else the least the totals allow."""
+    if reported is None:
+        reported = max(0, audio_in - (input_tokens - cached))
+    return min(reported, audio_in, cached)
+
+
 def usage_from_openai_chat(response: Any) -> Optional[Usage]:
-    """OpenAI Chat Completions: cached tokens are part of ``prompt_tokens``."""
+    """OpenAI Chat Completions: cached tokens are part of ``prompt_tokens``,
+    and audio tokens (gpt-audio) are reported in the token details."""
     usage = _get(response, "usage")
     if not isinstance(_get(usage, "prompt_tokens"), int):
         return None
+    input_tokens = _n(_get(usage, "prompt_tokens"))
+    details = _get(usage, "prompt_tokens_details")
+    cached = _n(_get(details, "cached_tokens"))
+    audio_in = _n(_get(details, "audio_tokens"))
     return Usage(
         provider="openai",
         model=_get(response, "model") or "",
-        input_tokens=_n(_get(usage, "prompt_tokens")),
+        input_tokens=input_tokens,
         # Includes reasoning tokens, which are billed as output.
         output_tokens=_n(_get(usage, "completion_tokens")),
-        cached_input_tokens=_n(_get(_get(usage, "prompt_tokens_details"), "cached_tokens")),
+        cached_input_tokens=cached,
+        audio_input_tokens=audio_in,
+        cached_audio_input_tokens=_cached_audio(input_tokens, cached, audio_in, None),
+        audio_output_tokens=_n(_get(_get(usage, "completion_tokens_details"), "audio_tokens")),
         request_id=_get(response, "id"),
     )
 
 
 def usage_from_openai_response(response: Any) -> Optional[Usage]:
-    """OpenAI Responses API: cached tokens are part of ``input_tokens``."""
+    """OpenAI Responses API: cached tokens are part of ``input_tokens``. Also
+    reads a Realtime API response (from ``response.done``), whose
+    ``input_token_details`` split audio from text, cached included."""
     usage = _get(response, "usage")
     if not isinstance(_get(usage, "input_tokens"), int):
         return None
+    input_tokens = _n(_get(usage, "input_tokens"))
+    realtime = _get(usage, "input_token_details")
+    details = _get(usage, "input_tokens_details") or realtime
+    cached = _n(_get(details, "cached_tokens"))
+    audio_in = _n(_get(details, "audio_tokens"))
+    reported = _n(_get(_get(realtime, "cached_tokens_details"), "audio_tokens")) if realtime is not None else None
     return Usage(
         provider="openai",
         model=_get(response, "model") or "",
-        input_tokens=_n(_get(usage, "input_tokens")),
+        input_tokens=input_tokens,
         output_tokens=_n(_get(usage, "output_tokens")),
-        cached_input_tokens=_n(_get(_get(usage, "input_tokens_details"), "cached_tokens")),
+        cached_input_tokens=cached,
+        audio_input_tokens=audio_in,
+        cached_audio_input_tokens=_cached_audio(input_tokens, cached, audio_in, reported),
+        audio_output_tokens=_n(_get(_get(usage, "output_token_details"), "audio_tokens")),
         request_id=_get(response, "id"),
     )
 
@@ -300,7 +336,9 @@ def usage_from_response(response: Any) -> Optional[Usage]:
     if _get(response, "type") == "message":
         return usage_from_anthropic(response)
     kind = _get(response, "object")
-    if kind == "response":
+    # A Realtime ``response.done`` event's response names no model, so pass
+    # one to track().
+    if kind in ("response", "realtime.response"):
         return usage_from_openai_response(response)
     if kind == "chat.completion":
         return usage_from_openai_chat(response)

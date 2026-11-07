@@ -17,6 +17,9 @@ export interface PricingRow {
   longCacheWrite1hPerMTokUsd: string | null;
   batchMultiplier: string | null;
   webSearchPer1kUsd: string | null;
+  audioInputPerMTokUsd: string | null;
+  cachedAudioInputPerMTokUsd: string | null;
+  audioOutputPerMTokUsd: string | null;
 }
 
 export type PricingLookupResult<Row extends PricingRow = PricingRow> =
@@ -87,7 +90,29 @@ export function toTokenPricing(row: PricingRow): TokenPricing {
     ),
     batchMultiplier: optionalUsd("batchMultiplier", row.batchMultiplier),
     longContext: null,
+    audio: null,
   };
+
+  if (row.audioInputPerMTokUsd !== null) {
+    // The database requires an audio output rate with an input rate.
+    if (row.audioOutputPerMTokUsd === null) {
+      throw new TypeError("An audio input rate needs an audio output rate");
+    }
+    pricing.audio = {
+      inputPerMTokUsd: parseUsd(
+        "audioInputPerMTokUsd",
+        row.audioInputPerMTokUsd,
+      ),
+      cachedInputPerMTokUsd: optionalUsd(
+        "cachedAudioInputPerMTokUsd",
+        row.cachedAudioInputPerMTokUsd,
+      ),
+      outputPerMTokUsd: parseUsd(
+        "audioOutputPerMTokUsd",
+        row.audioOutputPerMTokUsd,
+      ),
+    };
+  }
 
   if (row.longContextThresholdTokens !== null) {
     // The database requires long input and output rates with a threshold.

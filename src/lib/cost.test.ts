@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateCostUsd,
   formatUsd,
+  hasAudio,
   ratesForUsage,
   webSearchCostMicros,
 } from "./cost";
@@ -456,5 +457,123 @@ describe("webSearchCostMicros", () => {
   it("rejects negative or fractional counts", () => {
     expect(() => webSearchCostMicros(-1, "10")).toThrow();
     expect(() => webSearchCostMicros(1.5, "10")).toThrow();
+  });
+});
+
+describe("audio tokens", () => {
+  // gpt-realtime-2.1: text $4 / $0.40 cached / $24 out; audio $32 / $0.40 / $64.
+  const realtime = {
+    inputPerMTokUsd: 4,
+    outputPerMTokUsd: 24,
+    cachedInputPerMTokUsd: 0.4,
+    audio: {
+      inputPerMTokUsd: 32,
+      cachedInputPerMTokUsd: 0.4,
+      outputPerMTokUsd: 64,
+    },
+  };
+
+  it("bills audio at the audio rates and the rest as text", () => {
+    // Text: 1,000 uncached × $4 + 500 cached × $0.40 + 200 out × $24
+    // Audio: 2,000 uncached × $32 + 1,000 cached × $0.40 + 800 out × $64
+    const usage = {
+      inputTokens: 4_500,
+      cachedInputTokens: 1_500,
+      audioInputTokens: 3_000,
+      cachedAudioInputTokens: 1_000,
+      outputTokens: 1_000,
+      audioOutputTokens: 800,
+    };
+    expect(calculateCostUsd(usage, realtime)).toBe(0.124_6);
+  });
+
+  it("falls back to the audio input rate for cached audio", () => {
+    const noCache = {
+      ...realtime,
+      audio: { inputPerMTokUsd: 32, outputPerMTokUsd: 64 },
+    };
+    expect(
+      calculateCostUsd(
+        {
+          inputTokens: 1_000,
+          cachedInputTokens: 1_000,
+          audioInputTokens: 1_000,
+          cachedAudioInputTokens: 1_000,
+          outputTokens: 0,
+        },
+        noCache,
+      ),
+    ).toBe(0.032);
+  });
+
+  it("applies the batch multiplier to audio too", () => {
+    expect(
+      calculateCostUsd(
+        {
+          inputTokens: 1_000_000,
+          audioInputTokens: 1_000_000,
+          outputTokens: 0,
+          serviceTier: "batch",
+        },
+        { ...realtime, batchMultiplier: 0.5 },
+      ),
+    ).toBe(16);
+  });
+
+  it("keeps audio rates for long prompts", () => {
+    const tiered = {
+      ...realtime,
+      longContext: {
+        thresholdTokens: 10,
+        inputPerMTokUsd: 8,
+        outputPerMTokUsd: 48,
+      },
+    };
+    // 1,000 audio at $32 and 1,000 text at the long $8.
+    expect(
+      calculateCostUsd(
+        { inputTokens: 2_000, audioInputTokens: 1_000, outputTokens: 0 },
+        tiered,
+      ),
+    ).toBe(0.04);
+  });
+
+  it("throws without audio rates, and for impossible splits", () => {
+    const textOnly = { ...realtime, audio: null };
+    expect(() =>
+      calculateCostUsd(
+        { inputTokens: 10, outputTokens: 10, audioOutputTokens: 1 },
+        textOnly,
+      ),
+    ).toThrow(/audio price/);
+    expect(hasAudio({ inputTokens: 1, outputTokens: 1 })).toBe(false);
+    expect(
+      hasAudio({ inputTokens: 1, outputTokens: 1, audioOutputTokens: 1 }),
+    ).toBe(true);
+    for (const usage of [
+      { inputTokens: 10, outputTokens: 0, audioOutputTokens: 1 },
+      { inputTokens: 10, outputTokens: 0, audioInputTokens: 11 },
+      {
+        inputTokens: 10,
+        outputTokens: 0,
+        audioInputTokens: 5,
+        cachedAudioInputTokens: 6,
+      },
+      {
+        inputTokens: 10,
+        outputTokens: 0,
+        cachedInputTokens: 2,
+        audioInputTokens: 5,
+        cachedAudioInputTokens: 3,
+      },
+      {
+        inputTokens: 10,
+        outputTokens: 0,
+        cachedInputTokens: 8,
+        audioInputTokens: 5,
+      },
+    ]) {
+      expect(() => calculateCostUsd(usage, realtime)).toThrow(RangeError);
+    }
   });
 });

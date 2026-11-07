@@ -14,6 +14,12 @@ export interface TokenUsage {
    * bills these at 2× input, against 1.25× for 5-minute writes).
    */
   cacheWrite1hInputTokens?: number;
+  /** Portion of inputTokens that is audio, cached or not. */
+  audioInputTokens?: number;
+  /** Portion of audioInputTokens (and of cachedInputTokens) read from cache. */
+  cachedAudioInputTokens?: number;
+  /** Portion of outputTokens that is audio. */
+  audioOutputTokens?: number;
   /**
    * Defaults to standard. "batch" applies the batch multiplier; "flex" and
    * "fast" are priced from their own rows, so pass their pricing.
@@ -33,6 +39,14 @@ export interface TokenRates {
   cacheWrite1hPerMTokUsd?: number | null;
 }
 
+/** A model's audio token prices in USD per 1M tokens. */
+export interface AudioRates {
+  inputPerMTokUsd: number;
+  /** Falls back to the audio input price. */
+  cachedInputPerMTokUsd?: number | null;
+  outputPerMTokUsd: number;
+}
+
 /** A model's prices, optionally with higher rates for long prompts. */
 export interface TokenPricing extends TokenRates {
   /**
@@ -46,6 +60,18 @@ export interface TokenPricing extends TokenRates {
    * tier included (Anthropic: 0.5). Null when batch isn't priced.
    */
   batchMultiplier?: number | null;
+  /**
+   * Audio token rates, the same for long prompts. Null when audio isn't
+   * priced: audio usage then throws, which callers check first.
+   */
+  audio?: AudioRates | null;
+}
+
+/** Whether a request has any audio tokens. */
+export function hasAudio(usage: TokenUsage): boolean {
+  return (
+    (usage.audioInputTokens ?? 0) > 0 || (usage.audioOutputTokens ?? 0) > 0
+  );
 }
 
 const TOKENS_PER_MILLION = 1_000_000;
@@ -82,7 +108,8 @@ export function ratesForUsage(
 /**
  * Computes the USD cost of a request, rounded to 6 decimal places to match
  * the `cost_usd` column precision. Cached and cache-write input tokens are
- * billed at their own rates and not double-counted at the input rate.
+ * billed at their own rates and not double-counted at the input rate, and
+ * so are audio tokens, at the model's audio rates.
  * Batch usage costs the standard price times the model's batch multiplier;
  * it throws when the model has none, which callers check first.
  */
@@ -93,11 +120,17 @@ export function calculateCostUsd(
   const cached = usage.cachedInputTokens ?? 0;
   const writes = usage.cacheWriteInputTokens ?? 0;
   const writes1h = usage.cacheWrite1hInputTokens ?? 0;
+  const audioIn = usage.audioInputTokens ?? 0;
+  const cachedAudio = usage.cachedAudioInputTokens ?? 0;
+  const audioOut = usage.audioOutputTokens ?? 0;
   assertCount("inputTokens", usage.inputTokens);
   assertCount("outputTokens", usage.outputTokens);
   assertCount("cachedInputTokens", cached);
   assertCount("cacheWriteInputTokens", writes);
   assertCount("cacheWrite1hInputTokens", writes1h);
+  assertCount("audioInputTokens", audioIn);
+  assertCount("cachedAudioInputTokens", cachedAudio);
+  assertCount("audioOutputTokens", audioOut);
   if (cached + writes > usage.inputTokens) {
     throw new RangeError(
       `cachedInputTokens (${cached}) plus cacheWriteInputTokens (${writes}) cannot exceed inputTokens (${usage.inputTokens})`,
@@ -107,6 +140,25 @@ export function calculateCostUsd(
     throw new RangeError(
       `cacheWrite1hInputTokens (${writes1h}) cannot exceed cacheWriteInputTokens (${writes})`,
     );
+  }
+  if (cachedAudio > audioIn || cachedAudio > cached) {
+    throw new RangeError(
+      `cachedAudioInputTokens (${cachedAudio}) cannot exceed audioInputTokens (${audioIn}) or cachedInputTokens (${cached})`,
+    );
+  }
+  if (audioIn - cachedAudio > usage.inputTokens - cached - writes) {
+    throw new RangeError(
+      `uncached audio input (${audioIn - cachedAudio}) cannot exceed uncached input (${usage.inputTokens - cached - writes})`,
+    );
+  }
+  if (audioOut > usage.outputTokens) {
+    throw new RangeError(
+      `audioOutputTokens (${audioOut}) cannot exceed outputTokens (${usage.outputTokens})`,
+    );
+  }
+  const audio = pricing.audio;
+  if ((audioIn > 0 || audioOut > 0) && !audio) {
+    throw new RangeError("No audio price is configured for this model");
   }
   if (pricing.longContext) {
     assertCount(
@@ -126,12 +178,28 @@ export function calculateCostUsd(
   assertPrice("cacheWritePerMTokUsd", writeRate);
   assertPrice("cacheWrite1hPerMTokUsd", write1hRate);
 
+  // Audio tokens are part of the input, cached and output totals, and
+  // billed at the audio rates instead of the text ones.
+  let audioCost = 0;
+  if (audio) {
+    const audioCachedRate =
+      audio.cachedInputPerMTokUsd ?? audio.inputPerMTokUsd;
+    assertPrice("audio.inputPerMTokUsd", audio.inputPerMTokUsd);
+    assertPrice("audio.cachedInputPerMTokUsd", audioCachedRate);
+    assertPrice("audio.outputPerMTokUsd", audio.outputPerMTokUsd);
+    audioCost =
+      (audioIn - cachedAudio) * audio.inputPerMTokUsd +
+      cachedAudio * audioCachedRate +
+      audioOut * audio.outputPerMTokUsd;
+  }
   const standard =
-    ((usage.inputTokens - cached - writes) * inputRate +
-      cached * cachedRate +
+    ((usage.inputTokens - cached - writes - (audioIn - cachedAudio)) *
+      inputRate +
+      (cached - cachedAudio) * cachedRate +
       (writes - writes1h) * writeRate +
       writes1h * write1hRate +
-      usage.outputTokens * rates.outputPerMTokUsd) /
+      (usage.outputTokens - audioOut) * rates.outputPerMTokUsd +
+      audioCost) /
     TOKENS_PER_MILLION;
 
   if (usage.serviceTier !== "batch") {

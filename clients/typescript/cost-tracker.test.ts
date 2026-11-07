@@ -89,6 +89,71 @@ describe("usageFromResponse", () => {
     });
   });
 
+  it("reads OpenAI audio tokens from Chat Completions", () => {
+    const spoken = {
+      ...openAIChat,
+      model: "gpt-audio",
+      usage: {
+        ...openAIChat.usage,
+        prompt_tokens_details: { cached_tokens: 0, audio_tokens: 900 },
+        completion_tokens_details: { audio_tokens: 250 },
+      },
+    };
+    const usage = usageFromResponse(spoken)!;
+    expect(usage).toMatchObject({
+      audioInputTokens: 900,
+      audioOutputTokens: 250,
+    });
+    expect(usage).not.toHaveProperty("cachedAudioInputTokens");
+    expect(usagePayloadSchema.safeParse(usage).success).toBe(true);
+    // Without a cached split, the least cached audio the totals allow:
+    // 1,000 audio but only 200 uncached input, so 800 of it was cached.
+    const cachedAudio = usageFromResponse({
+      ...spoken,
+      usage: {
+        ...spoken.usage,
+        prompt_tokens_details: { cached_tokens: 1000, audio_tokens: 1000 },
+      },
+    })!;
+    expect(cachedAudio.cachedAudioInputTokens).toBe(800);
+    expect(usagePayloadSchema.safeParse(cachedAudio).success).toBe(true);
+  });
+
+  it("reads a Realtime response, cached audio included", () => {
+    const realtime = {
+      object: "realtime.response",
+      id: "resp_rt1",
+      usage: {
+        total_tokens: 3000,
+        input_tokens: 2500,
+        output_tokens: 500,
+        input_token_details: {
+          cached_tokens: 1200,
+          text_tokens: 500,
+          audio_tokens: 2000,
+          cached_tokens_details: { text_tokens: 200, audio_tokens: 1000 },
+        },
+        output_token_details: { text_tokens: 100, audio_tokens: 400 },
+      },
+    };
+    const usage = usageFromResponse(realtime)!;
+    expect(usage).toEqual({
+      provider: "openai",
+      model: "",
+      inputTokens: 2500,
+      outputTokens: 500,
+      cachedInputTokens: 1200,
+      audioInputTokens: 2000,
+      cachedAudioInputTokens: 1000,
+      audioOutputTokens: 400,
+      requestId: "resp_rt1",
+    });
+    expect(
+      usagePayloadSchema.safeParse({ ...usage, model: "gpt-realtime-2.1" })
+        .success,
+    ).toBe(true);
+  });
+
   it("maps Anthropic, adding cache reads and writes back into input", () => {
     expect(usageFromResponse(anthropic)).toEqual({
       provider: "anthropic",
