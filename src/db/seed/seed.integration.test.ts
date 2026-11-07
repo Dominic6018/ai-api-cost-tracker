@@ -357,6 +357,20 @@ describe("seed", () => {
     }
   });
 
+  it("seeds image rates that the lookup returns", async () => {
+    const result = await findEffectivePricing(db, {
+      provider: "openai",
+      model: "gpt-image-2",
+      at: new Date("2026-11-08T00:00:00Z"),
+      serviceTier: "standard",
+    });
+    expect(result.found && result.pricing.image).toEqual({
+      inputPerMTokUsd: 8,
+      cachedInputPerMTokUsd: 2,
+      outputPerMTokUsd: 30,
+    });
+  });
+
   it("seeds audio rates that the lookup returns", async () => {
     const result = await findEffectivePricing(db, {
       provider: "openai",

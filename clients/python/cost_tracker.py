@@ -87,6 +87,11 @@ class Usage:
     audio_input_tokens: int = 0
     cached_audio_input_tokens: int = 0
     audio_output_tokens: int = 0
+    #: Image tokens (OpenAI's image generation models), billed at the model's
+    #: image rates, or as text without them: parts of the same totals.
+    image_input_tokens: int = 0
+    cached_image_input_tokens: int = 0
+    image_output_tokens: int = 0
 
     def to_payload(self) -> Dict[str, Any]:
         occurred_at = self.occurred_at
@@ -109,6 +114,9 @@ class Usage:
             "audioInputTokens": self.audio_input_tokens or None,
             "cachedAudioInputTokens": self.cached_audio_input_tokens or None,
             "audioOutputTokens": self.audio_output_tokens or None,
+            "imageInputTokens": self.image_input_tokens or None,
+            "cachedImageInputTokens": self.cached_image_input_tokens or None,
+            "imageOutputTokens": self.image_output_tokens or None,
             "requestId": self.request_id,
             "occurredAt": occurred_at,
             "metadata": self.metadata,
@@ -227,10 +235,38 @@ def _n(value: Any) -> int:
 
 
 def _cached_audio(input_tokens: int, cached: int, audio_in: int, reported: Optional[int]) -> int:
-    """Cached audio input: as reported, or else the least the totals allow."""
+    """Cached audio (or image) input: as reported, or else the least the
+    totals allow."""
     if reported is None:
         reported = max(0, audio_in - (input_tokens - cached))
     return min(reported, audio_in, cached)
+
+
+def usage_from_openai_image(response: Any) -> Optional[Usage]:
+    """OpenAI Images API (``images.generate`` / ``images.edit``): input split
+    into text and image tokens; the output is the generated images. The
+    response names no model, so pass one to track()."""
+    usage = _get(response, "usage")
+    if not isinstance(_get(usage, "input_tokens"), int):
+        return None
+    input_tokens = _n(_get(usage, "input_tokens"))
+    output_tokens = _n(_get(usage, "output_tokens"))
+    details = _get(usage, "input_tokens_details")
+    cached = _n(_get(details, "cached_tokens"))
+    image_in = _n(_get(details, "image_tokens"))
+    output_details = _get(usage, "output_tokens_details")
+    # Older models report no output split: all of it is image.
+    image_out = _n(_get(output_details, "image_tokens")) if output_details is not None else output_tokens
+    return Usage(
+        provider="openai",
+        model=_get(response, "model") or "",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_input_tokens=cached,
+        image_input_tokens=image_in,
+        cached_image_input_tokens=_cached_audio(input_tokens, cached, image_in, None),
+        image_output_tokens=image_out,
+    )
 
 
 def usage_from_openai_chat(response: Any) -> Optional[Usage]:
@@ -342,6 +378,9 @@ def usage_from_response(response: Any) -> Optional[Usage]:
         return usage_from_openai_response(response)
     if kind == "chat.completion":
         return usage_from_openai_chat(response)
+    # An Images API response: generated images in ``data``, no object type.
+    if isinstance(_get(response, "data"), list) and isinstance(_get(response, "created"), int):
+        return usage_from_openai_image(response)
     return None
 
 

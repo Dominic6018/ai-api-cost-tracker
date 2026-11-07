@@ -96,6 +96,25 @@ class UsageFromResponseTest(unittest.TestCase):
         # Without audio the fields are left out.
         self.assertNotIn("audioInputTokens", usage_from_response(OPENAI_CHAT).to_payload())
 
+    def test_openai_images_response(self):
+        generated = {
+            "created": 1794000000,
+            "data": [{"b64_json": "..."}],
+            "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": {"text_tokens": 200, "image_tokens": 800},
+                "output_tokens": 4000,
+            },
+        }
+        usage = usage_from_response(generated)
+        self.assertEqual(
+            usage, Usage("openai", "", 1000, 4000, image_input_tokens=800, image_output_tokens=4000)
+        )
+        self.assertEqual(usage.to_payload()["imageOutputTokens"], 4000)
+        self.assertNotIn("cachedImageInputTokens", usage.to_payload())
+        split = {**generated, "usage": {**generated["usage"], "output_tokens_details": {"image_tokens": 3900}}}
+        self.assertEqual(usage_from_response(split).image_output_tokens, 3900)
+
     def test_openai_realtime_response(self):
         realtime = {
             "object": "realtime.response",

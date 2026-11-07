@@ -32,6 +32,9 @@ function row(
     audioInputPerMTokUsd: null,
     cachedAudioInputPerMTokUsd: null,
     audioOutputPerMTokUsd: null,
+    imageInputPerMTokUsd: null,
+    cachedImageInputPerMTokUsd: null,
+    imageOutputPerMTokUsd: null,
     ...overrides,
   };
 }
@@ -133,6 +136,19 @@ describe("toTokenPricing", () => {
       batchMultiplier: null,
       longContext: null,
       audio: null,
+      image: null,
+    });
+  });
+
+  it("reads image rates, each optional", () => {
+    expect(
+      toTokenPricing(
+        row(jan, null, "5", { imageOutputPerMTokUsd: "30.000000" }),
+      ).image,
+    ).toEqual({
+      inputPerMTokUsd: null,
+      cachedInputPerMTokUsd: null,
+      outputPerMTokUsd: 30,
     });
   });
 
@@ -186,6 +202,7 @@ describe("toTokenPricing", () => {
         cacheWrite1hPerMTokUsd: 1,
       },
       audio: null,
+      image: null,
     });
   });
 

@@ -104,6 +104,13 @@ export interface Usage extends Attribution {
   audioInputTokens?: number;
   cachedAudioInputTokens?: number;
   audioOutputTokens?: number;
+  /**
+   * Image tokens (OpenAI's image generation models), billed at the model's
+   * image rates, or as text without them: parts of the same totals.
+   */
+  imageInputTokens?: number;
+  cachedImageInputTokens?: number;
+  imageOutputTokens?: number;
   /** The provider's ID for the request; makes retries safe. */
   requestId?: string;
   occurredAt?: string | Date;
@@ -261,6 +268,8 @@ interface AnyResponse {
   usageMetadata?: Record<string, unknown> | null;
   responseId?: string;
   modelVersion?: string;
+  created?: number;
+  data?: unknown;
 }
 
 const n = (value: unknown): number =>
@@ -289,6 +298,41 @@ function audioUsage(
     audioInputTokens: audioIn,
     ...(cached > 0 && { cachedAudioInputTokens: cached }),
     ...(audioOut > 0 && { audioOutputTokens: audioOut }),
+  };
+}
+
+/**
+ * OpenAI Images API (`images.generate` / `images.edit`): input split into
+ * text and image tokens; the output is the generated images. The response
+ * names no model, so pass one to track().
+ */
+export function usageFromOpenAIImage(response: AnyResponse): Usage | null {
+  const usage = response.usage;
+  if (!usage || typeof usage.input_tokens !== "number") return null;
+  const inputTokens = n(usage.input_tokens);
+  const outputTokens = n(usage.output_tokens);
+  const inputDetails = details(usage.input_tokens_details);
+  const cachedInputTokens = n(inputDetails.cached_tokens);
+  const imageIn = n(inputDetails.image_tokens);
+  const outputDetails = usage.output_tokens_details;
+  // Older models report no output split: all of it is image.
+  const imageOut = outputDetails
+    ? n(details(outputDetails).image_tokens)
+    : outputTokens;
+  const cachedImage = Math.min(
+    Math.max(0, imageIn - (inputTokens - cachedInputTokens)),
+    imageIn,
+    cachedInputTokens,
+  );
+  return {
+    provider: "openai",
+    model: response.model ?? "",
+    inputTokens,
+    outputTokens,
+    ...(cachedInputTokens > 0 && { cachedInputTokens }),
+    ...(imageIn > 0 && { imageInputTokens: imageIn }),
+    ...(cachedImage > 0 && { cachedImageInputTokens: cachedImage }),
+    ...(imageOut > 0 && { imageOutputTokens: imageOut }),
   };
 }
 
@@ -413,6 +457,10 @@ export function usageFromResponse(response: unknown): Usage | null {
     return usageFromOpenAIResponse(r);
   }
   if (r.object === "chat.completion") return usageFromOpenAIChat(r);
+  // An Images API response: generated images in `data`, no object type.
+  if (Array.isArray(r.data) && typeof r.created === "number") {
+    return usageFromOpenAIImage(r);
+  }
   return null;
 }
 

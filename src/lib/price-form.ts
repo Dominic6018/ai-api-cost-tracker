@@ -37,6 +37,9 @@ export const PRICE_FIELDS = [
   "audioInputPerMTokUsd",
   "cachedAudioInputPerMTokUsd",
   "audioOutputPerMTokUsd",
+  "imageInputPerMTokUsd",
+  "cachedImageInputPerMTokUsd",
+  "imageOutputPerMTokUsd",
   "effectiveFrom",
   "sourceUrl",
   "checkedOn",
@@ -170,6 +173,10 @@ function priceFormSchema(now: Date) {
       audioInputPerMTokUsd: optionalRate,
       cachedAudioInputPerMTokUsd: optionalRate,
       audioOutputPerMTokUsd: optionalRate,
+      // Each optional on its own: unset image rates fall back to text ones.
+      imageInputPerMTokUsd: optionalRate,
+      cachedImageInputPerMTokUsd: optionalRate,
+      imageOutputPerMTokUsd: optionalRate,
       effectiveFrom: utcDateTimeField,
       sourceUrl: sourceUrlField(
         "Where was this price read? Enter the pricing page's URL",

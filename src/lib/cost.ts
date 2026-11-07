@@ -20,6 +20,12 @@ export interface TokenUsage {
   cachedAudioInputTokens?: number;
   /** Portion of outputTokens that is audio. */
   audioOutputTokens?: number;
+  /** Portion of inputTokens that is image, cached or not. */
+  imageInputTokens?: number;
+  /** Portion of imageInputTokens (and of cachedInputTokens) read from cache. */
+  cachedImageInputTokens?: number;
+  /** Portion of outputTokens that is image. */
+  imageOutputTokens?: number;
   /**
    * Defaults to standard. "batch" applies the batch multiplier; "flex" and
    * "fast" are priced from their own rows, so pass their pricing.
@@ -47,6 +53,17 @@ export interface AudioRates {
   outputPerMTokUsd: number;
 }
 
+/**
+ * A model's image token prices in USD per 1M tokens. Each falls back to
+ * the matching text rate in effect (vision models bill image input as
+ * text); cached image input falls back to image input when that is set.
+ */
+export interface ImageRates {
+  inputPerMTokUsd?: number | null;
+  cachedInputPerMTokUsd?: number | null;
+  outputPerMTokUsd?: number | null;
+}
+
 /** A model's prices, optionally with higher rates for long prompts. */
 export interface TokenPricing extends TokenRates {
   /**
@@ -65,6 +82,8 @@ export interface TokenPricing extends TokenRates {
    * priced: audio usage then throws, which callers check first.
    */
   audio?: AudioRates | null;
+  /** Image token rates, the same for long prompts; null bills them as text. */
+  image?: ImageRates | null;
 }
 
 /** Whether a request has any audio tokens. */
@@ -109,7 +128,7 @@ export function ratesForUsage(
  * Computes the USD cost of a request, rounded to 6 decimal places to match
  * the `cost_usd` column precision. Cached and cache-write input tokens are
  * billed at their own rates and not double-counted at the input rate, and
- * so are audio tokens, at the model's audio rates.
+ * so are audio and image tokens, at the model's audio and image rates.
  * Batch usage costs the standard price times the model's batch multiplier;
  * it throws when the model has none, which callers check first.
  */
@@ -123,6 +142,9 @@ export function calculateCostUsd(
   const audioIn = usage.audioInputTokens ?? 0;
   const cachedAudio = usage.cachedAudioInputTokens ?? 0;
   const audioOut = usage.audioOutputTokens ?? 0;
+  const imageIn = usage.imageInputTokens ?? 0;
+  const cachedImage = usage.cachedImageInputTokens ?? 0;
+  const imageOut = usage.imageOutputTokens ?? 0;
   assertCount("inputTokens", usage.inputTokens);
   assertCount("outputTokens", usage.outputTokens);
   assertCount("cachedInputTokens", cached);
@@ -131,6 +153,9 @@ export function calculateCostUsd(
   assertCount("audioInputTokens", audioIn);
   assertCount("cachedAudioInputTokens", cachedAudio);
   assertCount("audioOutputTokens", audioOut);
+  assertCount("imageInputTokens", imageIn);
+  assertCount("cachedImageInputTokens", cachedImage);
+  assertCount("imageOutputTokens", imageOut);
   if (cached + writes > usage.inputTokens) {
     throw new RangeError(
       `cachedInputTokens (${cached}) plus cacheWriteInputTokens (${writes}) cannot exceed inputTokens (${usage.inputTokens})`,
@@ -141,19 +166,26 @@ export function calculateCostUsd(
       `cacheWrite1hInputTokens (${writes1h}) cannot exceed cacheWriteInputTokens (${writes})`,
     );
   }
-  if (cachedAudio > audioIn || cachedAudio > cached) {
+  if (cachedAudio > audioIn || cachedImage > imageIn) {
     throw new RangeError(
-      `cachedAudioInputTokens (${cachedAudio}) cannot exceed audioInputTokens (${audioIn}) or cachedInputTokens (${cached})`,
+      `cached audio (${cachedAudio}) and image (${cachedImage}) input cannot exceed their audio (${audioIn}) and image (${imageIn}) input`,
     );
   }
-  if (audioIn - cachedAudio > usage.inputTokens - cached - writes) {
+  if (cachedAudio + cachedImage > cached) {
     throw new RangeError(
-      `uncached audio input (${audioIn - cachedAudio}) cannot exceed uncached input (${usage.inputTokens - cached - writes})`,
+      `cached audio and image input (${cachedAudio + cachedImage}) cannot exceed cachedInputTokens (${cached})`,
     );
   }
-  if (audioOut > usage.outputTokens) {
+  const uncachedAudio = audioIn - cachedAudio;
+  const uncachedImage = imageIn - cachedImage;
+  if (uncachedAudio + uncachedImage > usage.inputTokens - cached - writes) {
     throw new RangeError(
-      `audioOutputTokens (${audioOut}) cannot exceed outputTokens (${usage.outputTokens})`,
+      `uncached audio and image input (${uncachedAudio + uncachedImage}) cannot exceed uncached input (${usage.inputTokens - cached - writes})`,
+    );
+  }
+  if (audioOut + imageOut > usage.outputTokens) {
+    throw new RangeError(
+      `audio and image output (${audioOut + imageOut}) cannot exceed outputTokens (${usage.outputTokens})`,
     );
   }
   const audio = pricing.audio;
@@ -178,8 +210,8 @@ export function calculateCostUsd(
   assertPrice("cacheWritePerMTokUsd", writeRate);
   assertPrice("cacheWrite1hPerMTokUsd", write1hRate);
 
-  // Audio tokens are part of the input, cached and output totals, and
-  // billed at the audio rates instead of the text ones.
+  // Audio and image tokens are part of the input, cached and output
+  // totals, and billed at their own rates instead of the text ones.
   let audioCost = 0;
   if (audio) {
     const audioCachedRate =
@@ -188,18 +220,32 @@ export function calculateCostUsd(
     assertPrice("audio.cachedInputPerMTokUsd", audioCachedRate);
     assertPrice("audio.outputPerMTokUsd", audio.outputPerMTokUsd);
     audioCost =
-      (audioIn - cachedAudio) * audio.inputPerMTokUsd +
+      uncachedAudio * audio.inputPerMTokUsd +
       cachedAudio * audioCachedRate +
       audioOut * audio.outputPerMTokUsd;
   }
+  const image = pricing.image;
+  const imageInRate = image?.inputPerMTokUsd ?? inputRate;
+  const imageCachedRate =
+    image?.cachedInputPerMTokUsd ?? image?.inputPerMTokUsd ?? cachedRate;
+  const imageOutRate = image?.outputPerMTokUsd ?? rates.outputPerMTokUsd;
+  assertPrice("image.inputPerMTokUsd", imageInRate);
+  assertPrice("image.cachedInputPerMTokUsd", imageCachedRate);
+  assertPrice("image.outputPerMTokUsd", imageOutRate);
+  const imageCost =
+    uncachedImage * imageInRate +
+    cachedImage * imageCachedRate +
+    imageOut * imageOutRate;
+
   const standard =
-    ((usage.inputTokens - cached - writes - (audioIn - cachedAudio)) *
+    ((usage.inputTokens - cached - writes - uncachedAudio - uncachedImage) *
       inputRate +
-      (cached - cachedAudio) * cachedRate +
+      (cached - cachedAudio - cachedImage) * cachedRate +
       (writes - writes1h) * writeRate +
       writes1h * write1hRate +
-      (usage.outputTokens - audioOut) * rates.outputPerMTokUsd +
-      audioCost) /
+      (usage.outputTokens - audioOut - imageOut) * rates.outputPerMTokUsd +
+      audioCost +
+      imageCost) /
     TOKENS_PER_MILLION;
 
   if (usage.serviceTier !== "batch") {
