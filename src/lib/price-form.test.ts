@@ -63,6 +63,9 @@ describe("parsePriceForm", () => {
         audioInputPerMTokUsd: null,
         cachedAudioInputPerMTokUsd: null,
         audioOutputPerMTokUsd: null,
+        imageInputPerMTokUsd: null,
+        cachedImageInputPerMTokUsd: null,
+        imageOutputPerMTokUsd: null,
         effectiveFrom: new Date("2026-12-01T00:00:00Z"),
         sourceUrl: valid.sourceUrl,
         checkedOn: "2026-11-06",
@@ -138,6 +141,21 @@ describe("parsePriceForm", () => {
       NOW,
     );
     expect(result.ok && result.input.webSearchPer1kUsd).toBe(parsed);
+  });
+
+  it("accepts any image rate on its own", () => {
+    const result = parsePriceForm(
+      form({ ...valid, imageOutputPerMTokUsd: "30" }),
+      NOW,
+    );
+    expect(result.ok && result.input).toMatchObject({
+      imageInputPerMTokUsd: null,
+      cachedImageInputPerMTokUsd: null,
+      imageOutputPerMTokUsd: "30",
+    });
+    expect(errors({ ...valid, imageInputPerMTokUsd: "eight" })).toHaveProperty(
+      "imageInputPerMTokUsd",
+    );
   });
 
   it("accepts audio rates, requiring input and output together", () => {

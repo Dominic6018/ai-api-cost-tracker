@@ -31,6 +31,9 @@ const pricing: FocusPricing = {
   audioInputPerMTokUsd: null,
   cachedAudioInputPerMTokUsd: null,
   audioOutputPerMTokUsd: null,
+  imageInputPerMTokUsd: null,
+  cachedImageInputPerMTokUsd: null,
+  imageOutputPerMTokUsd: null,
 };
 
 const usage: FocusUsage = {
@@ -56,6 +59,9 @@ const usage: FocusUsage = {
   audioInputTokens: 0,
   cachedAudioInputTokens: 0,
   audioOutputTokens: 0,
+  imageInputTokens: 0,
+  cachedImageInputTokens: 0,
+  imageOutputTokens: 0,
 };
 
 /** Sum of ListCost in micro-dollars, rounded half up like stored costs. */
@@ -193,6 +199,49 @@ describe("focusRows", () => {
     expect(byKey["audio-output"].SkuMeter).toBe("Audio Output Tokens");
     const recorded = calculateCostUsd(spoken, toTokenPricing(withAudio));
     expect(listCostMicros(audioRows)).toBe(Math.round(recorded * 1e6));
+  });
+
+  it("lists image tokens at the image rates, or as text without them", () => {
+    const imaged = {
+      ...usage,
+      imageInputTokens: 2_000,
+      cachedImageInputTokens: 1_000,
+      imageOutputTokens: 500,
+    };
+    const ownRates = {
+      ...pricing,
+      imageInputPerMTokUsd: "8",
+      cachedImageInputPerMTokUsd: "2",
+      imageOutputPerMTokUsd: "30",
+    };
+    const sku = (rows: ReturnType<typeof focusRows>, key: string) =>
+      rows.find((r) => r.SkuId?.endsWith("/" + key));
+    const own = focusRows(imaged, ownRates);
+    expect(sku(own, "image-input")).toMatchObject({
+      ConsumedQuantity: "1000",
+      ListUnitPrice: "8",
+      SkuMeter: "Image Input Tokens",
+    });
+    expect(sku(own, "cached-image-input")).toMatchObject({
+      ConsumedQuantity: "1000",
+      ListUnitPrice: "2",
+    });
+    expect(sku(own, "image-output")).toMatchObject({
+      ConsumedQuantity: "500",
+      ListUnitPrice: "30",
+    });
+    expect(sku(own, "output")).toMatchObject({ ConsumedQuantity: "200" });
+    // Without image rates: Haiku's text rates.
+    const asText = focusRows(imaged, pricing);
+    expect(sku(asText, "image-input")?.ListUnitPrice).toBe("0.1");
+    expect(sku(asText, "image-output")?.ListUnitPrice).toBe("0.5");
+    for (const [rows, p] of [
+      [own, ownRates],
+      [asText, pricing],
+    ] as const) {
+      const recorded = calculateCostUsd(imaged, toTokenPricing(p));
+      expect(listCostMicros(rows)).toBe(Math.round(recorded * 1e6));
+    }
   });
 
   it("refuses audio tokens without audio rates", () => {
@@ -361,6 +410,10 @@ describe("ratesFor", () => {
       "audio-input": "0",
       "cached-audio-input": "0",
       "audio-output": "0",
+      // Image tokens without image rates are priced as text.
+      "image-input": "0.10",
+      "cached-image-input": "0.10",
+      "image-output": "0.50",
     });
   });
 

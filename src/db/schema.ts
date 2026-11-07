@@ -146,6 +146,21 @@ export const modelPricing = pgTable(
       precision: 12,
       scale: 6,
     }),
+    // Image tokens' own rates (OpenAI's image generation models). Each
+    // falls back to the matching text rate, as vision models bill image
+    // input as text. The long-prompt tier doesn't change them.
+    imageInputPerMTokUsd: numeric("image_input_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    cachedImageInputPerMTokUsd: numeric("cached_image_input_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
+    imageOutputPerMTokUsd: numeric("image_output_per_mtok_usd", {
+      precision: 12,
+      scale: 6,
+    }),
     // The processing tier these rates are for: "standard", or a provider's
     // "flex" (cheaper, slower) or "fast" (premium; OpenAI's former priority
     // processing, Anthropic's fast mode), each with its own published rates.
@@ -258,6 +273,13 @@ export const usageEvents = pgTable(
       .notNull()
       .default(0),
     audioOutputTokens: integer("audio_output_tokens").notNull().default(0),
+    // Image tokens, billed at the price's image rates (or text rates without
+    // them): parts of the same totals, alongside any audio.
+    imageInputTokens: integer("image_input_tokens").notNull().default(0),
+    cachedImageInputTokens: integer("cached_image_input_tokens")
+      .notNull()
+      .default(0),
+    imageOutputTokens: integer("image_output_tokens").notNull().default(0),
     webSearchCostUsd: numeric("web_search_cost_usd", {
       precision: 14,
       scale: 6,
@@ -311,6 +333,12 @@ export const usageEvents = pgTable(
     check(
       "usage_events_audio_valid",
       sql`${t.cachedAudioInputTokens} >= 0 AND ${t.cachedAudioInputTokens} <= ${t.audioInputTokens} AND ${t.cachedAudioInputTokens} <= ${t.cachedInputTokens} AND (${t.audioInputTokens} = 0 OR ${t.audioInputTokens} - ${t.cachedAudioInputTokens} <= ${t.inputTokens} - ${t.cachedInputTokens} - ${t.cacheWriteInputTokens}) AND ${t.audioOutputTokens} >= 0 AND ${t.audioOutputTokens} <= ${t.outputTokens}`,
+    ),
+    // Audio and image tokens together fit within the totals. Only rows with
+    // image tokens are constrained, so existing rows can't block this.
+    check(
+      "usage_events_image_valid",
+      sql`${t.cachedImageInputTokens} >= 0 AND ${t.cachedImageInputTokens} <= ${t.imageInputTokens} AND ${t.imageOutputTokens} >= 0 AND (${t.imageInputTokens} = 0 AND ${t.imageOutputTokens} = 0 OR (${t.cachedAudioInputTokens} + ${t.cachedImageInputTokens} <= ${t.cachedInputTokens} AND ${t.audioInputTokens} - ${t.cachedAudioInputTokens} + ${t.imageInputTokens} - ${t.cachedImageInputTokens} <= ${t.inputTokens} - ${t.cachedInputTokens} - ${t.cacheWriteInputTokens} AND ${t.audioOutputTokens} + ${t.imageOutputTokens} <= ${t.outputTokens}))`,
     ),
     uniqueIndex("usage_events_provider_request_idx")
       .on(t.provider, t.requestId)

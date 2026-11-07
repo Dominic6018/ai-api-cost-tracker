@@ -100,6 +100,8 @@ Anthropic web searches are read from `usage.server_tool_use.web_search_requests`
 
 OpenAI audio tokens are read from Chat Completions (`prompt_tokens_details.audio_tokens`, `completion_tokens_details.audio_tokens`) and from a Realtime API `response.done` event's response (`input_token_details`, cached audio included), and billed at the model's audio rates. A Realtime response names no model, so pass it to `track()` (`{ model: "gpt-realtime-2.1" }`). Audio for a model without audio rates is refused (`no_audio_pricing`).
 
+OpenAI Images API responses (`images.generate`, `images.edit`) are read too: image input from `input_tokens_details.image_tokens`, and the output as image tokens. They name no model, so pass it to `track()` (`{ model: "gpt-image-2" }`). Image tokens are billed at the model's image rates; on a model without them (a vision model) they're billed as text.
+
 ## Tags
 
 Free-form labels for anything attribution doesn't cover: up to 20, keys of 1–64 letters, digits and `_ . / -`, values up to 200 characters. Scoped trackers and calls merge tags key by key, the call's own values winning:

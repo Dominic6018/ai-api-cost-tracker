@@ -74,6 +74,9 @@ export const TOKEN_TYPES = [
   { key: "audio-input", meter: "Audio Input Tokens" },
   { key: "cached-audio-input", meter: "Cached Audio Input Tokens" },
   { key: "audio-output", meter: "Audio Output Tokens" },
+  { key: "image-input", meter: "Image Input Tokens" },
+  { key: "cached-image-input", meter: "Cached Image Input Tokens" },
+  { key: "image-output", meter: "Image Output Tokens" },
 ] as const;
 type TokenType = (typeof TOKEN_TYPES)[number]["key"];
 
@@ -117,6 +120,10 @@ export interface FocusUsage {
   audioInputTokens: number;
   cachedAudioInputTokens: number;
   audioOutputTokens: number;
+  /** Image tokens, part of the same counts. */
+  imageInputTokens: number;
+  cachedImageInputTokens: number;
+  imageOutputTokens: number;
 }
 
 /** A price row with its ID, which identifies the SKU price. */
@@ -164,21 +171,25 @@ export function ratesFor(
   const cacheWrite =
     (long ? pricing.longCacheWritePerMTokUsd : pricing.cacheWritePerMTokUsd) ??
     input;
+  const cached =
+    (long
+      ? pricing.longCachedInputPerMTokUsd
+      : pricing.cachedInputPerMTokUsd) ?? input;
+  const output = long
+    ? pricing.longOutputPerMTokUsd!
+    : pricing.outputPerMTokUsd;
   return {
     long,
     rates: {
       input,
-      "cached-input":
-        (long
-          ? pricing.longCachedInputPerMTokUsd
-          : pricing.cachedInputPerMTokUsd) ?? input,
+      "cached-input": cached,
       "cache-write": cacheWrite,
       // As in calculateCostUsd: 1-hour writes fall back to the write rate.
       "cache-write-1h":
         (long
           ? pricing.longCacheWrite1hPerMTokUsd
           : pricing.cacheWrite1hPerMTokUsd) ?? cacheWrite,
-      output: long ? pricing.longOutputPerMTokUsd! : pricing.outputPerMTokUsd,
+      output,
       // Audio rates don't change for long prompts. Without them a row
       // with audio tokens throws in focusRows; "0" is never listed.
       "audio-input": pricing.audioInputPerMTokUsd ?? "0",
@@ -187,6 +198,14 @@ export function ratesFor(
         pricing.audioInputPerMTokUsd ??
         "0",
       "audio-output": pricing.audioOutputPerMTokUsd ?? "0",
+      // Image rates fall back to the text rates in effect, as in
+      // calculateCostUsd.
+      "image-input": pricing.imageInputPerMTokUsd ?? input,
+      "cached-image-input":
+        pricing.cachedImageInputPerMTokUsd ??
+        pricing.imageInputPerMTokUsd ??
+        cached,
+      "image-output": pricing.imageOutputPerMTokUsd ?? output,
     },
   };
 }
@@ -241,6 +260,7 @@ export function focusRows(
   const provider = PROVIDERS[usage.provider];
   const { long, rates } = ratesFor(pricing, usage.inputTokens);
   const uncachedAudio = usage.audioInputTokens - usage.cachedAudioInputTokens;
+  const uncachedImage = usage.imageInputTokens - usage.cachedImageInputTokens;
   if (
     (usage.audioInputTokens > 0 || usage.audioOutputTokens > 0) &&
     pricing.audioInputPerMTokUsd === null
@@ -252,15 +272,40 @@ export function focusRows(
       usage.inputTokens -
       usage.cachedInputTokens -
       usage.cacheWriteInputTokens -
-      uncachedAudio,
-    "cached-input": usage.cachedInputTokens - usage.cachedAudioInputTokens,
+      uncachedAudio -
+      uncachedImage,
+    "cached-input":
+      usage.cachedInputTokens -
+      usage.cachedAudioInputTokens -
+      usage.cachedImageInputTokens,
     "cache-write": usage.cacheWriteInputTokens - usage.cacheWrite1hInputTokens,
     "cache-write-1h": usage.cacheWrite1hInputTokens,
-    output: usage.outputTokens - usage.audioOutputTokens,
+    output:
+      usage.outputTokens - usage.audioOutputTokens - usage.imageOutputTokens,
     "audio-input": uncachedAudio,
     "cached-audio-input": usage.cachedAudioInputTokens,
     "audio-output": usage.audioOutputTokens,
+    "image-input": uncachedImage,
+    "cached-image-input": usage.cachedImageInputTokens,
+    "image-output": usage.imageOutputTokens,
   };
+  // SKUs priced at their own rate, which the long-prompt tier doesn't
+  // change; image tokens without one are priced at the text rates.
+  const ownRate = new Set<TokenType>([
+    "audio-input",
+    "cached-audio-input",
+    "audio-output",
+    ...(pricing.imageInputPerMTokUsd !== null
+      ? (["image-input"] as const)
+      : []),
+    ...(pricing.cachedImageInputPerMTokUsd !== null ||
+    pricing.imageInputPerMTokUsd !== null
+      ? (["cached-image-input"] as const)
+      : []),
+    ...(pricing.imageOutputPerMTokUsd !== null
+      ? (["image-output"] as const)
+      : []),
+  ]);
   const { chargeStart, chargeEnd, billingStart, billingEnd } = periods(
     usage.occurredAt,
   );
@@ -355,8 +400,8 @@ export function focusRows(
         ChargeDescription: `${usage.model} ${meter.toLowerCase()}${tier}`,
         SkuId: `${usage.provider}/${usage.model}/${key}`,
         // One price per SKU: the stored price, its long-prompt tier, and
-        // the batch price (audio rates have no long-prompt tier).
-        SkuPriceId: `${pricing.id}/${key}${long && !key.includes("audio") ? "/long-prompt" : ""}${batch ? "/batch" : ""}`,
+        // the batch price (audio and image rates have no long-prompt tier).
+        SkuPriceId: `${pricing.id}/${key}${long && !ownRate.has(key) ? "/long-prompt" : ""}${batch ? "/batch" : ""}`,
         SkuMeter: meter,
       });
     },

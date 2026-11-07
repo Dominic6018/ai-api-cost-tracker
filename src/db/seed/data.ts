@@ -41,6 +41,15 @@ export interface SeedPrice {
     outputPerMTokUsd: string;
   };
   /**
+   * Image tokens' rates (OpenAI's image generation models); omit to bill
+   * image tokens at the text rates, as vision models do.
+   */
+  image?: {
+    inputPerMTokUsd: string;
+    cachedInputPerMTokUsd?: string;
+    outputPerMTokUsd: string;
+  };
+  /**
    * The processing tier these rates are for; omitted means standard. Flex
    * and fast are separate rows, at their own published rates.
    */
@@ -87,7 +96,7 @@ const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 const CHECKED_ON = "2026-10-28";
 const FROM = `${CHECKED_ON}T00:00:00Z`;
 
-// The flex and fast tier rates at the end, OpenAI's audio models, and
+// The flex and fast tier rates at the end, OpenAI's audio and image models, and
 // gemini-2.5-pro's routing to Gemini 3.8 Flash were checked on this day.
 const TIERS_CHECKED_ON = "2026-11-07";
 const TIERS_FROM = `${TIERS_CHECKED_ON}T00:00:00Z`;
@@ -260,6 +269,57 @@ export const seedPrices: SeedPrice[] = [
       inputPerMTokUsd: "10",
       cachedInputPerMTokUsd: "0.30",
       outputPerMTokUsd: "20",
+    },
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+
+  // OpenAI image generation models: text and image tokens at their own
+  // rates ("Image generation models", checked 2026-11-07). gpt-image-2 and
+  // gpt-image-1-mini list no text output rate, as their output is images,
+  // so their output rate is the image output rate. Cached rates for
+  // gpt-image-2 apply only through the Responses API.
+  {
+    provider: "openai",
+    model: "gpt-image-2",
+    inputPerMTokUsd: "5",
+    outputPerMTokUsd: "30",
+    cachedInputPerMTokUsd: "1.25",
+    image: {
+      inputPerMTokUsd: "8",
+      cachedInputPerMTokUsd: "2",
+      outputPerMTokUsd: "30",
+    },
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-image-1.5",
+    inputPerMTokUsd: "5",
+    outputPerMTokUsd: "10",
+    cachedInputPerMTokUsd: "1.25",
+    image: {
+      inputPerMTokUsd: "8",
+      cachedInputPerMTokUsd: "2",
+      outputPerMTokUsd: "32",
+    },
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-image-1-mini",
+    inputPerMTokUsd: "2",
+    outputPerMTokUsd: "8",
+    cachedInputPerMTokUsd: "0.20",
+    image: {
+      inputPerMTokUsd: "2.50",
+      cachedInputPerMTokUsd: "0.25",
+      outputPerMTokUsd: "8",
     },
     effectiveFrom: TIERS_FROM,
     source: OPENAI,

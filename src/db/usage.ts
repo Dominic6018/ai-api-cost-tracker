@@ -76,7 +76,10 @@ function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
     existing.webSearchRequests === usage.webSearchRequests &&
     existing.audioInputTokens === usage.audioInputTokens &&
     existing.cachedAudioInputTokens === usage.cachedAudioInputTokens &&
-    existing.audioOutputTokens === usage.audioOutputTokens;
+    existing.audioOutputTokens === usage.audioOutputTokens &&
+    existing.imageInputTokens === usage.imageInputTokens &&
+    existing.cachedImageInputTokens === usage.cachedImageInputTokens &&
+    existing.imageOutputTokens === usage.imageOutputTokens;
   return sameUsage
     ? { ok: true, event: existing, replayed: true }
     : { ok: false, error: "request_id_conflict" };
@@ -155,6 +158,9 @@ export async function recordUsage(
         audioInputTokens: usage.audioInputTokens,
         cachedAudioInputTokens: usage.cachedAudioInputTokens,
         audioOutputTokens: usage.audioOutputTokens,
+        imageInputTokens: usage.imageInputTokens,
+        cachedImageInputTokens: usage.cachedImageInputTokens,
+        imageOutputTokens: usage.imageOutputTokens,
         requestId: usage.requestId ?? null,
         occurredAt: usage.occurredAt,
         metadata: usage.metadata ?? null,
