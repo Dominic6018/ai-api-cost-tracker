@@ -32,6 +32,15 @@ export interface SeedPrice {
   /** Charged per 1,000 web searches (Anthropic: "10"); omit when not verified. */
   webSearchPer1kUsd?: string;
   /**
+   * Audio tokens' rates (OpenAI's audio and realtime models); omit for
+   * models without audio. Cached audio falls back to the audio input rate.
+   */
+  audio?: {
+    inputPerMTokUsd: string;
+    cachedInputPerMTokUsd?: string;
+    outputPerMTokUsd: string;
+  };
+  /**
    * The processing tier these rates are for; omitted means standard. Flex
    * and fast are separate rows, at their own published rates.
    */
@@ -78,8 +87,8 @@ const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 const CHECKED_ON = "2026-10-28";
 const FROM = `${CHECKED_ON}T00:00:00Z`;
 
-// The flex and fast tier rates at the end, and gemini-2.5-pro's routing to
-// Gemini 3.8 Flash, were checked on this day.
+// The flex and fast tier rates at the end, OpenAI's audio models, and
+// gemini-2.5-pro's routing to Gemini 3.8 Flash were checked on this day.
 const TIERS_CHECKED_ON = "2026-11-07";
 const TIERS_FROM = `${TIERS_CHECKED_ON}T00:00:00Z`;
 
@@ -199,6 +208,62 @@ export const seedPrices: SeedPrice[] = [
     effectiveFrom: FROM,
     source: OPENAI,
     checkedOn: CHECKED_ON,
+  },
+
+  // OpenAI audio and realtime models: text and audio tokens at their own
+  // rates ("Realtime and audio generation models", checked 2026-11-07). The
+  // gpt-audio models list no cached rates.
+  {
+    provider: "openai",
+    model: "gpt-audio",
+    inputPerMTokUsd: "2.50",
+    outputPerMTokUsd: "10",
+    cachedInputPerMTokUsd: null,
+    audio: { inputPerMTokUsd: "32", outputPerMTokUsd: "64" },
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-audio-mini",
+    inputPerMTokUsd: "0.60",
+    outputPerMTokUsd: "2.40",
+    cachedInputPerMTokUsd: null,
+    audio: { inputPerMTokUsd: "10", outputPerMTokUsd: "20" },
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-realtime-2.1",
+    inputPerMTokUsd: "4",
+    outputPerMTokUsd: "24",
+    cachedInputPerMTokUsd: "0.40",
+    audio: {
+      inputPerMTokUsd: "32",
+      cachedInputPerMTokUsd: "0.40",
+      outputPerMTokUsd: "64",
+    },
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-realtime-2.1-mini",
+    inputPerMTokUsd: "0.60",
+    outputPerMTokUsd: "2.40",
+    cachedInputPerMTokUsd: "0.06",
+    audio: {
+      inputPerMTokUsd: "10",
+      cachedInputPerMTokUsd: "0.30",
+      outputPerMTokUsd: "20",
+    },
+    effectiveFrom: TIERS_FROM,
+    source: OPENAI,
+    checkedOn: TIERS_CHECKED_ON,
   },
 
   // Google: paid tier, Standard. Cached input is the context caching price;

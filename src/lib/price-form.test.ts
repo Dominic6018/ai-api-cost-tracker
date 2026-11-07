@@ -60,6 +60,9 @@ describe("parsePriceForm", () => {
         longCacheWrite1hPerMTokUsd: null,
         batchMultiplier: null,
         webSearchPer1kUsd: null,
+        audioInputPerMTokUsd: null,
+        cachedAudioInputPerMTokUsd: null,
+        audioOutputPerMTokUsd: null,
         effectiveFrom: new Date("2026-12-01T00:00:00Z"),
         sourceUrl: valid.sourceUrl,
         checkedOn: "2026-11-06",
@@ -135,6 +138,29 @@ describe("parsePriceForm", () => {
       NOW,
     );
     expect(result.ok && result.input.webSearchPer1kUsd).toBe(parsed);
+  });
+
+  it("accepts audio rates, requiring input and output together", () => {
+    const result = parsePriceForm(
+      form({
+        ...valid,
+        audioInputPerMTokUsd: "32",
+        audioOutputPerMTokUsd: "64",
+      }),
+      NOW,
+    );
+    expect(result.ok && result.input).toMatchObject({
+      audioInputPerMTokUsd: "32",
+      cachedAudioInputPerMTokUsd: null,
+      audioOutputPerMTokUsd: "64",
+    });
+    expect(errors({ ...valid, cachedAudioInputPerMTokUsd: "0.4" })).toEqual({
+      audioInputPerMTokUsd: "Required for audio pricing",
+      audioOutputPerMTokUsd: "Required for audio pricing",
+    });
+    expect(errors({ ...valid, audioInputPerMTokUsd: "32" })).toEqual({
+      audioOutputPerMTokUsd: "Required for audio pricing",
+    });
   });
 
   it.each(["-1", "$10", "1234567", "0.0000001"])(

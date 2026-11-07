@@ -81,6 +81,42 @@ class UsageFromResponseTest(unittest.TestCase):
             Usage("openai", "gpt-5.4-mini", 2000, 700, cached_input_tokens=512, request_id="resp_abc123"),
         )
 
+    def test_openai_chat_audio_tokens(self):
+        details = {"cached_tokens": 1000, "audio_tokens": 1000}
+        spoken = {**OPENAI_CHAT, "usage": {**OPENAI_CHAT["usage"], "prompt_tokens_details": details,
+                                           "completion_tokens_details": {"audio_tokens": 250}}}
+        usage = usage_from_response(spoken)
+        # 1,000 audio but only 200 uncached input, so at least 800 was cached.
+        self.assertEqual(
+            (usage.audio_input_tokens, usage.cached_audio_input_tokens, usage.audio_output_tokens), (1000, 800, 250)
+        )
+        payload = usage.to_payload()
+        self.assertEqual(payload["audioInputTokens"], 1000)
+        self.assertEqual(payload["audioOutputTokens"], 250)
+        # Without audio the fields are left out.
+        self.assertNotIn("audioInputTokens", usage_from_response(OPENAI_CHAT).to_payload())
+
+    def test_openai_realtime_response(self):
+        realtime = {
+            "object": "realtime.response",
+            "id": "resp_rt1",
+            "usage": {
+                "input_tokens": 2500,
+                "output_tokens": 500,
+                "input_token_details": {
+                    "cached_tokens": 1200,
+                    "audio_tokens": 2000,
+                    "cached_tokens_details": {"text_tokens": 200, "audio_tokens": 1000},
+                },
+                "output_token_details": {"audio_tokens": 400},
+            },
+        }
+        self.assertEqual(
+            usage_from_response(realtime),
+            Usage("openai", "", 2500, 500, cached_input_tokens=1200, request_id="resp_rt1",
+                  audio_input_tokens=2000, cached_audio_input_tokens=1000, audio_output_tokens=400),
+        )
+
     def test_anthropic_adds_cache_reads_and_writes_to_input(self):
         self.assertEqual(
             usage_from_response(ANTHROPIC),

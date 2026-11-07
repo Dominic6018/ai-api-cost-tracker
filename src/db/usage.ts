@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { microsToDecimal, toMicros } from "@/lib/budget";
-import { calculateCostUsd, webSearchCostMicros } from "@/lib/cost";
+import { calculateCostUsd, hasAudio, webSearchCostMicros } from "@/lib/cost";
 import { priceTierFor } from "@/lib/pricing";
 import type { UsageInput } from "@/lib/usage";
 import { findEffectivePricing } from "./pricing";
@@ -24,6 +24,7 @@ export type RecordUsageResult =
         | "no_batch_pricing"
         | "no_tier_pricing"
         | "no_web_search_pricing"
+        | "no_audio_pricing"
         | "project_not_found"
         | "request_id_conflict";
     };
@@ -72,7 +73,10 @@ function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
     existing.cacheWriteInputTokens === usage.cacheWriteInputTokens &&
     existing.cacheWrite1hInputTokens === usage.cacheWrite1hInputTokens &&
     existing.serviceTier === usage.serviceTier &&
-    existing.webSearchRequests === usage.webSearchRequests;
+    existing.webSearchRequests === usage.webSearchRequests &&
+    existing.audioInputTokens === usage.audioInputTokens &&
+    existing.cachedAudioInputTokens === usage.cachedAudioInputTokens &&
+    existing.audioOutputTokens === usage.audioOutputTokens;
   return sameUsage
     ? { ok: true, event: existing, replayed: true }
     : { ok: false, error: "request_id_conflict" };
@@ -119,6 +123,12 @@ export async function recordUsage(
     return { ok: false, error: "no_web_search_pricing" };
   }
 
+  // Audio tokens are billed at audio rates; without them they'd be
+  // billed as (much cheaper) text.
+  if (hasAudio(usage) && !lookup.pricing.audio) {
+    return { ok: false, error: "no_audio_pricing" };
+  }
+
   const searchMicros =
     usage.webSearchRequests > 0 && searchPrice !== null
       ? webSearchCostMicros(usage.webSearchRequests, searchPrice)
@@ -142,6 +152,9 @@ export async function recordUsage(
         costUsd: microsToDecimal(costMicros),
         webSearchRequests: usage.webSearchRequests,
         webSearchCostUsd: microsToDecimal(searchMicros),
+        audioInputTokens: usage.audioInputTokens,
+        cachedAudioInputTokens: usage.cachedAudioInputTokens,
+        audioOutputTokens: usage.audioOutputTokens,
         requestId: usage.requestId ?? null,
         occurredAt: usage.occurredAt,
         metadata: usage.metadata ?? null,

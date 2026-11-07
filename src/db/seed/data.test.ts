@@ -185,6 +185,35 @@ describe("gemini-2.5-pro routing to Gemini 3.8 Flash", () => {
   });
 });
 
+describe("seed audio prices", () => {
+  const audio = seedPrices.filter((p) => p.audio);
+
+  it("seeds OpenAI's audio and realtime models", () => {
+    expect(audio.map((p) => p.model)).toEqual([
+      "gpt-audio",
+      "gpt-audio-mini",
+      "gpt-realtime-2.1",
+      "gpt-realtime-2.1-mini",
+    ]);
+  });
+
+  it("charges more for audio than text, and caches it no higher", () => {
+    for (const p of audio) {
+      expect(Number(p.audio!.inputPerMTokUsd)).toBeGreaterThan(
+        Number(p.inputPerMTokUsd),
+      );
+      expect(Number(p.audio!.outputPerMTokUsd)).toBeGreaterThan(
+        Number(p.outputPerMTokUsd),
+      );
+      if (p.audio!.cachedInputPerMTokUsd) {
+        expect(Number(p.audio!.cachedInputPerMTokUsd)).toBeLessThanOrEqual(
+          Number(p.audio!.inputPerMTokUsd),
+        );
+      }
+    }
+  });
+});
+
 describe("sample projects", () => {
   it("has at least one project with unique slugs", () => {
     expect(sampleProjects.length).toBeGreaterThan(0);

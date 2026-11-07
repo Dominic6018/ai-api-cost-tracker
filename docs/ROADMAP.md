@@ -98,7 +98,8 @@ Recording usage shouldn't require hand-written API calls.
   - [x] Follow announced changes: Gemini 2.5 Pro billed at Gemini 3.8 Flash rates from 2026-12-01 (#107)
   - [ ] Non-token charges:
     - [x] Web search, per 1,000 searches (#105)
-    - [ ] Images and audio
+    - [x] Audio tokens at their own rates (#109)
+    - [ ] Image tokens
 - [ ] OpenAI long-context tiers, once their rates can be verified from the pricing page
 
 ## Milestone 10: Teams

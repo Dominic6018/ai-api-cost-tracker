@@ -38,6 +38,13 @@ export const usagePayloadSchema = z
     // Web searches the request ran (Anthropic: usage.server_tool_use
     // .web_search_requests), charged per search on top of tokens.
     webSearchRequests: tokenCount.default(0),
+    // Audio tokens, billed at the model's audio rates (OpenAI: usage
+    // .prompt_tokens_details.audio_tokens and completion_tokens_details
+    // .audio_tokens). Each is part of inputTokens, cachedInputTokens and
+    // outputTokens respectively.
+    audioInputTokens: tokenCount.default(0),
+    cachedAudioInputTokens: tokenCount.default(0),
+    audioOutputTokens: tokenCount.default(0),
     // "batch" for a provider's discounted Batch API (Anthropic: 50%).
     serviceTier: z.enum(SERVICE_TIERS).default("standard"),
     requestId: z.string().trim().min(1).max(200).optional(),
@@ -79,7 +86,31 @@ export const usagePayloadSchema = z
       message:
         "cacheWrite1hInputTokens is part of cacheWriteInputTokens and cannot exceed it",
     },
-  );
+  )
+  .refine(
+    (usage) =>
+      usage.cachedAudioInputTokens <= usage.audioInputTokens &&
+      usage.cachedAudioInputTokens <= usage.cachedInputTokens,
+    {
+      path: ["cachedAudioInputTokens"],
+      message:
+        "cachedAudioInputTokens is part of both audioInputTokens and cachedInputTokens and cannot exceed either",
+    },
+  )
+  .refine(
+    (usage) =>
+      usage.audioInputTokens - usage.cachedAudioInputTokens <=
+      usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens,
+    {
+      path: ["audioInputTokens"],
+      message:
+        "Uncached audio input tokens cannot exceed the uncached input tokens",
+    },
+  )
+  .refine((usage) => usage.audioOutputTokens <= usage.outputTokens, {
+    path: ["audioOutputTokens"],
+    message: "audioOutputTokens is part of outputTokens and cannot exceed it",
+  });
 
 export type UsagePayload = z.infer<typeof usagePayloadSchema>;
 
