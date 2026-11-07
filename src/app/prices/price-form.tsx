@@ -205,6 +205,18 @@ export function PriceForm({ action }: { action: Action }) {
       </fieldset>
 
       <fieldset className="grid gap-5 sm:grid-cols-2">
+        <legend className="mb-3 text-sm font-medium">Images (optional)</legend>
+        <p className="text-sm text-foreground/70 sm:col-span-2">
+          For image generation models, which bill image tokens at their own
+          rates. Any left empty bills image tokens at the matching text rate, as
+          vision models do.
+        </p>
+        {field("imageInputPerMTokUsd", "Image input", RATE_PROPS)}
+        {field("cachedImageInputPerMTokUsd", "Cached image input", RATE_PROPS)}
+        {field("imageOutputPerMTokUsd", "Image output", RATE_PROPS)}
+      </fieldset>
+
+      <fieldset className="grid gap-5 sm:grid-cols-2">
         <legend className="mb-3 text-sm font-medium">
           Web search (optional)
         </legend>

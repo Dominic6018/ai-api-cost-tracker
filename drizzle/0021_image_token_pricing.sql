@@ -1,0 +1,7 @@
+ALTER TABLE "model_pricing" ADD COLUMN "image_input_per_mtok_usd" numeric(12, 6);--> statement-breakpoint
+ALTER TABLE "model_pricing" ADD COLUMN "cached_image_input_per_mtok_usd" numeric(12, 6);--> statement-breakpoint
+ALTER TABLE "model_pricing" ADD COLUMN "image_output_per_mtok_usd" numeric(12, 6);--> statement-breakpoint
+ALTER TABLE "usage_events" ADD COLUMN "image_input_tokens" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "usage_events" ADD COLUMN "cached_image_input_tokens" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "usage_events" ADD COLUMN "image_output_tokens" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "usage_events" ADD CONSTRAINT "usage_events_image_valid" CHECK ("usage_events"."cached_image_input_tokens" >= 0 AND "usage_events"."cached_image_input_tokens" <= "usage_events"."image_input_tokens" AND "usage_events"."image_output_tokens" >= 0 AND ("usage_events"."image_input_tokens" = 0 AND "usage_events"."image_output_tokens" = 0 OR ("usage_events"."cached_audio_input_tokens" + "usage_events"."cached_image_input_tokens" <= "usage_events"."cached_input_tokens" AND "usage_events"."audio_input_tokens" - "usage_events"."cached_audio_input_tokens" + "usage_events"."image_input_tokens" - "usage_events"."cached_image_input_tokens" <= "usage_events"."input_tokens" - "usage_events"."cached_input_tokens" - "usage_events"."cache_write_input_tokens" AND "usage_events"."audio_output_tokens" + "usage_events"."image_output_tokens" <= "usage_events"."output_tokens")));

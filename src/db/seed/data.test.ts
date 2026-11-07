@@ -214,6 +214,25 @@ describe("seed audio prices", () => {
   });
 });
 
+describe("seed image prices", () => {
+  it("seeds OpenAI's image models, image output above text input", () => {
+    const image = seedPrices.filter((p) => p.image);
+    expect(image.map((p) => p.model)).toEqual([
+      "gpt-image-2",
+      "gpt-image-1.5",
+      "gpt-image-1-mini",
+    ]);
+    for (const p of image) {
+      expect(Number(p.image!.outputPerMTokUsd)).toBeGreaterThan(
+        Number(p.inputPerMTokUsd),
+      );
+      expect(Number(p.image!.cachedInputPerMTokUsd)).toBeLessThanOrEqual(
+        Number(p.image!.inputPerMTokUsd),
+      );
+    }
+  });
+});
+
 describe("sample projects", () => {
   it("has at least one project with unique slugs", () => {
     expect(sampleProjects.length).toBeGreaterThan(0);

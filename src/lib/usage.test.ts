@@ -31,6 +31,9 @@ describe("parseUsagePayload", () => {
         audioInputTokens: 0,
         cachedAudioInputTokens: 0,
         audioOutputTokens: 0,
+        imageInputTokens: 0,
+        cachedImageInputTokens: 0,
+        imageOutputTokens: 0,
         occurredAt: now,
       },
     });
@@ -135,6 +138,54 @@ describe("parseUsagePayload", () => {
         cachedAudioInputTokens: 200,
       }),
     ).toHaveProperty("cachedAudioInputTokens");
+  });
+
+  it("accepts image tokens, checking them with audio against the totals", () => {
+    const base = {
+      ...valid,
+      inputTokens: 1000,
+      cachedInputTokens: 300,
+      outputTokens: 500,
+    };
+    const ok = parseUsagePayload(
+      {
+        ...base,
+        imageInputTokens: 600,
+        cachedImageInputTokens: 100,
+        imageOutputTokens: 300,
+        audioOutputTokens: 200,
+      },
+      now,
+    );
+    expect(ok.ok && ok.usage).toMatchObject({
+      imageInputTokens: 600,
+      cachedImageInputTokens: 100,
+      imageOutputTokens: 300,
+    });
+    expect(
+      fieldErrors({ ...base, imageOutputTokens: 300, audioOutputTokens: 201 }),
+    ).toHaveProperty("imageOutputTokens");
+    // 500 uncached image + 300 uncached audio, but only 700 uncached input.
+    expect(
+      fieldErrors({ ...base, imageInputTokens: 500, audioInputTokens: 300 }),
+    ).toHaveProperty("imageInputTokens");
+    // 200 cached image + 200 cached audio, but only 300 cached.
+    expect(
+      fieldErrors({
+        ...base,
+        imageInputTokens: 200,
+        cachedImageInputTokens: 200,
+        audioInputTokens: 200,
+        cachedAudioInputTokens: 200,
+      }),
+    ).toHaveProperty("cachedImageInputTokens");
+    expect(
+      fieldErrors({
+        ...base,
+        imageInputTokens: 10,
+        cachedImageInputTokens: 11,
+      }),
+    ).toHaveProperty("cachedImageInputTokens");
   });
 
   it("accepts web search counts, and rejects negative or fractional ones", () => {

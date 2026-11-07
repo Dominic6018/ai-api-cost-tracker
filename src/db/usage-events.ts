@@ -34,6 +34,9 @@ export interface UsageEventRow {
   audioInputTokens: number;
   cachedAudioInputTokens: number;
   audioOutputTokens: number;
+  imageInputTokens: number;
+  cachedImageInputTokens: number;
+  imageOutputTokens: number;
   outputTokens: number;
   costUsd: string;
   requestId: string | null;
@@ -89,6 +92,9 @@ export function usageEventsQuery(
         audioInputTokens: usageEvents.audioInputTokens,
         cachedAudioInputTokens: usageEvents.cachedAudioInputTokens,
         audioOutputTokens: usageEvents.audioOutputTokens,
+        imageInputTokens: usageEvents.imageInputTokens,
+        cachedImageInputTokens: usageEvents.cachedImageInputTokens,
+        imageOutputTokens: usageEvents.imageOutputTokens,
         outputTokens: usageEvents.outputTokens,
         costUsd: usageEvents.costUsd,
         requestId: usageEvents.requestId,

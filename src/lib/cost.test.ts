@@ -577,3 +577,116 @@ describe("audio tokens", () => {
     }
   });
 });
+
+describe("image tokens", () => {
+  // gpt-image-1.5: text $5 / $1.25 cached / $10 out; image $8 / $2 / $32.
+  const imageModel = {
+    inputPerMTokUsd: 5,
+    outputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 1.25,
+    image: {
+      inputPerMTokUsd: 8,
+      cachedInputPerMTokUsd: 2,
+      outputPerMTokUsd: 32,
+    },
+  };
+
+  it("bills image tokens at the image rates and the rest as text", () => {
+    // Text: 100 x $5 + 100 cached x $1.25 + 50 out x $10
+    // Image: 600 x $8 + 200 cached x $2 + 4,000 out x $32
+    const usage = {
+      inputTokens: 1_000,
+      cachedInputTokens: 300,
+      imageInputTokens: 800,
+      cachedImageInputTokens: 200,
+      outputTokens: 4_050,
+      imageOutputTokens: 4_000,
+    };
+    expect(calculateCostUsd(usage, imageModel)).toBe(0.134_325);
+  });
+
+  it("bills image tokens as text without image rates, as vision models do", () => {
+    const vision = {
+      inputPerMTokUsd: 2,
+      outputPerMTokUsd: 8,
+      cachedInputPerMTokUsd: 0.5,
+    };
+    const usage = {
+      inputTokens: 1_000,
+      cachedInputTokens: 400,
+      cachedImageInputTokens: 400,
+      imageInputTokens: 900,
+      outputTokens: 100,
+    };
+    expect(calculateCostUsd(usage, vision)).toBe(
+      calculateCostUsd(
+        { inputTokens: 1_000, cachedInputTokens: 400, outputTokens: 100 },
+        vision,
+      ),
+    );
+    // Each unset image rate falls back on its own; cached image falls back
+    // to image input when that is set.
+    expect(
+      calculateCostUsd(
+        {
+          inputTokens: 1_000_000,
+          cachedInputTokens: 1_000_000,
+          imageInputTokens: 1_000_000,
+          cachedImageInputTokens: 1_000_000,
+          outputTokens: 0,
+        },
+        { ...vision, image: { inputPerMTokUsd: 8 } },
+      ),
+    ).toBe(8);
+  });
+
+  it("checks audio and image together against the totals", () => {
+    const both = {
+      ...imageModel,
+      audio: { inputPerMTokUsd: 32, outputPerMTokUsd: 64 },
+    };
+    for (const usage of [
+      {
+        inputTokens: 10,
+        outputTokens: 10,
+        audioOutputTokens: 5,
+        imageOutputTokens: 6,
+      },
+      {
+        inputTokens: 10,
+        outputTokens: 0,
+        audioInputTokens: 5,
+        imageInputTokens: 6,
+      },
+      {
+        inputTokens: 10,
+        cachedInputTokens: 5,
+        outputTokens: 0,
+        audioInputTokens: 3,
+        cachedAudioInputTokens: 3,
+        imageInputTokens: 3,
+        cachedImageInputTokens: 3,
+      },
+      {
+        inputTokens: 10,
+        outputTokens: 0,
+        imageInputTokens: 1,
+        cachedImageInputTokens: 2,
+      },
+    ]) {
+      expect(() => calculateCostUsd(usage, both)).toThrow(RangeError);
+    }
+    // Half audio and half image output: 500K x $64 + 500K x $32 per 1M.
+    expect(
+      calculateCostUsd(
+        {
+          inputTokens: 0,
+          outputTokens: 1_000_000,
+          audioOutputTokens: 500_000,
+          imageOutputTokens: 500_000,
+        },
+        both,
+      ),
+    ).toBe(48);
+  });
+});

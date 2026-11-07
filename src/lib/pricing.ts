@@ -20,6 +20,9 @@ export interface PricingRow {
   audioInputPerMTokUsd: string | null;
   cachedAudioInputPerMTokUsd: string | null;
   audioOutputPerMTokUsd: string | null;
+  imageInputPerMTokUsd: string | null;
+  cachedImageInputPerMTokUsd: string | null;
+  imageOutputPerMTokUsd: string | null;
 }
 
 export type PricingLookupResult<Row extends PricingRow = PricingRow> =
@@ -91,7 +94,30 @@ export function toTokenPricing(row: PricingRow): TokenPricing {
     batchMultiplier: optionalUsd("batchMultiplier", row.batchMultiplier),
     longContext: null,
     audio: null,
+    image: null,
   };
+
+  if (
+    row.imageInputPerMTokUsd !== null ||
+    row.cachedImageInputPerMTokUsd !== null ||
+    row.imageOutputPerMTokUsd !== null
+  ) {
+    // Each image rate is optional, falling back to its text rate.
+    pricing.image = {
+      inputPerMTokUsd: optionalUsd(
+        "imageInputPerMTokUsd",
+        row.imageInputPerMTokUsd,
+      ),
+      cachedInputPerMTokUsd: optionalUsd(
+        "cachedImageInputPerMTokUsd",
+        row.cachedImageInputPerMTokUsd,
+      ),
+      outputPerMTokUsd: optionalUsd(
+        "imageOutputPerMTokUsd",
+        row.imageOutputPerMTokUsd,
+      ),
+    };
+  }
 
   if (row.audioInputPerMTokUsd !== null) {
     // The database requires an audio output rate with an input rate.
