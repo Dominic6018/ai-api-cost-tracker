@@ -265,7 +265,8 @@ jobs:
           BODY="{\"provider\":\"anthropic\",\"model\":\"claude-sonnet-5-5\",\"inputTokens\":0,\"outputTokens\":0,\"webSearchRequests\":3,\"requestId\":\"ci-search-$GITHUB_RUN_ID\"}"
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
           test "$STATUS" = 201
-          grep -q '"webSearchRequests":3,"webSearchCostUsd":"0.030000","costUsd":"0.030000"' response.json
+          grep -q '"webSearchRequests":3,"webSearchCostUsd":"0.030000"' response.json
+          grep -q '"costUsd":"0.030000"' response.json
           # No web search price is seeded for OpenAI, so searches are refused
           BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"webSearchRequests\":1,\"occurredAt\":\"$YESTERDAY\"}"
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
