@@ -185,6 +185,36 @@ describe("seed", () => {
     });
   });
 
+  it("turns OpenAI's long-context prices into a long tier", async () => {
+    const lookup = (model: string, serviceTier: "standard" | "flex" | "fast") =>
+      findEffectivePricing(db, {
+        provider: "openai",
+        model,
+        serviceTier,
+        at: new Date("2026-11-08T12:00:00Z"),
+      });
+    const standard = await lookup("gpt-5.5", "standard");
+    if (!standard.found) throw new Error("expected pricing");
+    expect(standard.pricing.inputPerMTokUsd).toBe(5);
+    expect(standard.pricing.longContext).toEqual({
+      thresholdTokens: 272_000,
+      inputPerMTokUsd: 10,
+      outputPerMTokUsd: 45,
+      cachedInputPerMTokUsd: 1,
+      cacheWritePerMTokUsd: null,
+      cacheWrite1hPerMTokUsd: null,
+    });
+    const flex = await lookup("gpt-5.4-pro", "flex");
+    if (!flex.found) throw new Error("expected pricing");
+    expect(flex.pricing.cachedInputPerMTokUsd).toBeNull();
+    expect(flex.pricing.longContext).toMatchObject({
+      inputPerMTokUsd: 30,
+      outputPerMTokUsd: 135,
+      cachedInputPerMTokUsd: null,
+    });
+    expect((await lookup("gpt-5.5", "fast")).found).toBe(false);
+  });
+
   it("fills a missing 1-hour cache-write rate, keeping a recorded one", async () => {
     const price = seedPrices.find((p) => p.model === "claude-haiku-5-5");
     if (!price) throw new Error("expected Claude Haiku 5.5 in the seed data");

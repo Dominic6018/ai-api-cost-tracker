@@ -71,10 +71,7 @@ const ANTHROPIC = "https://platform.claude.com/docs/en/about-claude/pricing";
 const OPENAI = "https://developers.openai.com/api/docs/pricing";
 const GOOGLE = "https://ai.google.dev/gemini-api/docs/pricing";
 
-// Models priced by prompt length carry a long-context tier. OpenAI's
-// long-context (>272K) rates are rendered client-side on its pricing page
-// and couldn't be verified from the page source, so its tiered flagships
-// aren't seeded.
+// Models priced by prompt length carry a long-context tier.
 //
 // Cache writes are Anthropic's "5m cache writes" rate; 1-hour writes have
 // their own "1h cache writes" rate (2× input). The 1-hour rates were added
@@ -100,6 +97,14 @@ const FROM = `${CHECKED_ON}T00:00:00Z`;
 // gemini-2.5-pro's routing to Gemini 3.8 Flash were checked on this day.
 const TIERS_CHECKED_ON = "2026-11-07";
 const TIERS_FROM = `${TIERS_CHECKED_ON}T00:00:00Z`;
+
+// OpenAI's long-context rates were checked on this day, against the
+// Markdown version of its pricing page (the same URL plus ".md").
+const LONG_CONTEXT_CHECKED_ON = "2026-11-08";
+const LONG_CONTEXT_FROM = `${LONG_CONTEXT_CHECKED_ON}T00:00:00Z`;
+
+// "Short context: ≤272K input tokens. Long context: >272K input tokens."
+const OPENAI_LONG_CONTEXT_TOKENS = 272_000;
 
 // When Google starts routing gemini-2.5-pro to Gemini 3.8 Flash. The page
 // gives no time zone, so midnight UTC is used, as for its other dates.
@@ -217,6 +222,74 @@ export const seedPrices: SeedPrice[] = [
     effectiveFrom: FROM,
     source: OPENAI,
     checkedOn: CHECKED_ON,
+  },
+
+  // OpenAI: Standard tier, models priced by prompt length. A prompt over the
+  // threshold pays the long rates "for the full session" (model pages). The
+  // pro models list no cached rates. gpt-6 and gpt-5.6 aren't seeded: their
+  // 30-minute and 12-hour cache writes have different rates, and usage
+  // doesn't say which was used.
+  {
+    provider: "openai",
+    model: "gpt-5.5",
+    inputPerMTokUsd: "5",
+    outputPerMTokUsd: "30",
+    cachedInputPerMTokUsd: "0.50",
+    longContext: {
+      thresholdTokens: OPENAI_LONG_CONTEXT_TOKENS,
+      inputPerMTokUsd: "10",
+      outputPerMTokUsd: "45",
+      cachedInputPerMTokUsd: "1",
+    },
+    effectiveFrom: LONG_CONTEXT_FROM,
+    source: OPENAI,
+    checkedOn: LONG_CONTEXT_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.5-pro",
+    inputPerMTokUsd: "30",
+    outputPerMTokUsd: "180",
+    cachedInputPerMTokUsd: null,
+    longContext: {
+      thresholdTokens: OPENAI_LONG_CONTEXT_TOKENS,
+      inputPerMTokUsd: "60",
+      outputPerMTokUsd: "270",
+    },
+    effectiveFrom: LONG_CONTEXT_FROM,
+    source: OPENAI,
+    checkedOn: LONG_CONTEXT_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.4",
+    inputPerMTokUsd: "2.50",
+    outputPerMTokUsd: "15",
+    cachedInputPerMTokUsd: "0.25",
+    longContext: {
+      thresholdTokens: OPENAI_LONG_CONTEXT_TOKENS,
+      inputPerMTokUsd: "5",
+      outputPerMTokUsd: "22.50",
+      cachedInputPerMTokUsd: "0.50",
+    },
+    effectiveFrom: LONG_CONTEXT_FROM,
+    source: OPENAI,
+    checkedOn: LONG_CONTEXT_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.4-pro",
+    inputPerMTokUsd: "30",
+    outputPerMTokUsd: "180",
+    cachedInputPerMTokUsd: null,
+    longContext: {
+      thresholdTokens: OPENAI_LONG_CONTEXT_TOKENS,
+      inputPerMTokUsd: "60",
+      outputPerMTokUsd: "270",
+    },
+    effectiveFrom: LONG_CONTEXT_FROM,
+    source: OPENAI,
+    checkedOn: LONG_CONTEXT_CHECKED_ON,
   },
 
   // OpenAI audio and realtime models: text and audio tokens at their own
@@ -466,6 +539,61 @@ export const seedPrices: SeedPrice[] = [
     effectiveFrom: TIERS_FROM,
     source: OPENAI,
     checkedOn: TIERS_CHECKED_ON,
+  },
+
+  // OpenAI's Flex table for the models priced by prompt length, as published
+  // ($0.13 for gpt-5.4's cached input). A tier that leaves the long rates
+  // blank isn't seeded (Flex for gpt-5.5-pro, Fast for gpt-5.5 and gpt-5.4),
+  // so a long prompt is refused rather than billed at the short rates.
+  {
+    provider: "openai",
+    model: "gpt-5.5",
+    serviceTier: "flex",
+    inputPerMTokUsd: "2.50",
+    outputPerMTokUsd: "15",
+    cachedInputPerMTokUsd: "0.25",
+    longContext: {
+      thresholdTokens: OPENAI_LONG_CONTEXT_TOKENS,
+      inputPerMTokUsd: "5",
+      outputPerMTokUsd: "22.50",
+      cachedInputPerMTokUsd: "0.50",
+    },
+    effectiveFrom: LONG_CONTEXT_FROM,
+    source: OPENAI,
+    checkedOn: LONG_CONTEXT_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.4",
+    serviceTier: "flex",
+    inputPerMTokUsd: "1.25",
+    outputPerMTokUsd: "7.50",
+    cachedInputPerMTokUsd: "0.13",
+    longContext: {
+      thresholdTokens: OPENAI_LONG_CONTEXT_TOKENS,
+      inputPerMTokUsd: "2.50",
+      outputPerMTokUsd: "11.25",
+      cachedInputPerMTokUsd: "0.25",
+    },
+    effectiveFrom: LONG_CONTEXT_FROM,
+    source: OPENAI,
+    checkedOn: LONG_CONTEXT_CHECKED_ON,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.4-pro",
+    serviceTier: "flex",
+    inputPerMTokUsd: "15",
+    outputPerMTokUsd: "90",
+    cachedInputPerMTokUsd: null,
+    longContext: {
+      thresholdTokens: OPENAI_LONG_CONTEXT_TOKENS,
+      inputPerMTokUsd: "30",
+      outputPerMTokUsd: "135",
+    },
+    effectiveFrom: LONG_CONTEXT_FROM,
+    source: OPENAI,
+    checkedOn: LONG_CONTEXT_CHECKED_ON,
   },
 
   // Anthropic fast mode: Claude Opus 5.5 at $8 input and $40 output, and

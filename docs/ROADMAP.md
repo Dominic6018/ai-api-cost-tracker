@@ -100,7 +100,8 @@ Recording usage shouldn't require hand-written API calls.
     - [x] Web search, per 1,000 searches (#105)
     - [x] Audio tokens at their own rates (#109)
     - [x] Image tokens at their own rates (#111)
-- [ ] OpenAI long-context tiers, once their rates can be verified from the pricing page
+- [x] OpenAI long-context tiers: gpt-5.5, gpt-5.5-pro, gpt-5.4 and gpt-5.4-pro (#116)
+- [ ] OpenAI's gpt-6 and gpt-5.6 models, once usage can tell 30-minute from 12-hour cache writes
 
 ## Milestone 10: Teams
 
