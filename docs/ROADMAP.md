@@ -58,7 +58,7 @@ Recording usage shouldn't require hand-written API calls.
 - [x] OpenTelemetry intake that reads the standard GenAI token attributes (`gen_ai.usage.*`) (#45)
 - [x] Reconcile recorded costs with Anthropic's cost report (#49)
 - [x] The same for OpenAI's costs API, per day (#51)
-- [ ] Google Cloud billing for Gemini, which is exported to BigQuery rather than served by an API
+- [x] Google Cloud billing for Gemini, from a saved BigQuery result, per day (#124)
 
 ## Milestone 7: Cost by customer, feature and agent run
 

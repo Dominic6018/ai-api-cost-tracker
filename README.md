@@ -20,7 +20,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 
 <sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
 
-> **Status:** Milestones 0–5 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting and the public release. Milestone 6 added the TypeScript and Python clients, OpenTelemetry intake and bill reconciliation (Gemini billing aside). Milestone 7 added cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports and a reporting API. Milestone 8, guardrails, is under way: budget notifications and a budget check before spending are done; see [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status:** Milestones 0–5 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting and the public release. Milestone 6 added the TypeScript and Python clients, OpenTelemetry intake and bill reconciliation. Milestone 7 added cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports and a reporting API. Milestone 8, guardrails, is under way: budget notifications and a budget check before spending are done; see [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Features
 
@@ -120,7 +120,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 | `npm run db:demo`          | Load demo projects and 90 days of usage (`-- --remove` deletes them)  |
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
-| `npm run reconcile`        | Compare recorded costs with Anthropic's or OpenAI's bill (see below)  |
+| `npm run reconcile`        | Compare recorded costs with a provider's bill (see below)             |
 | `npm run budget-alerts`    | Send budget notifications to a webhook, Slack or email (see below)    |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
 
@@ -505,7 +505,38 @@ It prints billed, recorded and the difference per UTC day (and per model for Ant
 - Both reports cover the **whole provider organization**, so they're compared with all projects' usage of that provider.
 - **OpenAI is compared per day, not per model.** Its costs API has no model field; costs are grouped by `line_item`, a free-text billing label, so the command lists each day's line items under the table instead of guessing models from them. OpenAI's totals also include charges the tracker doesn't record, such as images, tools, storage and fine-tuning, which the line items make visible.
 - It **only reads**: nothing is written to the database. `--report-file` compares a saved report (JSON from the API) instead of fetching one.
-- Anthropic's report omits Priority Tier costs, and its data can lag by a few minutes. Gemini isn't supported: Google Cloud exports billing to BigQuery rather than serving it from an API.
+- Anthropic's report omits Priority Tier costs, and its data can lag by a few minutes.
+
+### Gemini on Google Cloud
+
+Google Cloud has no billing API to call: it exports billing to BigQuery, which you [set up](https://docs.cloud.google.com/billing/docs/how-to/export-data-bigquery-setup) on the billing account. Find the service your Gemini usage is billed under, since it depends on how you call it:
+
+```sql
+SELECT DISTINCT service.id, service.description
+FROM `project.dataset.gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX`
+```
+
+Then save one row per UTC day, with that service, as JSON:
+
+```sql
+SELECT
+  FORMAT_TIMESTAMP('%F', usage_start_time, 'UTC') AS day,
+  currency,
+  SUM(cost) AS cost,
+  SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS credits
+FROM `project.dataset.gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX`
+WHERE service.description = 'YOUR SERVICE'
+  AND cost_type = 'regular'
+  AND usage_start_time >= '2026-10-01' AND usage_start_time < '2026-11-01'
+GROUP BY day, currency
+ORDER BY day
+```
+
+```bash
+npm run reconcile -- --provider google --from 2026-10-01 --to 2026-11-01 --report-file gemini-billing.json
+```
+
+The file can come from `bq query --format=json` or the BigQuery console's JSON download. Like OpenAI, it's **compared per day, across all models**, because the export's SKU descriptions aren't model names the tracker can match. `cost` includes any negotiated discounts, so a discount shows up as a difference from the recorded list prices. Credits, such as a free trial, aren't counted as billed; the total is printed under the table. Only USD is supported, and the export can lag behind recent usage, so leave out the last day or two.
 
 ## Testing
 
