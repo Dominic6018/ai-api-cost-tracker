@@ -183,6 +183,13 @@
       "when": 1794162663789,
       "tag": "0025_organizations",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794163446267,
+      "tag": "0026_audit_log_organization",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@ import { outcomes, projects, usageEvents } from "../schema";
 import { getSpendOverview } from "../spend";
 import { generateDemoData } from "./generate";
 import { loadDemoData, removeDemoData } from "./load";
+import { ALL_ORGANIZATIONS } from "../scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -94,7 +95,7 @@ describe("loadDemoData", () => {
   });
 
   it("shows the intended budget states through the app's own overview query", async () => {
-    const overview = await getSpendOverview(db, now);
+    const overview = await getSpendOverview(db, ALL_ORGANIZATIONS, now);
     const states = Object.fromEntries(
       overview.projects
         .filter((p) => p.slug.startsWith("demo-"))

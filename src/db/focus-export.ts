@@ -6,6 +6,7 @@ import { priceTierFor, selectEffectivePricing } from "@/lib/pricing";
 import type { UsageFilters } from "@/lib/usage-filters";
 import { modelPricing, type ModelPricing } from "./schema";
 import { listUsageEvents } from "./usage-events";
+import type { OrganizationScope } from "./scope";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select" | "selectDistinct">;
@@ -20,6 +21,7 @@ const EXPORT_PAGE_SIZE = 1000;
  */
 export async function* focusCsv(
   db: Database,
+  scope: OrganizationScope,
   filters: Omit<UsageFilters, "cursor">,
   pageSize = EXPORT_PAGE_SIZE,
 ): AsyncGenerator<string> {
@@ -30,7 +32,12 @@ export async function* focusCsv(
 
   let cursor: UsageFilters["cursor"];
   do {
-    const page = await listUsageEvents(db, { ...filters, cursor }, pageSize);
+    const page = await listUsageEvents(
+      db,
+      scope,
+      { ...filters, cursor },
+      pageSize,
+    );
     const missing = [
       ...new Map(
         page.rows

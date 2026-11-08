@@ -2,6 +2,7 @@ import { and, eq, gte, sql, type SQL } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { DailySpend } from "@/lib/spend-series";
 import { usageEvents } from "./schema";
+import { projectInOrganization, type OrganizationScope } from "./scope";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select">;
@@ -25,9 +26,13 @@ export interface BreakdownRow {
   events: number;
 }
 
-function where({ start, projectId }: SpendFilter): SQL | undefined {
+function where(
+  scope: OrganizationScope,
+  { start, projectId }: SpendFilter,
+): SQL | undefined {
   // gte() maps the Date through the column; raw sql templates would not.
   return and(
+    projectInOrganization(usageEvents.projectId, scope),
     gte(usageEvents.occurredAt, start),
     projectId ? eq(usageEvents.projectId, projectId) : undefined,
   );
@@ -46,12 +51,13 @@ const totals = {
 /** Spend per UTC day; days without usage are omitted (see fillDailySeries). */
 export async function getDailySpend(
   db: Database,
+  scope: OrganizationScope,
   filter: SpendFilter,
 ): Promise<DailySpend[]> {
   return db
     .select({ day: utcDay, costUsd: totals.costUsd })
     .from(usageEvents)
-    .where(where(filter))
+    .where(where(scope, filter))
     .groupBy(utcDay)
     .orderBy(utcDay);
 }
@@ -59,13 +65,14 @@ export async function getDailySpend(
 /** Totals per provider and per provider/model, highest spend first. */
 export async function getSpendBreakdown(
   db: Database,
+  scope: OrganizationScope,
   filter: SpendFilter,
 ): Promise<{ byProvider: BreakdownRow[]; byModel: BreakdownRow[] }> {
   const [byProvider, byModel] = await Promise.all([
     db
       .select({ provider: usageEvents.provider, ...totals })
       .from(usageEvents)
-      .where(where(filter))
+      .where(where(scope, filter))
       .groupBy(usageEvents.provider)
       // Order by the numeric sum, not its text form.
       .orderBy(sql`${costSum} desc`, usageEvents.provider),
@@ -76,7 +83,7 @@ export async function getSpendBreakdown(
         ...totals,
       })
       .from(usageEvents)
-      .where(where(filter))
+      .where(where(scope, filter))
       .groupBy(usageEvents.provider, usageEvents.model)
       .orderBy(sql`${costSum} desc`, usageEvents.provider, usageEvents.model),
   ]);

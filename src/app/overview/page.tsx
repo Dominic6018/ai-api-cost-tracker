@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { getSpendOverview } from "@/db/spend";
+import { organizationScope } from "@/db/scope";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/roles";
 import { formatUsd } from "@/lib/cost";
@@ -46,7 +47,7 @@ export default async function OverviewPage() {
   const user = await requireUser("/overview");
   // One "now" for the sums and the forecast, so they agree.
   const now = new Date();
-  const overview = await getSpendOverview(db, now);
+  const overview = await getSpendOverview(db, organizationScope(user), now);
   const { totals, windows } = overview;
   const totalForecast = forecastMonth(totals.month, totals.last7FullDays, now);
   const hasUsage = totals.events > 0;

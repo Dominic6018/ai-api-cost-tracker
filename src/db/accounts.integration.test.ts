@@ -74,7 +74,7 @@ describe("resetPassword", () => {
         email: user.email,
         password: newPassword,
       }),
-    ).toEqual({ id: user.id, email: user.email, role: "admin" });
+    ).toEqual(user);
   });
 
   it("lifts a sign-in lockout on the email", async () => {

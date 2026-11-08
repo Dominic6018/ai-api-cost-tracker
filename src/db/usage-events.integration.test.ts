@@ -8,6 +8,7 @@ import { parseEnv } from "@/lib/env";
 import type { UsageFilters } from "@/lib/usage-filters";
 import { projects, usageEvents } from "./schema";
 import { listUsageEvents, usageEventsQuery } from "./usage-events";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -111,7 +112,12 @@ async function allPages(filters: UsageFilters, pageSize: number) {
   const sizes: number[] = [];
   let cursor = filters.cursor;
   for (let guard = 0; guard < 50; guard++) {
-    const page = await listUsageEvents(db, { ...filters, cursor }, pageSize);
+    const page = await listUsageEvents(
+      db,
+      ALL_ORGANIZATIONS,
+      { ...filters, cursor },
+      pageSize,
+    );
     seen.push(...page.rows.map((r) => r.id));
     sizes.push(page.rows.length);
     if (!page.next) break;
@@ -122,7 +128,7 @@ async function allPages(filters: UsageFilters, pageSize: number) {
 
 describe("listUsageEvents", () => {
   it("returns the window newest first with project names", async () => {
-    const { rows } = await listUsageEvents(db, window, 100);
+    const { rows } = await listUsageEvents(db, ALL_ORGANIZATIONS, window, 100);
     expect(rows).toHaveLength(12);
     expect(rows[0].projectName).toBe("Events Beta");
     expect(rows[0].occurredAt.toISOString()).toBe("2033-06-03T23:59:59.000Z");
@@ -137,7 +143,12 @@ describe("listUsageEvents", () => {
       expect(seen).toHaveLength(12);
       expect(new Set(seen).size).toBe(12);
       expect(sizes.slice(0, -1).every((s) => s === pageSize)).toBe(true);
-      const { rows } = await listUsageEvents(db, window, 100);
+      const { rows } = await listUsageEvents(
+        db,
+        ALL_ORGANIZATIONS,
+        window,
+        100,
+      );
       expect(seen).toEqual(rows.map((r) => r.id));
     },
   );
@@ -150,8 +161,12 @@ describe("listUsageEvents", () => {
   });
 
   it("has no next cursor on the last page", async () => {
-    expect((await listUsageEvents(db, window, 12)).next).toBeUndefined();
-    expect((await listUsageEvents(db, window, 11)).next).toBeDefined();
+    expect(
+      (await listUsageEvents(db, ALL_ORGANIZATIONS, window, 12)).next,
+    ).toBeUndefined();
+    expect(
+      (await listUsageEvents(db, ALL_ORGANIZATIONS, window, 11)).next,
+    ).toBeDefined();
   });
 
   it.each([
@@ -172,12 +187,12 @@ describe("listUsageEvents", () => {
             : alpha
           : undefined,
     };
-    const { rows } = await listUsageEvents(db, filters, 100);
+    const { rows } = await listUsageEvents(db, ALL_ORGANIZATIONS, filters, 100);
     expect(rows).toHaveLength(expected);
   });
 
   it("includes both ends of the date range", async () => {
-    const { rows } = await listUsageEvents(db, window, 100);
+    const { rows } = await listUsageEvents(db, ALL_ORGANIZATIONS, window, 100);
     const times = rows.map((r) => r.occurredAt.toISOString());
     expect(times).toContain("2033-06-01T00:00:00.000Z");
     expect(times).toContain("2033-06-03T23:59:59.000Z");
@@ -193,7 +208,7 @@ describe("listUsageEvents", () => {
       projectId: label === "a project filter" ? alpha : undefined,
       cursor: { occurredAt: "2033-06-02T12:00:00.000000Z", id: ids[0] },
     };
-    const query = usageEventsQuery(db, filters, 50).toSQL();
+    const query = usageEventsQuery(db, ALL_ORGANIZATIONS, filters, 50).toSQL();
     // Tiny test tables make a sequential scan cheapest, and which of several
     // usable indexes looks cheapest depends on statistics that other tests
     // keep changing. So, in a transaction that's rolled back, turn off
@@ -271,12 +286,19 @@ describe("listUsageEvents attribution filters", () => {
   });
 
   const hours = async (filters: UsageFilters) =>
-    (await listUsageEvents(db, { projectId, ...day, ...filters })).rows.map(
-      (row) => row.occurredAt.getUTCHours(),
-    );
+    (
+      await listUsageEvents(db, ALL_ORGANIZATIONS, {
+        projectId,
+        ...day,
+        ...filters,
+      })
+    ).rows.map((row) => row.occurredAt.getUTCHours());
 
   it("returns the attribution with each row", async () => {
-    const { rows } = await listUsageEvents(db, { projectId, ...day });
+    const { rows } = await listUsageEvents(db, ALL_ORGANIZATIONS, {
+      projectId,
+      ...day,
+    });
     expect(rows.find((r) => r.occurredAt.getUTCHours() === 3)).toMatchObject({
       customerId: "globex",
       userId: "u1",
@@ -332,7 +354,11 @@ describe("listUsageEvents tag filter", () => {
 
   const hours = async (key: string, value: string) =>
     (
-      await listUsageEvents(db, { projectId, ...day, tag: { key, value } })
+      await listUsageEvents(db, ALL_ORGANIZATIONS, {
+        projectId,
+        ...day,
+        tag: { key, value },
+      })
     ).rows.map((row) => row.occurredAt.getUTCHours());
 
   it("matches events that have the tag, among others", async () => {
@@ -342,7 +368,10 @@ describe("listUsageEvents tag filter", () => {
   });
 
   it("returns tags with each row", async () => {
-    const { rows } = await listUsageEvents(db, { projectId, ...day });
+    const { rows } = await listUsageEvents(db, ALL_ORGANIZATIONS, {
+      projectId,
+      ...day,
+    });
     expect(rows.map((r) => r.tags)).toEqual([
       null,
       { env: "dev", team: "search" },
@@ -354,6 +383,7 @@ describe("listUsageEvents tag filter", () => {
   it("can use the GIN index for a tag filter", async () => {
     const query = usageEventsQuery(
       db,
+      ALL_ORGANIZATIONS,
       { ...day, tag: { key: "env", value: "prod" } },
       50,
     ).toSQL();

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { getProject } from "@/db/projects";
+import { organizationScope } from "@/db/scope";
 import { requirePermission } from "@/lib/auth";
 import { updateProjectAction } from "../../actions";
 import { ProjectForm } from "../../project-form";
@@ -18,8 +19,11 @@ export default async function EditProjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  await requirePermission("projects:manage", `/projects/${id}/edit`);
-  const project = await getProject(db, id);
+  const user = await requirePermission(
+    "projects:manage",
+    `/projects/${id}/edit`,
+  );
+  const project = await getProject(db, organizationScope(user), id);
   if (!project) notFound();
 
   return (

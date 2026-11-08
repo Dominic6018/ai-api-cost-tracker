@@ -6,22 +6,34 @@ import type {
 } from "drizzle-orm/pg-core";
 import type { TablesRelationalConfig } from "drizzle-orm/relations";
 import { AUDIT_PAGE_SIZE, type AuditEntry } from "@/lib/audit";
-import { auditLog, type AuditLogEntry } from "./schema";
+import {
+  auditLog,
+  DEFAULT_ORGANIZATION_ID,
+  type AuditLogEntry,
+} from "./schema";
+import { auditInOrganization, type OrganizationScope } from "./scope";
 
 /** Who made a change. The label outlives the account it names. */
 export interface AuditActor {
   userId: string | null;
   label: string;
+  organizationId: string;
 }
 
 export const COMMAND_LINE: AuditActor = {
   userId: null,
   label: "command line",
+  organizationId: DEFAULT_ORGANIZATION_ID,
 };
 
-export const userActor = (user: { id: string; email: string }): AuditActor => ({
+export const userActor = (user: {
+  id: string;
+  email: string;
+  organizationId: string;
+}): AuditActor => ({
   userId: user.id,
   label: user.email,
+  organizationId: user.organizationId,
 });
 
 /**
@@ -52,6 +64,7 @@ export function audited<
       await tx.insert(auditLog).values({
         actorUserId: actor.userId,
         actorLabel: actor.label,
+        organizationId: actor.organizationId,
         ...entry,
       });
     }
@@ -62,11 +75,13 @@ export function audited<
 /** A page of entries, newest first, and whether another page follows. */
 export async function listAuditEntries(
   db: Pick<PgDatabase<PgQueryResultHKT>, "select">,
+  scope: OrganizationScope,
   page: number,
 ): Promise<{ entries: AuditLogEntry[]; hasMore: boolean }> {
   const rows = await db
     .select()
     .from(auditLog)
+    .where(auditInOrganization(scope))
     .orderBy(desc(auditLog.occurredAt), desc(auditLog.id))
     .limit(AUDIT_PAGE_SIZE + 1)
     .offset((page - 1) * AUDIT_PAGE_SIZE);

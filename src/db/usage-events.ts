@@ -13,6 +13,11 @@ import {
   type Provider,
   type ServiceTier,
 } from "./schema";
+import {
+  inOrganization,
+  projectInOrganization,
+  type OrganizationScope,
+} from "./scope";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select" | "selectDistinct">;
@@ -66,6 +71,7 @@ const exactOccurredAt = sql<string>`to_char(${usageEvents.occurredAt} at time zo
  */
 export function usageEventsQuery(
   db: Database,
+  scope: OrganizationScope,
   filters: UsageFilters,
   pageSize: number,
 ) {
@@ -108,6 +114,7 @@ export function usageEventsQuery(
       .innerJoin(projects, eq(projects.id, usageEvents.projectId))
       .where(
         and(
+          inOrganization(scope),
           filters.projectId
             ? eq(usageEvents.projectId, filters.projectId)
             : undefined,
@@ -140,10 +147,11 @@ export function usageEventsQuery(
 
 export async function listUsageEvents(
   db: Database,
+  scope: OrganizationScope,
   filters: UsageFilters,
   pageSize: number = USAGE_PAGE_SIZE,
 ): Promise<UsageEventsPage> {
-  const rows = await usageEventsQuery(db, filters, pageSize);
+  const rows = await usageEventsQuery(db, scope, filters, pageSize);
   const page = rows.slice(0, pageSize);
   const last = page.at(-1);
   return {
@@ -161,10 +169,14 @@ export async function listUsageEvents(
 }
 
 /** Distinct models seen, for the model filter's suggestions. */
-export async function listUsageModels(db: Database): Promise<string[]> {
+export async function listUsageModels(
+  db: Database,
+  scope: OrganizationScope,
+): Promise<string[]> {
   const rows = await db
     .selectDistinct({ model: usageEvents.model })
     .from(usageEvents)
+    .where(projectInOrganization(usageEvents.projectId, scope))
     .orderBy(usageEvents.model)
     .limit(500);
   return rows.map((row) => row.model);

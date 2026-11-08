@@ -8,6 +8,7 @@ import { parseEnv } from "@/lib/env";
 import { FOCUS_COLUMNS } from "@/lib/focus";
 import { focusCsv } from "./focus-export";
 import { modelPricing, projects, usageEvents } from "./schema";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -112,7 +113,12 @@ afterAll(async () => {
 
 async function exportRows(filters: Record<string, string> = {}) {
   let text = "";
-  for await (const chunk of focusCsv(db, { projectId, ...day, ...filters }, 1))
+  for await (const chunk of focusCsv(
+    db,
+    ALL_ORGANIZATIONS,
+    { projectId, ...day, ...filters },
+    1,
+  ))
     text += chunk;
   const [header, ...rows] = parseCsv(text);
   return {

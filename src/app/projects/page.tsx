@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
+import { organizationScope } from "@/db/scope";
 import { getSpendOverview } from "@/db/spend";
 import { budgetStatus, budgetUtilization } from "@/lib/budget";
 import { formatUsd } from "@/lib/cost";
@@ -20,8 +21,8 @@ export default async function ProjectsPage() {
   const user = await requireUser("/projects");
   const canManage = can(user.role, "projects:manage");
   const [projects, overview] = await Promise.all([
-    listProjects(db),
-    getSpendOverview(db),
+    listProjects(db, organizationScope(user)),
+    getSpendOverview(db, organizationScope(user)),
   ]);
   const monthSpend = new Map(overview.projects.map((p) => [p.id, p.month]));
 

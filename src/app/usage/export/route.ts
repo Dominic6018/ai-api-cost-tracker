@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { focusCsv } from "@/db/focus-export";
+import { organizationScope } from "@/db/scope";
 import { usageCsv } from "@/db/usage-export";
 import { requireUser } from "@/lib/auth";
 import { parseUsageFilters } from "@/lib/usage-filters";
@@ -12,14 +13,17 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  await requireUser(`/usage${url.search}`);
+  const user = await requireUser(`/usage${url.search}`);
   const { cursor, ...filters } = parseUsageFilters(
     Object.fromEntries(url.searchParams),
   );
   void cursor;
 
   const focus = url.searchParams.get("format") === "focus";
-  const chunks = focus ? focusCsv(db, filters) : usageCsv(db, filters);
+  const scope = organizationScope(user);
+  const chunks = focus
+    ? focusCsv(db, scope, filters)
+    : usageCsv(db, scope, filters);
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {

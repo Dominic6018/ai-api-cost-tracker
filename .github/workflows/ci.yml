@@ -181,6 +181,10 @@ jobs:
           echo "$SMOKE_PASSWORD" | npm run --silent user -- create --email "$SMOKE_EMAIL"
           export SMOKE_VIEWER_EMAIL="viewer-$GITHUB_RUN_ID@example.com"
           echo "$SMOKE_PASSWORD" | npm run --silent user -- create --email "$SMOKE_VIEWER_EMAIL" --role viewer
+          export SMOKE_OTHER_ORG_EMAIL="other-org-$GITHUB_RUN_ID@example.com"
+          echo "$SMOKE_PASSWORD" | npm run --silent user -- create --email "$SMOKE_OTHER_ORG_EMAIL"
+          psql "$DATABASE_URL" -qc "INSERT INTO organizations (name, slug) VALUES ('CI other', 'ci-other')"
+          psql "$DATABASE_URL" -qc "UPDATE users SET organization_id = (SELECT id FROM organizations WHERE slug = 'ci-other') WHERE email = '$SMOKE_OTHER_ORG_EMAIL'"
           if echo "$SMOKE_PASSWORD" | npm run --silent user -- create --email bad-role@example.com --role owner; then
             echo "an unknown role was accepted"; exit 1
           fi

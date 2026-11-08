@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
+import { organizationScope } from "@/db/scope";
 import { providerEnum } from "@/db/schema";
 import {
   listUsageEvents,
@@ -102,10 +103,11 @@ export default async function UsagePage({
 }) {
   const user = await requireUser("/usage");
   const filters = parseUsageFilters(await searchParams);
+  const scope = organizationScope(user);
   const [page, projects, models] = await Promise.all([
-    listUsageEvents(db, filters),
-    listProjects(db),
-    listUsageModels(db),
+    listUsageEvents(db, scope, filters),
+    listProjects(db, scope),
+    listUsageModels(db, scope),
   ]);
   const { cursor, ...withoutCursor } = filters;
   const isFiltered = Object.keys(withoutCursor).length > 0;

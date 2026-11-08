@@ -20,6 +20,7 @@ import {
   spendSignalNotifications,
   type AlertChannel,
 } from "./schema";
+import { ALL_ORGANIZATIONS } from "./scope";
 import { getSpendOverview } from "./spend";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
@@ -73,7 +74,7 @@ export async function runBudgetAlerts(
   const channels = configuredChannels(options.config);
   if (channels.length === 0) return [];
 
-  const overview = await getSpendOverview(db, now);
+  const overview = await getSpendOverview(db, ALL_ORGANIZATIONS, now);
   const alerts = planBudgetAlerts(overview.projects, now);
   if (alerts.length === 0) return [];
 
@@ -175,7 +176,7 @@ export async function runSpendSignalAlerts(
   const channels = configuredChannels(options.config);
   if (channels.length === 0) return [];
 
-  const overview = await getSpendOverview(db, now);
+  const overview = await getSpendOverview(db, ALL_ORGANIZATIONS, now);
   const alerts = planSignalAlerts(overview.projects, now);
   if (alerts.length === 0) return [];
 

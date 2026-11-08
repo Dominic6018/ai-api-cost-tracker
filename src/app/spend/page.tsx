@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
+import { organizationScope } from "@/db/scope";
 import {
   getDailySpend,
   getSpendBreakdown,
@@ -54,7 +55,8 @@ export default async function SpendPage({
   const user = await requireUser("/spend");
   const params = await searchParams;
   const range = parseSpendRange(params.range);
-  const projects = await listProjects(db);
+  const orgScope = organizationScope(user);
+  const projects = await listProjects(db, orgScope);
   // Only accept a project that exists; anything else means all projects.
   const requested = Array.isArray(params.project)
     ? params.project[0]
@@ -64,8 +66,8 @@ export default async function SpendPage({
   const { start, dayKeys } = dailyRange(new Date(), range);
   const filter = { start, projectId: project?.id };
   const [dailyRows, breakdown] = await Promise.all([
-    getDailySpend(db, filter),
-    getSpendBreakdown(db, filter),
+    getDailySpend(db, orgScope, filter),
+    getSpendBreakdown(db, orgScope, filter),
   ]);
   const days = fillDailySeries(dayKeys, dailyRows);
   const total = breakdown.byProvider.reduce(

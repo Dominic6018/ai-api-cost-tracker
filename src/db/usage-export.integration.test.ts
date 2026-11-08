@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseEnv } from "@/lib/env";
 import { projects, usageEvents } from "./schema";
 import { USAGE_CSV_COLUMNS, usageCsv } from "./usage-export";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -51,7 +52,12 @@ afterAll(async () => {
 
 async function exportText(filters: Record<string, string>, pageSize = 3) {
   let text = "";
-  for await (const chunk of usageCsv(db, { projectId, ...filters }, pageSize))
+  for await (const chunk of usageCsv(
+    db,
+    ALL_ORGANIZATIONS,
+    { projectId, ...filters },
+    pageSize,
+  ))
     text += chunk;
   return text;
 }

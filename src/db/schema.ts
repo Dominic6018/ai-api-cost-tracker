@@ -536,6 +536,11 @@ export const auditLog = pgTable(
     actorUserId: uuid("actor_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    // Whose log it's in. Command-line changes go in the default one for now.
+    organizationId: uuid("organization_id")
+      .notNull()
+      .default(DEFAULT_ORGANIZATION_ID)
+      .references(() => organizations.id, { onDelete: "restrict" }),
     // The email at the time, or "command line"; survives account deletion.
     actorLabel: text("actor_label").notNull(),
     action: text("action").$type<AuditAction>().notNull(),
@@ -543,7 +548,11 @@ export const auditLog = pgTable(
     details: jsonb("details").$type<Record<string, unknown>>(),
   },
   (t) => [
-    index("audit_log_occurred_at_idx").on(t.occurredAt.desc(), t.id.desc()),
+    index("audit_log_organization_occurred_idx").on(
+      t.organizationId,
+      t.occurredAt.desc(),
+      t.id.desc(),
+    ),
     check(
       "audit_log_action_valid",
       sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked')`,

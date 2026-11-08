@@ -108,8 +108,8 @@ Recording usage shouldn't require hand-written API calls.
 - [x] Roles on accounts: admin, member and viewer (#120)
 - Organizations:
   - [x] Tables, with existing projects and accounts in a default organization (#126)
-  - [ ] Scope every dashboard page and query to the signed-in account's organization
-  - [ ] Create organizations and assign accounts from the command line
+  - [x] Scope every dashboard page and query to the signed-in account's organization (#128)
+  - [ ] Decide who may change prices, which are shared across the whole install, then create organizations and assign accounts from the command line
 - [x] An audit log of changes (#122)
 - [ ] Single sign-on, later
 - [ ] Optional per-customer billing through Stripe
