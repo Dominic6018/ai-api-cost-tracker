@@ -9,6 +9,7 @@ import type { UserRole } from "@/db/schema";
 const ALLOWED_ROLES = {
   "projects:manage": ["admin", "member"],
   "prices:manage": ["admin"],
+  "audit:read": ["admin"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Permission = keyof typeof ALLOWED_ROLES;

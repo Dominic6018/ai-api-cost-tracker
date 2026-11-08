@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { createProject, updateProject } from "@/db/projects";
+import { audited, userActor } from "@/db/audit";
+import { createProject, getProject, updateProject } from "@/db/projects";
+import { projectCreatedEntry, projectUpdatedEntry } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth";
 import type { ProjectFormState } from "@/lib/projects";
 import { submitProjectForm } from "./submit";
@@ -15,9 +17,15 @@ export async function createProjectAction(
   _previous: ProjectFormState | undefined,
   formData: FormData,
 ): Promise<ProjectFormState> {
-  await requirePermission("projects:manage");
+  const user = await requirePermission("projects:manage");
   const result = await submitProjectForm(formData, (values) =>
-    createProject(db, values),
+    audited(db, userActor(user), async (tx) => {
+      const saved = await createProject(tx, values);
+      return {
+        result: saved,
+        entry: saved.ok ? projectCreatedEntry(saved.project) : null,
+      };
+    }),
   );
   if (!result.ok) return result.state;
 
@@ -30,9 +38,22 @@ export async function updateProjectAction(
   _previous: ProjectFormState | undefined,
   formData: FormData,
 ): Promise<ProjectFormState> {
-  await requirePermission("projects:manage");
+  const user = await requirePermission("projects:manage");
   const result = await submitProjectForm(formData, (values) =>
-    updateProject(db, id, values),
+    audited(db, userActor(user), async (tx) => {
+      const before = await getProject(tx, id);
+      if (!before) {
+        return {
+          result: { ok: false, error: "not_found" } as const,
+          entry: null,
+        };
+      }
+      const saved = await updateProject(tx, id, values);
+      return {
+        result: saved,
+        entry: saved.ok ? projectUpdatedEntry(before, saved.project) : null,
+      };
+    }),
   );
   if (!result.ok) return result.state;
 

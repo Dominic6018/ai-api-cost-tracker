@@ -570,6 +570,22 @@ step("the usage CSV export downloads the filtered events");
   );
 }
 
+step("the audit log records who changed projects and prices");
+{
+  const result = await page("/audit");
+  assert.equal(result.status, 200);
+  const text = result.html.replace(/<!-- -->/g, "");
+  for (const label of [
+    "Created project",
+    "Updated project",
+    "Added price",
+    "Ended price",
+  ]) {
+    assert.ok(text.includes(label), `the audit log shows "${label}"`);
+  }
+  assert.ok(text.includes(email), "the audit log names who made the change");
+}
+
 if (process.env.SMOKE_VIEWER_EMAIL) {
   step("a viewer can read but not change projects or prices");
   // An admin's copy of the form, so the viewer's request reaches the real
@@ -587,7 +603,7 @@ if (process.env.SMOKE_VIEWER_EMAIL) {
   });
   assert.equal(signedIn.status, 303, "viewer signs in");
 
-  for (const path of ["/projects/new", "/prices/new"]) {
+  for (const path of ["/projects/new", "/prices/new", "/audit"]) {
     const denied = await page(path);
     assert.equal(denied.status, 307, `GET ${path} as a viewer`);
     assert.equal(new URL(denied.location, base).pathname, "/no-access");

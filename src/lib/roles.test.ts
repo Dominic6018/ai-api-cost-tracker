@@ -9,6 +9,9 @@ describe("can", () => {
     ["member", "prices:manage", false],
     ["viewer", "projects:manage", false],
     ["viewer", "prices:manage", false],
+    ["admin", "audit:read", true],
+    ["member", "audit:read", false],
+    ["viewer", "audit:read", false],
   ] as const)("%s, %s: %s", (role, permission, allowed) => {
     expect(can(role, permission)).toBe(allowed);
   });

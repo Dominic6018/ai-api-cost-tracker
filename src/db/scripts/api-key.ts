@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { parseEnv } from "@/lib/env";
 import { createApiKey, revokeApiKey } from "../api-keys";
+import { audited, COMMAND_LINE } from "../audit";
 import { API_KEY_SCOPES, type ApiKeyScope } from "../schema";
 
 const USAGE = `Usage:
@@ -37,10 +38,24 @@ async function main() {
       if (!(API_KEY_SCOPES as readonly string[]).includes(scope)) {
         throw new Error(`--scope must be ingest or read.\n\n${USAGE}`);
       }
-      const result = await createApiKey(db, {
-        projectSlug: values.project,
-        name: values.name,
-        scope: scope as ApiKeyScope,
+      const { project, name } = values;
+      const result = await audited(db, COMMAND_LINE, async (tx) => {
+        const created = await createApiKey(tx, {
+          projectSlug: project,
+          name,
+          scope: scope as ApiKeyScope,
+        });
+        return {
+          result: created,
+          // The prefix identifies the key; the key itself is never stored.
+          entry: created.ok
+            ? {
+                action: "api_key.created" as const,
+                target: created.record.keyPrefix,
+                details: { project, name, scope },
+              }
+            : null,
+        };
       });
       if (!result.ok)
         throw new Error(`No project with slug "${values.project}"`);
@@ -51,7 +66,15 @@ async function main() {
           result.key,
       );
     } else if (command === "revoke" && argument) {
-      const revoked = await revokeApiKey(db, argument);
+      const revoked = await audited(db, COMMAND_LINE, async (tx) => {
+        const done = await revokeApiKey(tx, argument);
+        return {
+          result: done,
+          entry: done
+            ? { action: "api_key.revoked" as const, target: argument }
+            : null,
+        };
+      });
       if (!revoked)
         throw new Error(`No active API key with prefix "${argument}"`);
       console.log(`Revoked API key ${argument}.`);

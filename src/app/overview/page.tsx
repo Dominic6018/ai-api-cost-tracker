@@ -3,6 +3,7 @@ import Link from "next/link";
 import { db } from "@/db";
 import { getSpendOverview } from "@/db/spend";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/roles";
 import { formatUsd } from "@/lib/cost";
 import { forecastMonth, forecastOverBudget } from "@/lib/forecast";
 import { detectSpike, SPIKE_RULES } from "@/lib/spike";
@@ -77,6 +78,11 @@ export default async function OverviewPage() {
           <Link href="/projects" className="underline">
             Projects
           </Link>
+          {can(user.role, "audit:read") && (
+            <Link href="/audit" className="underline">
+              Audit log
+            </Link>
+          )}
           <form action={logoutAction} className="flex items-center gap-3">
             <span className="text-foreground/60">{user.email}</span>
             <button type="submit" className="underline">

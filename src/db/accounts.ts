@@ -77,18 +77,23 @@ export async function setUserRole(
   db: Pick<Database, "transaction">,
   { email, role }: { email: string; role: UserRole },
 ): Promise<
-  | { ok: true; email: string; role: UserRole }
+  | { ok: true; email: string; role: UserRole; previousRole: UserRole }
   | { ok: false; error: "user_not_found" }
 > {
   return db.transaction(async (tx) => {
+    const where = eq(users.email, normalizeEmail(email));
+    const [before] = await tx
+      .select({ role: users.role })
+      .from(users)
+      .where(where)
+      .for("update");
+    if (!before) return { ok: false, error: "user_not_found" } as const;
     const [user] = await tx
       .update(users)
       .set({ role })
-      .where(eq(users.email, normalizeEmail(email)))
+      .where(where)
       .returning({ email: users.email, role: users.role });
-    return user
-      ? ({ ok: true, ...user } as const)
-      : ({ ok: false, error: "user_not_found" } as const);
+    return { ok: true, ...user, previousRole: before.role } as const;
   });
 }
 

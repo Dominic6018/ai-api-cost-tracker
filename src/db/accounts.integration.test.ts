@@ -181,7 +181,12 @@ describe("setUserRole", () => {
         email: user.email.toUpperCase(),
         role: "viewer",
       }),
-    ).toEqual({ ok: true, email: user.email, role: "viewer" });
+    ).toEqual({
+      ok: true,
+      email: user.email,
+      role: "viewer",
+      previousRole: "admin",
+    });
     expect(await getSessionUser(db, token)).toEqual({
       ...user,
       role: "viewer",
