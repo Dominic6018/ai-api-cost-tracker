@@ -6,13 +6,16 @@
 
 import type { AlertChannel } from "@/db/schema";
 import {
+  emailMessage,
   postToChannel,
   slackEscape,
   usd,
   type AlertConfig,
   type ChannelMessage,
+  type DeliveryOptions,
   type DeliveryResult,
 } from "./budget-notifications";
+import type { EmailContent } from "./email";
 import { forecastMonth, forecastOverBudget } from "./forecast";
 import { detectSpike } from "./spike";
 
@@ -123,21 +126,34 @@ export function signalWebhookPayload(alert: SignalAlert, sentAt: Date) {
   };
 }
 
-/** A Slack incoming-webhook body. */
-export function signalSlackPayload(alert: SignalAlert): { text: string } {
-  const name = `*${slackEscape(alert.project.name)}*`;
+/** The signal as a sentence, with the name already formatted. */
+function signalSentence(alert: SignalAlert, name: string): string {
   if (alert.kind === "forecast") {
-    return {
-      text: `:crystal_ball: ${name} is on pace to exceed its ${usd(alert.budgetUsd)} monthly budget: ${usd(alert.projectedUsd)} projected by ${alert.lastDay}, ${usd(alert.spentUsd)} spent so far.`,
-    };
+    return `${name} is on pace to exceed its ${usd(alert.budgetUsd)} monthly budget: ${usd(alert.projectedUsd)} projected by ${alert.lastDay}, ${usd(alert.spentUsd)} spent so far.`;
   }
   const multiple =
     alert.multiple === null
       ? "after a week without spend"
       : `${alert.multiple.toFixed(1)}× its usual ${usd(alert.dailyAverageUsd)} a day`;
-  return {
-    text: `:chart_with_upwards_trend: ${name} is spiking: ${usd(alert.todayUsd)} spent today (${alert.period} UTC), ${multiple}.`,
-  };
+  return `${name} is spiking: ${usd(alert.todayUsd)} spent today (${alert.period} UTC), ${multiple}.`;
+}
+
+/** A Slack incoming-webhook body. */
+export function signalSlackPayload(alert: SignalAlert): { text: string } {
+  const name = `*${slackEscape(alert.project.name)}*`;
+  const icon =
+    alert.kind === "forecast" ? ":crystal_ball:" : ":chart_with_upwards_trend:";
+  return { text: `${icon} ${signalSentence(alert, name)}` };
+}
+
+export function signalEmail(alert: SignalAlert): EmailContent {
+  const { name } = alert.project;
+  return emailMessage(
+    alert.kind === "forecast"
+      ? `${name}: on pace to exceed its ${usd(alert.budgetUsd)} budget`
+      : `${name}: spending spike on ${alert.period}`,
+    signalSentence(alert, name),
+  );
 }
 
 export function signalMessage(alert: SignalAlert, now: Date): ChannelMessage {
@@ -145,15 +161,16 @@ export function signalMessage(alert: SignalAlert, now: Date): ChannelMessage {
     event: SIGNAL_EVENTS[alert.kind],
     webhookBody: signalWebhookPayload(alert, now),
     slackBody: signalSlackPayload(alert),
+    email: signalEmail(alert),
   };
 }
 
-/** POSTs one signal to one channel. Never throws. */
+/** Sends one signal to one channel. Never throws. */
 export function deliverSignal(
   alert: SignalAlert,
   channel: AlertChannel,
   config: AlertConfig,
-  options: { fetch?: typeof fetch; now?: Date } = {},
+  options: DeliveryOptions = {},
 ): Promise<DeliveryResult> {
   const now = options.now ?? new Date();
   return postToChannel(channel, config, signalMessage(alert, now), {

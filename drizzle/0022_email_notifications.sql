@@ -1,0 +1,4 @@
+ALTER TABLE "budget_notifications" DROP CONSTRAINT "budget_notifications_channel_valid";--> statement-breakpoint
+ALTER TABLE "spend_signal_notifications" DROP CONSTRAINT "spend_signal_notifications_channel_valid";--> statement-breakpoint
+ALTER TABLE "budget_notifications" ADD CONSTRAINT "budget_notifications_channel_valid" CHECK ("budget_notifications"."channel" in ('webhook', 'slack', 'email'));--> statement-breakpoint
+ALTER TABLE "spend_signal_notifications" ADD CONSTRAINT "spend_signal_notifications_channel_valid" CHECK ("spend_signal_notifications"."channel" in ('webhook', 'slack', 'email'));

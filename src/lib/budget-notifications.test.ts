@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   alertPeriod,
+  budgetEmail,
   configuredChannels,
   deliverAlert,
   parseAlertConfig,
@@ -263,5 +264,117 @@ describe("deliverAlert", () => {
     expect(
       await deliverAlert(alert(), "slack", {}, { fetch: network }),
     ).toEqual({ ok: false, error: "slack isn't configured" });
+  });
+});
+
+describe("email", () => {
+  const smtp = {
+    BUDGET_ALERT_SMTP_URL: "smtps://alerts:hunter2@mail.example.com:465",
+    BUDGET_ALERT_EMAIL_FROM: "alerts@example.com",
+    BUDGET_ALERT_EMAIL_TO: "a@example.com, b@example.com",
+  };
+  const email = {
+    smtpUrl: smtp.BUDGET_ALERT_SMTP_URL,
+    from: "alerts@example.com",
+    to: ["a@example.com", "b@example.com"],
+  };
+
+  it("reads the destination, with a list of recipients", () => {
+    const config = parseAlertConfig(smtp);
+    expect(config).toEqual({ email });
+    expect(configuredChannels(config)).toEqual(["email"]);
+  });
+
+  it.each([
+    ["BUDGET_ALERT_SMTP_URL"],
+    ["BUDGET_ALERT_EMAIL_FROM"],
+    ["BUDGET_ALERT_EMAIL_TO"],
+  ])("needs all three settings, not just without %s", (missing) => {
+    expect(() => parseAlertConfig({ ...smtp, [missing]: "" })).toThrow(
+      /together/,
+    );
+  });
+
+  it.each([
+    [{ BUDGET_ALERT_SMTP_URL: "https://mail.example.com" }, /SMTP_URL/],
+    [{ BUDGET_ALERT_SMTP_URL: "smtp://u:bad%zz@mail.example.com" }, /encoded/],
+    [{ BUDGET_ALERT_EMAIL_FROM: "not an address" }, /EMAIL_FROM/],
+    [{ BUDGET_ALERT_EMAIL_TO: "a@example.com, nope" }, /EMAIL_TO/],
+  ])("rejects %j", (override, message) => {
+    expect(() => parseAlertConfig({ ...smtp, ...override })).toThrow(message);
+  });
+
+  it("doesn't repeat the password in a configuration error", () => {
+    let message = "";
+    try {
+      parseAlertConfig({
+        ...smtp,
+        BUDGET_ALERT_SMTP_URL: "ftp://alerts:hunter2@mail.example.com",
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("BUDGET_ALERT_SMTP_URL");
+    expect(message).not.toContain("hunter2");
+  });
+
+  it("words the message for each status, without Slack markup", () => {
+    expect(budgetEmail(alert())).toEqual({
+      subject: "Support Bot: 81.2% of budget used for 2026-11",
+      text: "Support Bot has used 81.2% of its $100.00 monthly budget for 2026-11: $81.23 spent.\n\nSent by AI API Cost Tracker.\n",
+    });
+    expect(
+      budgetEmail({
+        ...alert(),
+        status: "over",
+        thresholdPercent: 100,
+        spentUsd: "120.000000",
+        usedPercent: "120.0%",
+      }).subject,
+    ).toBe("Support Bot: over budget for 2026-11");
+  });
+
+  it("keeps the subject to one line and the name as typed", () => {
+    const base = alert();
+    const content = budgetEmail({
+      ...base,
+      project: { ...base.project, name: "R&D\r\nBcc: x@example.com" },
+    });
+    expect(content.subject).toBe(
+      "R&D Bcc: x@example.com: 81.2% of budget used for 2026-11",
+    );
+  });
+
+  const config = { email };
+
+  it("sends the message to the configured server", async () => {
+    const sendEmail = vi.fn(async () => ({ rejected: [] }));
+    await expect(
+      deliverAlert(alert(), "email", config, { sendEmail }),
+    ).resolves.toEqual({ ok: true });
+    expect(sendEmail).toHaveBeenCalledWith(email, budgetEmail(alert()));
+  });
+
+  it("counts a partly refused message as sent, and says so", async () => {
+    const sendEmail = vi.fn(async () => ({ rejected: ["b@example.com"] }));
+    await expect(
+      deliverAlert(alert(), "email", config, { sendEmail }),
+    ).resolves.toEqual({
+      ok: true,
+      note: "refused recipients: b@example.com",
+    });
+  });
+
+  it("reports failures instead of throwing", async () => {
+    const sendEmail = vi.fn(async () => {
+      throw new Error("Connection timeout");
+    });
+    await expect(
+      deliverAlert(alert(), "email", config, { sendEmail }),
+    ).resolves.toEqual({ ok: false, error: "Connection timeout" });
+    await expect(deliverAlert(alert(), "email", {})).resolves.toEqual({
+      ok: false,
+      error: "email isn't configured",
+    });
   });
 });

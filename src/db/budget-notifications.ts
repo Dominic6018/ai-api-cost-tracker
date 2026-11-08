@@ -8,6 +8,7 @@ import {
   type AlertConfig,
   type BudgetAlert,
 } from "@/lib/budget-notifications";
+import type { SendEmail } from "@/lib/email";
 import {
   deliverSignal,
   planSignalAlerts,
@@ -41,6 +42,7 @@ export interface AlertResult {
   alert: BudgetAlert;
   channel: AlertChannel;
   outcome: AlertOutcome;
+  /** Why it failed, or a problem with a delivery that still went out. */
   error?: string;
 }
 
@@ -48,6 +50,7 @@ export interface RunBudgetAlertsOptions {
   config: AlertConfig;
   now?: Date;
   fetch?: typeof fetch;
+  sendEmail?: SendEmail;
   /** Plan and report, but neither send nor record anything. */
   dryRun?: boolean;
 }
@@ -124,10 +127,16 @@ export async function runBudgetAlerts(
 
       const delivery = await deliverAlert(alert, channel, options.config, {
         fetch: options.fetch,
+        sendEmail: options.sendEmail,
         now,
       });
       if (delivery.ok) {
-        results.push({ alert, channel, outcome: "sent" });
+        results.push({
+          alert,
+          channel,
+          outcome: "sent",
+          ...(delivery.note && { error: delivery.note }),
+        });
       } else {
         await db
           .delete(budgetNotifications)
@@ -220,10 +229,16 @@ export async function runSpendSignalAlerts(
 
       const delivery = await deliverSignal(alert, channel, options.config, {
         fetch: options.fetch,
+        sendEmail: options.sendEmail,
         now,
       });
       if (delivery.ok) {
-        results.push({ alert, channel, outcome: "sent" });
+        results.push({
+          alert,
+          channel,
+          outcome: "sent",
+          ...(delivery.note && { error: delivery.note }),
+        });
       } else {
         await db
           .delete(spendSignalNotifications)

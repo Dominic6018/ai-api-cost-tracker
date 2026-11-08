@@ -1,6 +1,6 @@
 /**
  * Budget notifications: when a project reaches 80% or 100% of its monthly
- * budget, tell a webhook and/or Slack, once per threshold per month.
+ * budget, tell a webhook, Slack and/or email, once per threshold per month.
  */
 
 import { createHmac } from "node:crypto";
@@ -14,6 +14,13 @@ import {
   microsToUsd,
   toMicros,
 } from "./budget";
+import {
+  sendEmail,
+  transportOptions,
+  type EmailConfig,
+  type EmailContent,
+  type SendEmail,
+} from "./email";
 
 export type ThresholdPercent =
   | typeof BUDGET_THRESHOLDS.warningPercent
@@ -31,6 +38,20 @@ const httpUrl = (name: string, httpsOnly = false) =>
     })
     .optional();
 
+/** The addresses in a comma-separated list. */
+const emailList = (value: string) => value.split(",").map((a) => a.trim());
+const isEmailList = (value: string) =>
+  emailList(value).every((a) => z.email().safeParse(a).success);
+
+const isSmtpUrl = (value: string) => {
+  try {
+    transportOptions(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const configSchema = z.object({
   BUDGET_ALERT_WEBHOOK_URL: httpUrl("BUDGET_ALERT_WEBHOOK_URL"),
   BUDGET_ALERT_WEBHOOK_SECRET: z
@@ -42,11 +63,30 @@ const configSchema = z.object({
     "BUDGET_ALERT_SLACK_WEBHOOK_URL",
     true,
   ),
+  // The messages don't quote the value: the URL holds a password.
+  BUDGET_ALERT_SMTP_URL: z
+    .string()
+    .refine(isSmtpUrl, {
+      error:
+        "BUDGET_ALERT_SMTP_URL must look like smtp(s)://user:password@host:port, with special characters percent-encoded",
+    })
+    .optional(),
+  BUDGET_ALERT_EMAIL_FROM: z
+    .email("BUDGET_ALERT_EMAIL_FROM must be an email address")
+    .optional(),
+  BUDGET_ALERT_EMAIL_TO: z
+    .string()
+    .refine(isEmailList, {
+      error:
+        "BUDGET_ALERT_EMAIL_TO must be one or more comma-separated email addresses",
+    })
+    .optional(),
 });
 
 export interface AlertConfig {
   webhook?: { url: string; secret?: string };
   slack?: { url: string };
+  email?: EmailConfig;
 }
 
 /**
@@ -75,6 +115,16 @@ export function parseAlertConfig(
       "BUDGET_ALERT_WEBHOOK_SECRET is set without BUDGET_ALERT_WEBHOOK_URL",
     );
   }
+  const emailSettings = [
+    env.BUDGET_ALERT_SMTP_URL,
+    env.BUDGET_ALERT_EMAIL_FROM,
+    env.BUDGET_ALERT_EMAIL_TO,
+  ].filter(Boolean).length;
+  if (emailSettings !== 0 && emailSettings !== 3) {
+    throw new Error(
+      "Set BUDGET_ALERT_SMTP_URL, BUDGET_ALERT_EMAIL_FROM and BUDGET_ALERT_EMAIL_TO together",
+    );
+  }
   return {
     ...(env.BUDGET_ALERT_WEBHOOK_URL && {
       webhook: {
@@ -87,6 +137,15 @@ export function parseAlertConfig(
     ...(env.BUDGET_ALERT_SLACK_WEBHOOK_URL && {
       slack: { url: env.BUDGET_ALERT_SLACK_WEBHOOK_URL },
     }),
+    ...(env.BUDGET_ALERT_SMTP_URL &&
+      env.BUDGET_ALERT_EMAIL_FROM &&
+      env.BUDGET_ALERT_EMAIL_TO && {
+        email: {
+          smtpUrl: env.BUDGET_ALERT_SMTP_URL,
+          from: env.BUDGET_ALERT_EMAIL_FROM,
+          to: emailList(env.BUDGET_ALERT_EMAIL_TO),
+        },
+      }),
   };
 }
 
@@ -94,6 +153,7 @@ export function configuredChannels(config: AlertConfig): AlertChannel[] {
   const channels: AlertChannel[] = [];
   if (config.webhook) channels.push("webhook");
   if (config.slack) channels.push("slack");
+  if (config.email) channels.push("email");
   return channels;
 }
 
@@ -200,27 +260,61 @@ export const usd = (amount: string) =>
 export const slackEscape = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** A Slack incoming-webhook body. */
-export function slackPayload(alert: BudgetAlert) {
-  const name = `*${slackEscape(alert.project.name)}*`;
+/** The alert as a sentence, with the name already formatted. */
+function budgetSentence(alert: BudgetAlert, name: string): string {
   const budget = usd(alert.budgetUsd);
   const spent = usd(alert.spentUsd);
   const used = alert.usedPercent ? ` (${alert.usedPercent})` : "";
-  const text =
-    alert.status === "over"
-      ? `:rotating_light: ${name} is over its ${budget} monthly budget for ${alert.period}: ${spent} spent${used}.`
-      : `:warning: ${name} has used ${alert.usedPercent} of its ${budget} monthly budget for ${alert.period}: ${spent} spent.`;
-  return { text };
+  return alert.status === "over"
+    ? `${name} is over its ${budget} monthly budget for ${alert.period}: ${spent} spent${used}.`
+    : `${name} has used ${alert.usedPercent} of its ${budget} monthly budget for ${alert.period}: ${spent} spent.`;
 }
 
-export type DeliveryResult = { ok: true } | { ok: false; error: string };
+/** A Slack incoming-webhook body. */
+export function slackPayload(alert: BudgetAlert) {
+  const name = `*${slackEscape(alert.project.name)}*`;
+  const icon = alert.status === "over" ? ":rotating_light:" : ":warning:";
+  return { text: `${icon} ${budgetSentence(alert, name)}` };
+}
 
-/** POSTs one alert to one channel. Never throws. */
+/** A plain-text email; the subject is kept to one line. */
+export function emailMessage(subject: string, sentence: string): EmailContent {
+  return {
+    subject: subject.replace(/\s+/g, " ").trim(),
+    text: `${sentence}\n\nSent by AI API Cost Tracker.\n`,
+  };
+}
+
+export function budgetEmail(alert: BudgetAlert): EmailContent {
+  const { name } = alert.project;
+  return emailMessage(
+    alert.status === "over"
+      ? `${name}: over budget for ${alert.period}`
+      : `${name}: ${alert.usedPercent} of budget used for ${alert.period}`,
+    budgetSentence(alert, name),
+  );
+}
+
+export type DeliveryResult =
+  | {
+      ok: true;
+      /** Delivered, but with something the operator should see. */
+      note?: string;
+    }
+  | { ok: false; error: string };
+
+export interface DeliveryOptions {
+  fetch?: typeof fetch;
+  now?: Date;
+  sendEmail?: SendEmail;
+}
+
+/** Sends one alert to one channel. Never throws. */
 export function deliverAlert(
   alert: BudgetAlert,
   channel: AlertChannel,
   config: AlertConfig,
-  options: { fetch?: typeof fetch; now?: Date } = {},
+  options: DeliveryOptions = {},
 ): Promise<DeliveryResult> {
   const now = options.now ?? new Date();
   return postToChannel(
@@ -230,29 +324,64 @@ export function deliverAlert(
       event: WEBHOOK_EVENT,
       webhookBody: webhookPayload(alert, now),
       slackBody: slackPayload(alert),
+      email: budgetEmail(alert),
     },
     { ...options, now },
   );
 }
 
-/** What one notification sends: the webhook's event and body, and Slack's. */
+/** What one notification sends on each channel. */
 export interface ChannelMessage {
   event: string;
   webhookBody: object;
   slackBody: { text: string };
+  email: EmailContent;
 }
 
 /**
- * POSTs a message to one channel: JSON, signed for the webhook when a
- * secret is set, with a timeout, and without following redirects.
- * Never throws.
+ * Accepted by the server for at least one recipient counts as delivered:
+ * retrying would send the others a duplicate on every run. Refused
+ * recipients are reported instead.
+ */
+async function deliverEmail(
+  config: EmailConfig,
+  content: EmailContent,
+  send: SendEmail,
+): Promise<DeliveryResult> {
+  try {
+    const { rejected } = await send(config, content);
+    return rejected.length > 0
+      ? { ok: true, note: `refused recipients: ${rejected.join(", ")}` }
+      : { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Sends a message to one channel. Webhook and Slack get a JSON POST,
+ * signed for the webhook when a secret is set, with a timeout, and
+ * without following redirects. Never throws.
  */
 export async function postToChannel(
   channel: AlertChannel,
   config: AlertConfig,
   message: ChannelMessage,
-  options: { fetch?: typeof fetch; now?: Date } = {},
+  options: DeliveryOptions = {},
 ): Promise<DeliveryResult> {
+  if (channel === "email") {
+    return config.email
+      ? deliverEmail(
+          config.email,
+          message.email,
+          options.sendEmail ?? sendEmail,
+        )
+      : { ok: false, error: "email isn't configured" };
+  }
+
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const now = options.now ?? new Date();
   const destination = channel === "webhook" ? config.webhook : config.slack;

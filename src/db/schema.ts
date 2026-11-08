@@ -473,7 +473,7 @@ export type ServiceTier = (typeof SERVICE_TIERS)[number];
 export const PRICE_TIERS = ["standard", "flex", "fast"] as const;
 export type PriceTier = (typeof PRICE_TIERS)[number];
 
-export const ALERT_CHANNELS = ["webhook", "slack"] as const;
+export const ALERT_CHANNELS = ["webhook", "slack", "email"] as const;
 export type AlertChannel = (typeof ALERT_CHANNELS)[number];
 
 /**
@@ -516,7 +516,7 @@ export const budgetNotifications = pgTable(
     ),
     check(
       "budget_notifications_channel_valid",
-      sql`${t.channel} in ('webhook', 'slack')`,
+      sql`${t.channel} in ('webhook', 'slack', 'email')`,
     ),
   ],
 );
@@ -562,7 +562,7 @@ export const spendSignalNotifications = pgTable(
     ),
     check(
       "spend_signal_notifications_channel_valid",
-      sql`${t.channel} in ('webhook', 'slack')`,
+      sql`${t.channel} in ('webhook', 'slack', 'email')`,
     ),
   ],
 );

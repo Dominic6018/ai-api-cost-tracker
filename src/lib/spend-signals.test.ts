@@ -4,6 +4,7 @@ import {
   deliverSignal,
   planSignalAlerts,
   signalAmounts,
+  signalEmail,
   signalSlackPayload,
   signalWebhookPayload,
   type SignalAlert,
@@ -172,5 +173,34 @@ describe("deliverSignal", () => {
       signWebhook(init?.body as string, "s".repeat(20), NOW),
     );
     expect(init?.redirect).toBe("manual");
+  });
+});
+
+describe("signalEmail", () => {
+  it("words a forecast with the project name as typed", () => {
+    expect(signalEmail(forecast)).toEqual({
+      subject: "R&D <bot>: on pace to exceed its $100.00 budget",
+      text: "R&D <bot> is on pace to exceed its $100.00 monthly budget: $104.00 projected by 2026-11-30, $90.00 spent so far.\n\nSent by AI API Cost Tracker.\n",
+    });
+  });
+
+  it("words a spike", () => {
+    expect(signalEmail(spike)).toEqual({
+      subject: "Support Bot: spending spike on 2026-11-24",
+      text: "Support Bot is spiking: $10.40 spent today (2026-11-24 UTC), 5.2× its usual $2.00 a day.\n\nSent by AI API Cost Tracker.\n",
+    });
+  });
+
+  it("is sent through the email channel", async () => {
+    const email = {
+      smtpUrl: "smtp://relay.internal",
+      from: "alerts@example.com",
+      to: ["a@example.com"],
+    };
+    const sendEmail = vi.fn(async () => ({ rejected: [] }));
+    await expect(
+      deliverSignal(spike, "email", { email }, { sendEmail }),
+    ).resolves.toEqual({ ok: true });
+    expect(sendEmail).toHaveBeenCalledWith(email, signalEmail(spike));
   });
 });
