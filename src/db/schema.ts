@@ -33,10 +33,29 @@ const timestamps = {
 };
 
 /** A logical grouping of API usage (an app, team, or environment). */
+/** Holds every project and account until organizations can be created. */
+export const DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000001";
+
+export const organizations = pgTable(
+  "organizations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("organizations_slug_idx").on(t.slug)],
+);
+
 export const projects = pgTable(
   "projects",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // Set by the database until the app chooses one.
+    organizationId: uuid("organization_id")
+      .notNull()
+      .default(DEFAULT_ORGANIZATION_ID)
+      .references(() => organizations.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     // Optional monthly budget in USD; null means no budget configured.
@@ -49,6 +68,7 @@ export const projects = pgTable(
     ...timestamps,
   },
   (t) => [
+    index("projects_organization_id_idx").on(t.organizationId),
     uniqueIndex("projects_slug_idx").on(t.slug),
     check(
       "projects_budget_non_negative",
@@ -392,12 +412,18 @@ export const users = pgTable(
     // Stored lowercased, so lookups are case-insensitive.
     email: text("email").notNull(),
     passwordHash: text("password_hash").notNull(),
+    // Set by the database until the app chooses one.
+    organizationId: uuid("organization_id")
+      .notNull()
+      .default(DEFAULT_ORGANIZATION_ID)
+      .references(() => organizations.id, { onDelete: "restrict" }),
     // What the account may change; see src/lib/roles.ts.
     role: text("role").$type<UserRole>().notNull().default("admin"),
     ...timestamps,
   },
   (t) => [
     uniqueIndex("users_email_idx").on(t.email),
+    index("users_organization_id_idx").on(t.organizationId),
     check("users_role_valid", sql`${t.role} in ('admin', 'member', 'viewer')`),
   ],
 );
@@ -626,6 +652,7 @@ export type Provider = (typeof providerEnum.enumValues)[number];
 export type User = typeof users.$inferSelect;
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
+export type Organization = typeof organizations.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;
