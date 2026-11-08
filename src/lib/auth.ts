@@ -38,6 +38,6 @@ export async function requirePermission(
   returnTo?: string,
 ): Promise<SessionUser> {
   const user = await requireUser(returnTo);
-  if (!can(user.role, permission)) redirect("/no-access");
+  if (!can(user, permission)) redirect("/no-access");
   return user;
 }

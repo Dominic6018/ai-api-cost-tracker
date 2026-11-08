@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { listModelPrices } from "@/db/pricing";
+import { DEFAULT_ORGANIZATION_ID } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/roles";
 import {
@@ -48,7 +49,9 @@ function hostOf(url: string): string {
 
 export default async function PricesPage() {
   const user = await requireUser("/prices");
-  const canManage = can(user.role, "prices:manage");
+  const canManage = can(user, "prices:manage");
+  // Who changed a shared price is the install owners' business.
+  const showAuthors = user.organizationId === DEFAULT_ORGANIZATION_ID;
   const now = new Date();
   const histories = priceHistories(await listModelPrices(db), now);
 
@@ -282,7 +285,7 @@ export default async function PricesPage() {
                             ? `Checked ${row.checkedOn}`
                             : "Check date not recorded"}
                         </span>
-                        {row.recordedByEmail && (
+                        {showAuthors && row.recordedByEmail && (
                           <span className="block text-foreground/60">
                             Added by {row.recordedByEmail}
                           </span>
@@ -301,7 +304,9 @@ export default async function PricesPage() {
                             </a>
                             <span className="block text-foreground/60">
                               Checked {row.endCheckedOn}
-                              {row.endedByEmail && `, by ${row.endedByEmail}`}
+                              {showAuthors &&
+                                row.endedByEmail &&
+                                `, by ${row.endedByEmail}`}
                             </span>
                           </span>
                         )}

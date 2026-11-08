@@ -38,7 +38,13 @@ export async function createUser(
     email,
     password,
     role = "admin",
-  }: { email: string; password: string; role?: UserRole },
+    organizationId,
+  }: {
+    email: string;
+    password: string;
+    role?: UserRole;
+    organizationId?: string;
+  },
 ): Promise<CreateUserResult> {
   const [user] = await db
     .insert(users)
@@ -46,6 +52,7 @@ export async function createUser(
       email: normalizeEmail(email),
       passwordHash: await hashPassword(password),
       role,
+      ...(organizationId && { organizationId }),
     })
     // Not an error, so it can't abort a transaction this is part of.
     .onConflictDoNothing({ target: users.email })

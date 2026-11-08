@@ -33,7 +33,10 @@ const timestamps = {
 };
 
 /** A logical grouping of API usage (an app, team, or environment). */
-/** Holds every project and account until organizations can be created. */
+/**
+ * Where projects and accounts go unless told otherwise. Its admins are the
+ * install's owners; see src/lib/roles.ts.
+ */
 export const DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000001";
 
 export const organizations = pgTable(
@@ -51,7 +54,6 @@ export const projects = pgTable(
   "projects",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Set by the database until the app chooses one.
     organizationId: uuid("organization_id")
       .notNull()
       .default(DEFAULT_ORGANIZATION_ID)
@@ -518,6 +520,8 @@ export const AUDIT_ACTIONS = [
   "account.sessions_revoked",
   "api_key.created",
   "api_key.revoked",
+  "organization.created",
+  "account.organization_changed",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -555,7 +559,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed')`,
     ),
   ],
 );
