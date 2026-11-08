@@ -286,7 +286,6 @@ const OPENAI_CACHE_WRITE_PRICES: SeedPrice[] = OPENAI_CACHE_WRITE_RATES.map(
 );
 
 export const seedPrices: SeedPrice[] = [
-  ...OPENAI_CACHE_WRITE_PRICES,
 
   // Anthropic: flat pricing across the full context window, except Haiku
   // 5.5. Cached input is the "Cache hits and refreshes" rate; cache writes
@@ -789,4 +788,5 @@ export const seedPrices: SeedPrice[] = [
     source: ANTHROPIC,
     checkedOn: TIERS_CHECKED_ON,
   },
+  ...OPENAI_CACHE_WRITE_PRICES,
 ];
