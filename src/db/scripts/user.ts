@@ -12,13 +12,15 @@ import {
 } from "../accounts";
 import { audited, COMMAND_LINE } from "../audit";
 import { createUser } from "../auth";
+import { findOrganization, setUserOrganization } from "../organizations";
 import { USER_ROLES, type UserRole } from "../schema";
 
 const USAGE = `Usage:
-  npm run user -- create --email <email> [--role <role>] < password-file
+  npm run user -- create --email <email> [--role <role>] [--org <slug>] < password-file
   npm run user -- reset-password --email <email> < password-file
   npm run user -- revoke-sessions --email <email>
   npm run user -- set-role --email <email> --role <role>
+  npm run user -- set-org --email <email> --org <slug>
   npm run user -- list
 
 create and reset-password read the password from standard input, so it
@@ -34,6 +36,7 @@ const COMMANDS = [
   "reset-password",
   "revoke-sessions",
   "set-role",
+  "set-org",
   "list",
 ];
 
@@ -67,7 +70,11 @@ const sessionCount = (n: number) => `${n} session${n === 1 ? "" : "s"}`;
 async function main() {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
-    options: { email: { type: "string" }, role: { type: "string" } },
+    options: {
+      email: { type: "string" },
+      role: { type: "string" },
+      org: { type: "string" },
+    },
   });
   const [command] = positionals;
   if (!COMMANDS.includes(command) || (command !== "list" && !values.email)) {
@@ -75,6 +82,7 @@ async function main() {
   }
   const email = values.email ?? "";
   if (command === "set-role" && !values.role) throw new Error(USAGE);
+  if (command === "set-org" && !values.org) throw new Error(USAGE);
   if (values.role !== undefined && !isRole(values.role)) {
     throw new Error(`Role must be one of: ${USER_ROLES.join(", ")}.`);
   }
@@ -91,10 +99,51 @@ async function main() {
   });
   const db = drizzle(client);
   try {
+    // Resolved first, so an unknown slug changes nothing, and so the audit
+    // entry lands in the organization it's about.
+    const organization = values.org
+      ? await findOrganization(db, values.org)
+      : undefined;
+    if (values.org && !organization) {
+      throw new Error(`No organization with slug "${values.org}".`);
+    }
+    const actor = organization
+      ? { ...COMMAND_LINE, organizationId: organization.id }
+      : COMMAND_LINE;
     switch (command) {
+      case "set-org": {
+        const target = organization as NonNullable<typeof organization>;
+        const result = await audited(db, actor, async (tx) => {
+          const moved = await setUserOrganization(tx, {
+            email,
+            organization: target,
+          });
+          return {
+            result: moved,
+            entry:
+              moved.ok && moved.previous !== moved.current
+                ? {
+                    action: "account.organization_changed" as const,
+                    target: moved.email,
+                    details: {
+                      organization: { from: moved.previous, to: moved.current },
+                    },
+                  }
+                : null,
+          };
+        });
+        if (!result.ok) throw new Error("No user with that email.");
+        console.log(`${result.email} is now in ${result.current}.`);
+        break;
+      }
       case "create": {
-        const result = await audited(db, COMMAND_LINE, async (tx) => {
-          const created = await createUser(tx, { email, password, role });
+        const result = await audited(db, actor, async (tx) => {
+          const created = await createUser(tx, {
+            email,
+            password,
+            role,
+            organizationId: organization?.id,
+          });
           return {
             result: created,
             entry: created.ok

@@ -25,6 +25,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "account.sessions_revoked": "Signed out everywhere",
   "api_key.created": "Created API key",
   "api_key.revoked": "Revoked API key",
+  "organization.created": "Created organization",
+  "account.organization_changed": "Moved account",
 };
 
 const PROJECT_FIELDS = [

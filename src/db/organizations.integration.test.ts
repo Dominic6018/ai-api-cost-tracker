@@ -7,6 +7,12 @@ import { afterAll, describe, expect, it } from "vitest";
 import { parseEnv } from "@/lib/env";
 import { createUser } from "./auth";
 import {
+  createOrganization,
+  findOrganization,
+  listOrganizations,
+  setUserOrganization,
+} from "./organizations";
+import {
   DEFAULT_ORGANIZATION_ID,
   organizations,
   projects,
@@ -109,5 +115,64 @@ describe("organizations", () => {
         .insert(organizations)
         .values({ name: "Another", slug: organization.slug }),
     ).rejects.toThrow();
+  });
+});
+
+describe("managing organizations", () => {
+  it("creates one, and reports a taken slug", async () => {
+    const orgSlug = slug();
+    const created = await createOrganization(db, {
+      name: "Acme",
+      slug: orgSlug,
+    });
+    if (!created.ok) throw new Error("expected an organization");
+    organizationIds.push(created.organization.id);
+    expect(await findOrganization(db, orgSlug)).toMatchObject({ name: "Acme" });
+    expect(
+      await createOrganization(db, { name: "Other", slug: orgSlug }),
+    ).toEqual({ ok: false, error: "slug_taken" });
+  });
+
+  it("is undefined for an unknown slug", async () => {
+    expect(await findOrganization(db, slug())).toBeUndefined();
+  });
+
+  it("creates an account in an organization and moves it", async () => {
+    const organization = await newOrganization();
+    const email = `org-${randomUUID()}@example.com`;
+    const created = await createUser(db, {
+      email,
+      password: "a long test password",
+      organizationId: organization.id,
+    });
+    if (!created.ok) throw new Error("expected a user");
+    expect(created.user.organizationId).toBe(organization.id);
+
+    const listed = (await listOrganizations(db)).find(
+      (row) => row.slug === organization.slug,
+    );
+    expect(listed).toMatchObject({ accounts: 1, projects: 0 });
+
+    expect(
+      await setUserOrganization(db, {
+        email: email.toUpperCase(),
+        organization: { id: DEFAULT_ORGANIZATION_ID, slug: "default" },
+      }),
+    ).toEqual({
+      ok: true,
+      email,
+      previous: organization.slug,
+      current: "default",
+    });
+    await db.delete(users).where(eq(users.id, created.user.id));
+  });
+
+  it("reports an unknown email when moving", async () => {
+    expect(
+      await setUserOrganization(db, {
+        email: `missing-${randomUUID()}@example.com`,
+        organization: { id: DEFAULT_ORGANIZATION_ID, slug: "default" },
+      }),
+    ).toEqual({ ok: false, error: "user_not_found" });
   });
 });

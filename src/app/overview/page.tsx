@@ -79,7 +79,7 @@ export default async function OverviewPage() {
           <Link href="/projects" className="underline">
             Projects
           </Link>
-          {can(user.role, "audit:read") && (
+          {can(user, "audit:read") && (
             <Link href="/audit" className="underline">
               Audit log
             </Link>

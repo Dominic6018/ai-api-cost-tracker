@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
   const user = await requireUser("/projects");
-  const canManage = can(user.role, "projects:manage");
+  const canManage = can(user, "projects:manage");
   const [projects, overview] = await Promise.all([
     listProjects(db, organizationScope(user)),
     getSpendOverview(db, organizationScope(user)),

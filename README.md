@@ -57,7 +57,7 @@ What it doesn't do yet, and where that's planned:
 - **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Importing usage from provider billing APIs is next ([Milestone 6](docs/ROADMAP.md#milestone-6-automatic-usage-capture)).
 - **Cost is broken down by project, provider and model.** Per customer, feature and run comes in Milestone 7; `metadata` is stored but not yet filterable.
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's Ultrafast tier isn't tracked.
-- **One team per install.** Every account sees every project, there are no organizations (Milestone 10), and accounts are created and reset from the command line.
+- **Organizations are managed from the command line**, as accounts are. An account is in one organization, and prices are shared across the install.
 - **Days are UTC days** for "today", "this month" and the charts.
 
 ## Tech stack
@@ -120,6 +120,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 | `npm run db:demo`          | Load demo projects and 90 days of usage (`-- --remove` deletes them)  |
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
+| `npm run org`              | Create and list organizations (see Dashboard)                         |
 | `npm run reconcile`        | Compare recorded costs with a provider's bill (see below)             |
 | `npm run budget-alerts`    | Send budget notifications to a webhook, Slack or email (see below)    |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
@@ -193,7 +194,7 @@ docs/ROADMAP.md   Development roadmap
 ## Data model
 
 - **projects**: a grouping of usage (app, team, or environment) with an optional monthly budget and an optional run budget (the most any one `run_id` may spend in total).
-- **organizations**: who projects and accounts belong to. Every dashboard page, export and project action is limited to the signed-in account's organization. Every project and account is in the one default organization until organizations can be created.
+- **organizations**: who projects and accounts belong to. Every dashboard page, export and project action is limited to the signed-in account's organization. Projects and accounts go in the default organization unless told otherwise.
 - **model_pricing**: USD-per-million-token prices per provider/model, versioned by `effective_from`/`effective_to` so historical costs stay accurate when prices change, with a `service_tier` (`standard`, `flex` or `fast`): each tier has its own rates and history, unique per provider, model, tier and start. Optional columns hold a cache-write rate, a separate rate for 1-hour cache writes (`cache_write_1h_per_mtok_usd`; Anthropic charges 2× input for those, against 1.25× for 5-minute writes, and without it they're billed at the cache-write rate), a batch multiplier (`batch_multiplier`, the share of the standard price a Batch API request costs, every rate included; null when batch isn't priced), a web search price (`web_search_per_1k_usd`, USD per 1,000 server-side searches: $10 for every Claude model, the same in fast mode and not discounted for batch; null when searches aren't priced), audio token rates (`audio_input_per_mtok_usd`, `cached_audio_input_per_mtok_usd` and `audio_output_per_mtok_usd`, for audio and realtime models, which bill audio far above text; input and output come together, cached audio falls back to audio input, and the long-prompt tier doesn't change them; null when audio isn't priced), image token rates (`image_input_per_mtok_usd`, `cached_image_input_per_mtok_usd` and `image_output_per_mtok_usd`, for image generation models; each is optional and falls back to the matching text rate, as vision models bill image input as text), and a **prompt-length tier**: a token threshold plus a second set of rates. A request with more input tokens than the threshold (counting cached and cache-write tokens) pays the long rates for every token, including output. A database check makes sure a threshold always comes with long input and output rates. Each price also records `source_url`, the page it was read from, and `checked_on`, the day it was last checked there (null for rows recorded before they existed), and `recorded_by`, the user who added it from `/prices/new` (null for seeded prices, and set to null if the account is deleted). A price ended without a replacement also records `end_source_url`, `end_checked_on` and `ended_by`.
 - **usage_events**: individual requests with token counts (including cached and cache-write input tokens, and how many of the writes used the longer lifetime: Anthropic's 1-hour or OpenAI's 12-hour writes), the service tier (`standard`, `batch`, `flex` or `fast`), web searches (`web_search_requests`) and their cost (`web_search_cost_usd`, part of `cost_usd`), audio tokens (`audio_input_tokens`, `cached_audio_input_tokens` and `audio_output_tokens`) and image tokens (`image_input_tokens`, `cached_image_input_tokens` and `image_output_tokens`), parts of the input, cached and output counts, computed `cost_usd`, and an optional provider `request_id` for de-duplication.
 - **rate_limits**: fixed-window attempt counters for sign-in and API keys. Keys are SHA-256 hashes, so attempted emails and client IPs aren't stored. Ended windows are deleted as new attempts arrive.
@@ -251,13 +252,24 @@ npm run user -- revoke-sessions --email you@example.com     # sign out everywher
 
 Each account has a role, and every role can read the whole dashboard. Add `--role` to `create` to choose one; without it, a new account is an `admin`, and accounts from before roles existed are admins too. A new role applies on the next request, without signing the user out. The server checks the role on every change, not only by hiding links.
 
-| Role     | Projects | Prices |
-| -------- | -------- | ------ |
-| `admin`  | Manage   | Manage |
-| `member` | Manage   | Read   |
-| `viewer` | Read     | Read   |
+| Role     | Projects | Prices                             |
+| -------- | -------- | ---------------------------------- |
+| `admin`  | Manage   | Manage (default organization only) |
+| `member` | Manage   | Read                               |
+| `viewer` | Read     | Read                               |
 
 Admins can see who changed what at `/audit`: projects created and updated (with the fields that changed), prices added and ended, accounts created, role changes, password resets, sessions revoked, and API keys created and revoked. Changes made with `npm run user` or `npm run api-key` show as "command line". Each entry is saved in the same transaction as its change, and keeps the account's email if the account is later deleted. There's no way to edit or delete entries from the app, and they're kept indefinitely.
+
+Organizations keep teams apart: each sees only its own projects, usage, exports and audit log. Everything starts in one default organization. To add another:
+
+```bash
+npm run org -- create --name "Acme" --slug acme
+npm run user -- create --email you@acme.example --org acme < password.txt
+npm run user -- set-org --email someone@example.com --org acme   # move an account
+npm run org -- list                                              # with account and project counts
+```
+
+Prices are shared by the whole install, so only the install's owners, the admins of the default organization, can change them. Admins of other organizations can read prices but not who added them. Scheduled budget notifications cover every organization and go to the install's one set of destinations, and project slugs are unique across the install.
 
 `reset-password` follows the same password rules, signs the user out everywhere, and lifts any sign-in lockout on that email. `revoke-sessions` keeps the password; use it when a device is lost or a cookie may have leaked.
 

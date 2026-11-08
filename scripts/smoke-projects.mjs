@@ -669,6 +669,7 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     "/usage",
     `/usage?project=${projectId}`,
     "/audit",
+    "/prices",
   ]) {
     const result = await page(path);
     assert.equal(result.status, 200, `GET ${path}`);
@@ -680,6 +681,11 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     404,
     "another organization's project is a 404",
   );
+  const denied = await page("/prices/new");
+  assert.equal(denied.status, 307, "GET /prices/new from another organization");
+  assert.equal(new URL(denied.location, base).pathname, "/no-access");
+  assert.doesNotMatch((await page("/prices")).html, /Add price/);
+
   const csv = await page("/usage/export");
   assert.equal(csv.status, 200);
   assert.equal(csv.html.trim().split("\r\n").length, 1, "the export is empty");
