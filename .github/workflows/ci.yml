@@ -476,6 +476,12 @@ jobs:
             {"amount":"10","currency":"USD","cost_type":"code_execution","model":null}
           ]}],"has_more":false,"next_page":null}
           JSON
+          printf '{"day":"%s","currency":"USD","cost":"1.5","credits":"-0.25"}\n' "$TODAY" > google-billing.json
+          npm run --silent reconcile -- --provider google --from "$TODAY" --report-file google-billing.json | tee google-reconcile.log
+          grep -E 'all models.*\$1\.500000' google-reconcile.log
+          grep -qF 'Credits applied, not counted as billed: -$0.250000' google-reconcile.log
+          if npm run --silent reconcile -- --provider google --from "$TODAY" 2> google-err.log; then exit 1; fi
+          grep -q 'report-file' google-err.log
           npm run --silent reconcile -- --provider anthropic --from "$TODAY" --report-file cost-report.json | tee reconcile.log
           # Haiku matches exactly; Sonnet is $0.0003 under (below a cent, not
           # flagged); Opus was billed but never recorded (flagged). Web search

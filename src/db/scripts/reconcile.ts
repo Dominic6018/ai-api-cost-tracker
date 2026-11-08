@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { fetchAnthropicCostReport } from "@/lib/anthropic-cost-report";
 import { parseEnv } from "@/lib/env";
+import { parseGoogleBilling } from "@/lib/google-billing";
 import {
   fetchOpenAICosts,
   parseOpenAICostsPage,
@@ -20,25 +21,27 @@ import {
 import { recordedDailyCost } from "../reconcile";
 
 const USAGE = `Usage:
-  npm run reconcile -- --provider <anthropic|openai> --from <YYYY-MM-DD> [--to <YYYY-MM-DD>]
+  npm run reconcile -- --provider <anthropic|openai|google> --from <YYYY-MM-DD> [--to <YYYY-MM-DD>]
 
 Compares the costs recorded here with what the provider billed, per UTC day:
-per model for Anthropic, and across all models for OpenAI, whose costs API
-has no model field. --to is exclusive and defaults to tomorrow, so today is
-included.
+per model for Anthropic, and across all models for OpenAI and Google, whose
+bills have no model field. --to is exclusive and defaults to tomorrow, so
+today is included.
 
 Options:
   --tolerance <percent>   Flag differences above this share of the billed
                           amount (default 2); differences under $0.01 never are
   --report-file <path>    Read a saved report (one page of the provider's
-                          JSON, or an array of pages) instead of calling the API
+                          JSON, or an array of pages) instead of calling the API.
+                          Required for Google: the result of the BigQuery
+                          query in the README
 
 Environment:
   ANTHROPIC_ADMIN_KEY     An Anthropic Admin API key (sk-ant-admin...)
   OPENAI_ADMIN_KEY        An OpenAI Admin key (sk-admin-...)`;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** OpenAI rows aren't per model; one row per day stands for all of them. */
+/** OpenAI and Google rows aren't per model; one per day stands for them all. */
 const ALL_MODELS = "(all models)";
 
 function parseDay(value: string, name: string): Date {
@@ -81,8 +84,14 @@ async function main() {
     return;
   }
   const provider = values.provider;
-  if (provider !== "anthropic" && provider !== "openai") {
-    throw new Error(`--provider must be anthropic or openai.\n\n${USAGE}`);
+  if (
+    provider !== "anthropic" &&
+    provider !== "openai" &&
+    provider !== "google"
+  ) {
+    throw new Error(
+      `--provider must be anthropic, openai or google.\n\n${USAGE}`,
+    );
   }
   if (!values.from) throw new Error(USAGE);
   const from = parseDay(values.from, "from");
@@ -96,6 +105,11 @@ async function main() {
     throw new Error("--tolerance must be a non-negative number.");
   }
   const reportFile = values["report-file"];
+  if (provider === "google" && !reportFile) {
+    throw new Error(
+      "Google Cloud bills through BigQuery, not an API: save the result of the query in the README and pass it with --report-file.",
+    );
+  }
 
   // A saved report may cover more days than asked for.
   const fromDay = from.toISOString().slice(0, 10);
@@ -105,6 +119,7 @@ async function main() {
 
   let billed: BilledCost[];
   let lineItems: OpenAIBilledCost[] = [];
+  let creditsMicros = 0n;
   if (provider === "anthropic") {
     billed = (
       reportFile
@@ -117,6 +132,17 @@ async function main() {
             to,
           })
     ).filter(inRange);
+  } else if (provider === "google") {
+    const days = parseGoogleBilling(
+      await readFile(reportFile as string, "utf8"),
+    ).filter(inRange);
+    billed = days.map((item) => ({
+      day: item.day,
+      model: ALL_MODELS,
+      costType: "tokens",
+      micros: item.micros,
+    }));
+    creditsMicros = days.reduce((sum, d) => sum + d.creditsMicros, 0n);
   } else {
     lineItems = (
       reportFile
@@ -147,8 +173,8 @@ async function main() {
       from,
       to,
     });
-    if (provider === "openai") {
-      // OpenAI's line items include any web search, so compare in full.
+    if (provider !== "anthropic") {
+      // These bills include any web search, so compare in full.
       recorded = recorded.map((cost) => ({
         ...cost,
         model: ALL_MODELS,
@@ -158,7 +184,11 @@ async function main() {
     }
     const report = reconcile(billed, recorded, tolerance);
 
-    const name = provider === "anthropic" ? "Anthropic" : "OpenAI";
+    const name = {
+      anthropic: "Anthropic",
+      openai: "OpenAI",
+      google: "Google Cloud",
+    }[provider];
     console.log(
       `${name}, ${fromDay} to ${toDay} (exclusive), all projects. Diff = recorded - billed.\n`,
     );
@@ -181,6 +211,11 @@ async function main() {
     for (const other of report.otherCosts) {
       console.log(
         `Billed but not tracked (${other.costType}): ${formatMicros(other.micros)}`,
+      );
+    }
+    if (creditsMicros !== 0n) {
+      console.log(
+        `Credits applied, not counted as billed: ${formatMicros(creditsMicros)}`,
       );
     }
     if (lineItems.length > 0) {
