@@ -215,6 +215,25 @@ describe("seed", () => {
     expect((await lookup("gpt-5.5", "fast")).found).toBe(false);
   });
 
+  it("loads 12-hour cache-write rates and the batch price", async () => {
+    const result = await findEffectivePricing(db, {
+      provider: "openai",
+      model: "gpt-6.1-sol",
+      at: new Date("2026-11-08T12:00:00Z"),
+    });
+    if (!result.found) throw new Error("expected pricing");
+    expect(result.pricing).toMatchObject({
+      cacheWritePerMTokUsd: 2.5,
+      cacheWrite1hPerMTokUsd: 5,
+      batchMultiplier: 0.5,
+    });
+    expect(result.pricing.longContext).toMatchObject({
+      thresholdTokens: 272_000,
+      cacheWritePerMTokUsd: 5,
+      cacheWrite1hPerMTokUsd: 10,
+    });
+  });
+
   it("fills a missing 1-hour cache-write rate, keeping a recorded one", async () => {
     const price = seedPrices.find((p) => p.model === "claude-haiku-5-5");
     if (!price) throw new Error("expected Claude Haiku 5.5 in the seed data");

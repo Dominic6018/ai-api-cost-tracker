@@ -81,6 +81,20 @@ class UsageFromResponseTest(unittest.TestCase):
             Usage("openai", "gpt-5.4-mini", 2000, 700, cached_input_tokens=512, request_id="resp_abc123"),
         )
 
+    def test_openai_cache_writes_by_lifetime(self):
+        details = {
+            "cached_tokens": 4000,
+            "cache_write_tokens": 7000,
+            "cache_write_tokens_details": {"ttl_30m_tokens": 3000, "ttl_12h_tokens": 4000},
+        }
+        usage = usage_from_response(
+            {**OPENAI_RESPONSE, "usage": {"input_tokens": 12000, "input_tokens_details": details, "output_tokens": 0}}
+        )
+        self.assertEqual((usage.cache_write_input_tokens, usage.cache_write_1h_input_tokens), (7000, 4000))
+        payload = usage.to_payload()
+        self.assertEqual(payload["cacheWriteInputTokens"], 7000)
+        self.assertEqual(payload["cacheWrite1hInputTokens"], 4000)
+
     def test_openai_chat_audio_tokens(self):
         details = {"cached_tokens": 1000, "audio_tokens": 1000}
         spoken = {**OPENAI_CHAT, "usage": {**OPENAI_CHAT["usage"], "prompt_tokens_details": details,

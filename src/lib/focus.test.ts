@@ -283,6 +283,24 @@ describe("focusRows", () => {
     expect(listCostMicros(splitRows)).toBe(Math.round(recorded * 1e6));
   });
 
+  it("names OpenAI's longer-lived writes as 12-hour writes", () => {
+    const withLonger = { ...pricing, cacheWrite1hPerMTokUsd: "0.25" };
+    const openai = {
+      ...usage,
+      provider: "openai" as const,
+      cacheWrite1hInputTokens: 400,
+    };
+    const row = focusRows(openai, withLonger).find((r) =>
+      r.SkuId?.endsWith("/cache-write-12h"),
+    );
+    expect(row).toMatchObject({
+      SkuMeter: "12-Hour Cache Write Input Tokens",
+      ConsumedQuantity: "400",
+      ListUnitPrice: "0.25",
+    });
+    expect(row?.SkuPriceId).toContain("/cache-write-12h");
+  });
+
   it("prices every token at the long rates above the threshold", () => {
     const long = { ...usage, inputTokens: 150_000 };
     const longRows = focusRows(long, pricing);

@@ -295,6 +295,86 @@ describe("OpenAI long-context prices", () => {
     });
   });
 
+  it("seeds cache-write models with both write rates", () => {
+    expect(price("gpt-6.1-sol")).toMatchObject({
+      inputPerMTokUsd: "2.00",
+      outputPerMTokUsd: "10.00",
+      cachedInputPerMTokUsd: "0.10",
+      cacheWritePerMTokUsd: "2.50",
+      cacheWrite1hPerMTokUsd: "5.00",
+      batchMultiplier: "0.5",
+      longContext: {
+        thresholdTokens: 272_000,
+        inputPerMTokUsd: "4.00",
+        outputPerMTokUsd: "15.00",
+        cachedInputPerMTokUsd: "0.20",
+        cacheWritePerMTokUsd: "5.00",
+        cacheWrite1hPerMTokUsd: "10.00",
+      },
+    });
+    expect(price("gpt-6-luna", "flex")).toMatchObject({
+      cachedInputPerMTokUsd: "0.005",
+      cacheWritePerMTokUsd: "0.0625",
+    });
+  });
+
+  describe.each([
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+    "gpt-6.1-terra",
+    "gpt-6-luna",
+    "gpt-6-sol",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+  ])("%s follows OpenAI's published multipliers", (model) => {
+    const rates = (row: (typeof seedPrices)[number] | undefined) => {
+      if (!row?.longContext) throw new Error(`expected ${model}`);
+      const long = row.longContext;
+      return [
+        row.inputPerMTokUsd,
+        row.outputPerMTokUsd,
+        row.cachedInputPerMTokUsd,
+        row.cacheWritePerMTokUsd,
+        row.cacheWrite1hPerMTokUsd,
+        long.inputPerMTokUsd,
+        long.outputPerMTokUsd,
+        long.cachedInputPerMTokUsd,
+        long.cacheWritePerMTokUsd,
+        long.cacheWrite1hPerMTokUsd,
+      ].map(Number);
+    };
+
+    it("charges Flex half of Standard and Fast twice it", () => {
+      const standard = rates(price(model));
+      rates(price(model, "flex")).forEach((rate, i) =>
+        expect(rate).toBeCloseTo(standard[i] / 2, 9),
+      );
+      rates(price(model, "fast")).forEach((rate, i) =>
+        expect(rate).toBeCloseTo(standard[i] * 2, 9),
+      );
+    });
+
+    it("prices writes at 1.25× and 2.5× input, in both tiers", () => {
+      const [
+        input,
+        ,
+        ,
+        write,
+        write12h,
+        longInput,
+        ,
+        ,
+        longWrite,
+        longWrite12h,
+      ] = rates(price(model));
+      expect(write).toBeCloseTo(input * 1.25, 9);
+      expect(write12h).toBeCloseTo(input * 2.5, 9);
+      expect(longWrite).toBeCloseTo(longInput * 1.25, 9);
+      expect(longWrite12h).toBeCloseTo(longInput * 2.5, 9);
+    });
+  });
+
   it("leaves out tiers without published long rates", () => {
     expect(price("gpt-5.5-pro", "flex")).toBeUndefined();
     expect(price("gpt-5.5", "fast")).toBeUndefined();
