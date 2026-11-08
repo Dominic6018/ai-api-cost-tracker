@@ -60,7 +60,7 @@ Interpret this instruction as follows:
 4. Add or update appropriate tests for code changes when practical.
 5. Run the available project checks: lint, typecheck, unit tests, build, as applicable. Report absent commands honestly. Do not run destructive migrations, production writes, paid API calls, or external deployments.
 6. Inspect `git diff --check`, `git diff`, and the staged file list. Check for credentials, accidental personal information, binary artifacts, and unrelated changes.
-7. Commit the actual changes with a precise Conventional Commit message. Multiple commits are fine only if they represent distinct meaningful units of work. Never backdate, forge, or inflate Git history. Do not add `Co-Authored-By` trailers or any other mention of Claude to commit messages; commits carry only the configured Git author.
+7. Commit the actual changes with a precise Conventional Commit message. Multiple commits are fine only if they represent distinct meaningful units of work. Never backdate, forge, or inflate Git history. The configured Git author stays the commit author, and every commit message (including the merge commit's body) ends with Claude as the only co-author: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Add no other co-author trailers.
 8. Push only the new feature branch (`git push -u origin <feature-branch>`). Never force-push or push directly to the default branch.
 
 ## 4. Create the PR (full/create/issue modes)
