@@ -4,6 +4,7 @@ import { submitProjectForm } from "./submit";
 
 const project: Project = {
   id: "4f0c6c5e-2f7a-4b8e-9d1a-3c5e7f9a1b2c",
+  organizationId: "00000000-0000-0000-0000-000000000001",
   name: "Sample App",
   slug: "sample-app",
   monthlyBudgetUsd: null,
