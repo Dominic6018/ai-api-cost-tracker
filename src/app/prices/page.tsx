@@ -3,6 +3,7 @@ import Link from "next/link";
 import { db } from "@/db";
 import { listModelPrices } from "@/db/pricing";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/roles";
 import {
   formatBatchMultiplier,
   formatRate,
@@ -47,6 +48,7 @@ function hostOf(url: string): string {
 
 export default async function PricesPage() {
   const user = await requireUser("/prices");
+  const canManage = can(user.role, "prices:manage");
   const now = new Date();
   const histories = priceHistories(await listModelPrices(db), now);
 
@@ -72,12 +74,14 @@ export default async function PricesPage() {
               Sign out
             </button>
           </form>
-          <Link
-            href="/prices/new"
-            className="rounded-md bg-foreground px-4 py-2 font-medium text-background"
-          >
-            Add price
-          </Link>
+          {canManage && (
+            <Link
+              href="/prices/new"
+              className="rounded-md bg-foreground px-4 py-2 font-medium text-background"
+            >
+              Add price
+            </Link>
+          )}
         </nav>
       </header>
 
@@ -178,7 +182,7 @@ export default async function PricesPage() {
                         >
                           {STATUS_LABELS[status]}
                         </span>
-                        {status !== "ended" && (
+                        {canManage && status !== "ended" && (
                           <Link
                             href={`/prices/${row.id}/end`}
                             className="block text-xs underline"

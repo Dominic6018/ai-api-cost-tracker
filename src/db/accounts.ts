@@ -4,7 +4,7 @@ import { hashPassword } from "@/lib/passwords";
 import { RATE_LIMITS, rateLimitKey } from "@/lib/rate-limit";
 import { normalizeEmail } from "./auth";
 import { clearRateLimit } from "./rate-limits";
-import { sessions, users } from "./schema";
+import { sessions, users, type UserRole } from "./schema";
 
 /** Any Drizzle Postgres database, so the CLI and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select" | "transaction">;
@@ -69,8 +69,32 @@ export async function revokeSessions(
   });
 }
 
+/**
+ * Changes what an account may do. Roles are read on every request, so it
+ * applies straight away, without signing the user out.
+ */
+export async function setUserRole(
+  db: Pick<Database, "transaction">,
+  { email, role }: { email: string; role: UserRole },
+): Promise<
+  | { ok: true; email: string; role: UserRole }
+  | { ok: false; error: "user_not_found" }
+> {
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .update(users)
+      .set({ role })
+      .where(eq(users.email, normalizeEmail(email)))
+      .returning({ email: users.email, role: users.role });
+    return user
+      ? ({ ok: true, ...user } as const)
+      : ({ ok: false, error: "user_not_found" } as const);
+  });
+}
+
 export interface AccountSummary {
   email: string;
+  role: UserRole;
   createdAt: Date;
   /** Unexpired sessions; expired ones can't sign anyone in. */
   activeSessions: number;
@@ -90,6 +114,7 @@ export async function listUsers(
   const rows = await db
     .select({
       email: users.email,
+      role: users.role,
       createdAt: users.createdAt,
       activeSessions: active.n,
     })

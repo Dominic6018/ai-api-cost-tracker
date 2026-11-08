@@ -105,7 +105,10 @@ Recording usage shouldn't require hand-written API calls.
 
 ## Milestone 10: Teams
 
-- [ ] Organizations, roles (admin, member, viewer) and an audit log; single sign-on later
+- [x] Roles on accounts: admin, member and viewer (#120)
+- [ ] Organizations
+- [ ] An audit log of changes
+- [ ] Single sign-on, later
 - [ ] Optional per-customer billing through Stripe
 
 ## Why these milestones

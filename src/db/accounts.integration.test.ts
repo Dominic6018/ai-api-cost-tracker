@@ -6,7 +6,12 @@ import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { parseEnv } from "@/lib/env";
 import { RATE_LIMITS, rateLimitKey } from "@/lib/rate-limit";
-import { listUsers, resetPassword, revokeSessions } from "./accounts";
+import {
+  listUsers,
+  resetPassword,
+  revokeSessions,
+  setUserRole,
+} from "./accounts";
 import {
   createSession,
   createUser,
@@ -69,7 +74,7 @@ describe("resetPassword", () => {
         email: user.email,
         password: newPassword,
       }),
-    ).toEqual({ id: user.id, email: user.email });
+    ).toEqual({ id: user.id, email: user.email, role: "admin" });
   });
 
   it("lifts a sign-in lockout on the email", async () => {
@@ -161,6 +166,48 @@ describe("listUsers", () => {
       "activeSessions",
       "createdAt",
       "email",
+      "role",
     ]);
+  });
+});
+
+describe("setUserRole", () => {
+  it("applies to a live session without signing the user out", async () => {
+    const user = await newUser();
+    expect(user.role).toBe("admin");
+    const { token } = await createSession(db, user.id);
+    expect(
+      await setUserRole(db, {
+        email: user.email.toUpperCase(),
+        role: "viewer",
+      }),
+    ).toEqual({ ok: true, email: user.email, role: "viewer" });
+    expect(await getSessionUser(db, token)).toEqual({
+      ...user,
+      role: "viewer",
+    });
+  });
+
+  it("reports an unknown email", async () => {
+    expect(
+      await setUserRole(db, {
+        email: `missing-${randomUUID()}@example.com`,
+        role: "viewer",
+      }),
+    ).toEqual({ ok: false, error: "user_not_found" });
+  });
+
+  it("creates an account with a role, and the database refuses others", async () => {
+    const email = `role-${randomUUID()}@example.com`;
+    const result = await createUser(db, { email, password, role: "member" });
+    if (!result.ok) throw new Error("expected a user");
+    createdUserIds.push(result.user.id);
+    expect(result.user.role).toBe("member");
+    await expect(
+      db
+        .update(users)
+        .set({ role: "owner" as "admin" })
+        .where(eq(users.id, result.user.id)),
+    ).rejects.toThrow();
   });
 });

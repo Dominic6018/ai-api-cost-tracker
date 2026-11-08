@@ -6,6 +6,7 @@ import { getSpendOverview } from "@/db/spend";
 import { budgetStatus, budgetUtilization } from "@/lib/budget";
 import { formatUsd } from "@/lib/cost";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/roles";
 import { BudgetAlerts } from "../budget-alerts";
 import { BudgetStatusBadge } from "../budget-status";
 import { logoutAction } from "../login/actions";
@@ -17,6 +18,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
   const user = await requireUser("/projects");
+  const canManage = can(user.role, "projects:manage");
   const [projects, overview] = await Promise.all([
     listProjects(db),
     getSpendOverview(db),
@@ -39,12 +41,14 @@ export default async function ProjectsPage() {
               Sign out
             </button>
           </form>
-          <Link
-            href="/projects/new"
-            className="rounded-md bg-foreground px-4 py-2 font-medium text-background"
-          >
-            New project
-          </Link>
+          {canManage && (
+            <Link
+              href="/projects/new"
+              className="rounded-md bg-foreground px-4 py-2 font-medium text-background"
+            >
+              New project
+            </Link>
+          )}
         </div>
       </header>
 
@@ -115,13 +119,15 @@ export default async function ProjectsPage() {
                     })()}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/projects/${project.id}/edit`}
-                      className="underline"
-                      aria-label={`Edit ${project.name}`}
-                    >
-                      Edit
-                    </Link>
+                    {canManage && (
+                      <Link
+                        href={`/projects/${project.id}/edit`}
+                        className="underline"
+                        aria-label={`Edit ${project.name}`}
+                      >
+                        Edit
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}
