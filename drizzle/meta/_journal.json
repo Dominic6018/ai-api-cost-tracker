@@ -169,6 +169,13 @@
       "when": 1794155695722,
       "tag": "0023_user_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794158594634,
+      "tag": "0024_audit_log",
+      "breakpoints": true
     }
   ]
 }

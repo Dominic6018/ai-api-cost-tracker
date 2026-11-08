@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { isUuid } from "@/lib/ids";
 import type { ProjectFormValues } from "@/lib/projects";
 import { projects, type Project } from "./schema";
 
@@ -10,7 +11,6 @@ type Database = Pick<
 >;
 
 const UNIQUE_VIOLATION = "23505";
-const INVALID_TEXT_REPRESENTATION = "22P02";
 
 function pgErrorCode(error: unknown): string | undefined {
   const cause = (error as { cause?: unknown })?.cause ?? error;
@@ -31,24 +31,26 @@ export async function getProject(
   db: Database,
   id: string,
 ): Promise<Project | undefined> {
-  try {
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, id));
-    return project;
-  } catch (error) {
-    if (pgErrorCode(error) === INVALID_TEXT_REPRESENTATION) return undefined;
-    throw error;
-  }
+  if (!isUuid(id)) return undefined;
+  const [project] = await db.select().from(projects).where(eq(projects.id, id));
+  return project;
 }
 
-export async function createProject(
-  db: Database,
+// Saves run in their own transaction, a savepoint inside a caller's. A
+// duplicate slug fails the statement, and that must not abort the caller's
+// transaction: the driver would rethrow it even after it's been handled.
+export async function createProject<
+  TQueryResult extends PgQueryResultHKT,
+  TFullSchema extends Record<string, unknown>,
+>(
+  // Generic, so both the app's schema-aware database and plain ones fit.
+  db: Pick<PgDatabase<TQueryResult, TFullSchema>, "transaction">,
   values: ProjectFormValues,
 ): Promise<SaveProjectResult> {
   try {
-    const [project] = await db.insert(projects).values(values).returning();
+    const [project] = await db.transaction((tx) =>
+      tx.insert(projects).values(values).returning(),
+    );
     return { ok: true, project };
   } catch (error) {
     if (pgErrorCode(error) === UNIQUE_VIOLATION) {
@@ -58,23 +60,23 @@ export async function createProject(
   }
 }
 
-export async function updateProject(
-  db: Database,
+export async function updateProject<
+  TQueryResult extends PgQueryResultHKT,
+  TFullSchema extends Record<string, unknown>,
+>(
+  db: Pick<PgDatabase<TQueryResult, TFullSchema>, "transaction">,
   id: string,
   values: ProjectFormValues,
 ): Promise<SaveProjectResult> {
+  if (!isUuid(id)) return { ok: false, error: "not_found" };
   try {
-    const [project] = await db
-      .update(projects)
-      .set(values)
-      .where(eq(projects.id, id))
-      .returning();
+    const [project] = await db.transaction((tx) =>
+      tx.update(projects).set(values).where(eq(projects.id, id)).returning(),
+    );
     return project ? { ok: true, project } : { ok: false, error: "not_found" };
   } catch (error) {
-    const code = pgErrorCode(error);
-    if (code === UNIQUE_VIOLATION) return { ok: false, error: "slug_taken" };
-    if (code === INVALID_TEXT_REPRESENTATION) {
-      return { ok: false, error: "not_found" };
+    if (pgErrorCode(error) === UNIQUE_VIOLATION) {
+      return { ok: false, error: "slug_taken" };
     }
     throw error;
   }

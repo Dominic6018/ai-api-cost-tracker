@@ -10,6 +10,7 @@ import {
   revokeSessions,
   setUserRole,
 } from "../accounts";
+import { audited, COMMAND_LINE } from "../audit";
 import { createUser } from "../auth";
 import { USER_ROLES, type UserRole } from "../schema";
 
@@ -92,24 +93,69 @@ async function main() {
   try {
     switch (command) {
       case "create": {
-        const result = await createUser(db, { email, password, role });
+        const result = await audited(db, COMMAND_LINE, async (tx) => {
+          const created = await createUser(tx, { email, password, role });
+          return {
+            result: created,
+            entry: created.ok
+              ? {
+                  action: "account.created" as const,
+                  target: created.user.email,
+                  details: { role: created.user.role },
+                }
+              : null,
+          };
+        });
         if (!result.ok)
           throw new Error("A user with that email already exists.");
         console.log(`Created user ${result.user.email} (${result.user.role}).`);
         break;
       }
       case "set-role": {
-        const result = await setUserRole(db, { email, role: role as UserRole });
+        const result = await audited(db, COMMAND_LINE, async (tx) => {
+          const changed = await setUserRole(tx, {
+            email,
+            role: role as UserRole,
+          });
+          return {
+            result: changed,
+            entry:
+              changed.ok && changed.previousRole !== changed.role
+                ? {
+                    action: "account.role_changed" as const,
+                    target: changed.email,
+                    details: {
+                      role: { from: changed.previousRole, to: changed.role },
+                    },
+                  }
+                : null,
+          };
+        });
         if (!result.ok) throw new Error("No user with that email.");
         console.log(`${result.email} is now ${result.role}.`);
         break;
       }
       case "reset-password":
       case "revoke-sessions": {
-        const result =
-          command === "reset-password"
-            ? await resetPassword(db, { email, password })
-            : await revokeSessions(db, email);
+        const result = await audited(db, COMMAND_LINE, async (tx) => {
+          const done =
+            command === "reset-password"
+              ? await resetPassword(tx, { email, password })
+              : await revokeSessions(tx, email);
+          return {
+            result: done,
+            entry: done.ok
+              ? {
+                  action:
+                    command === "reset-password"
+                      ? ("account.password_reset" as const)
+                      : ("account.sessions_revoked" as const),
+                  target: done.email,
+                  details: { revokedSessions: done.revokedSessions },
+                }
+              : null,
+          };
+        });
         if (!result.ok) throw new Error("No user with that email.");
         const done =
           command === "reset-password"

@@ -481,6 +481,50 @@ export type ServiceTier = (typeof SERVICE_TIERS)[number];
 export const PRICE_TIERS = ["standard", "flex", "fast"] as const;
 export type PriceTier = (typeof PRICE_TIERS)[number];
 
+export const AUDIT_ACTIONS = [
+  "project.created",
+  "project.updated",
+  "price.added",
+  "price.ended",
+  "account.created",
+  "account.role_changed",
+  "account.password_reset",
+  "account.sessions_revoked",
+  "api_key.created",
+  "api_key.revoked",
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+/**
+ * Who changed what. Written in the same transaction as the change. Holds
+ * names and amounts only, never passwords, hashes, keys or session tokens.
+ */
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // Null for the command line, or once the account has been deleted.
+    actorUserId: uuid("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    // The email at the time, or "command line"; survives account deletion.
+    actorLabel: text("actor_label").notNull(),
+    action: text("action").$type<AuditAction>().notNull(),
+    target: text("target").notNull(),
+    details: jsonb("details").$type<Record<string, unknown>>(),
+  },
+  (t) => [
+    index("audit_log_occurred_at_idx").on(t.occurredAt.desc(), t.id.desc()),
+    check(
+      "audit_log_action_valid",
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked')`,
+    ),
+  ],
+);
+
 export const ALERT_CHANNELS = ["webhook", "slack", "email"] as const;
 export type AlertChannel = (typeof ALERT_CHANNELS)[number];
 
@@ -580,6 +624,7 @@ export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
 export type Provider = (typeof providerEnum.enumValues)[number];
 export type User = typeof users.$inferSelect;
+export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;

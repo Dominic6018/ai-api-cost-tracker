@@ -14,14 +14,6 @@ type Database = Pick<
   "select" | "insert" | "delete"
 >;
 
-const UNIQUE_VIOLATION = "23505";
-
-function pgErrorCode(error: unknown): string | undefined {
-  const cause = (error as { cause?: unknown })?.cause ?? error;
-  const code = (cause as { code?: unknown })?.code;
-  return typeof code === "string" ? code : undefined;
-}
-
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 /** The fields of a user that are safe to hand to pages. */
@@ -38,22 +30,17 @@ export async function createUser(
     role = "admin",
   }: { email: string; password: string; role?: UserRole },
 ): Promise<CreateUserResult> {
-  try {
-    const [user] = await db
-      .insert(users)
-      .values({
-        email: normalizeEmail(email),
-        passwordHash: await hashPassword(password),
-        role,
-      })
-      .returning({ id: users.id, email: users.email, role: users.role });
-    return { ok: true, user };
-  } catch (error) {
-    if (pgErrorCode(error) === UNIQUE_VIOLATION) {
-      return { ok: false, error: "email_taken" };
-    }
-    throw error;
-  }
+  const [user] = await db
+    .insert(users)
+    .values({
+      email: normalizeEmail(email),
+      passwordHash: await hashPassword(password),
+      role,
+    })
+    // Not an error, so it can't abort a transaction this is part of.
+    .onConflictDoNothing({ target: users.email })
+    .returning({ id: users.id, email: users.email, role: users.role });
+  return user ? { ok: true, user } : { ok: false, error: "email_taken" };
 }
 
 // Verified when the email is unknown, so both cases take about as long and

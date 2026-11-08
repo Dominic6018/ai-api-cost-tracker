@@ -196,6 +196,7 @@ jobs:
           grep -q "^$SMOKE_VIEWER_EMAIL  viewer " users.txt
           npm run --silent user -- set-role --email "$SMOKE_VIEWER_EMAIL" --role member | tee role.txt
           grep -q "is now member" role.txt
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action = 'account.role_changed' AND actor_label = 'command line' AND target = '$SMOKE_VIEWER_EMAIL'")" = 1
           if grep -q 'scrypt' users.txt; then echo "list shows a hash"; exit 1; fi
           if echo "too-short" | npm run --silent user -- reset-password --email "$SMOKE_EMAIL"; then
             echo "a short password was accepted"; exit 1

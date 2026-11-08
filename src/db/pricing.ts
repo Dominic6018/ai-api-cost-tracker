@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gt, isNull, lt, lte, or } from "drizzle-orm";
+import { isUuid } from "@/lib/ids";
 import {
   alias,
   type PgDatabase,
@@ -222,6 +223,7 @@ export async function endModelPrice(
   input: EndPriceInput,
   endedBy: string,
 ): Promise<EndPriceResult> {
+  if (!isUuid(id)) return { ok: false, error: "not_found" };
   try {
     const [price] = await db
       .update(modelPricing)

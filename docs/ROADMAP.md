@@ -107,7 +107,7 @@ Recording usage shouldn't require hand-written API calls.
 
 - [x] Roles on accounts: admin, member and viewer (#120)
 - [ ] Organizations
-- [ ] An audit log of changes
+- [x] An audit log of changes (#122)
 - [ ] Single sign-on, later
 - [ ] Optional per-customer billing through Stripe
 
