@@ -638,11 +638,12 @@ if (process.env.SMOKE_VIEWER_EMAIL) {
 if (process.env.SMOKE_OTHER_ORG_EMAIL) {
   step("an account in another organization can't see or change this one");
   const list = await page("/projects");
-  const match = list.html.match(
-    /href="\/projects\/([^/"]+)\/edit"[^>]*aria-label="Edit ([^"]+)"/,
-  );
-  assert.ok(match, "found a project to look for");
-  const [, projectId, projectName] = match;
+  // Read separately: the order of the link's attributes isn't guaranteed.
+  const link = list.html.match(/<a\b[^>]*aria-label="Edit [^"]+"[^>]*>/)?.[0];
+  assert.ok(link, "found a project to look for");
+  const projectId = link.match(/href="\/projects\/([^/"]+)\/edit"/)?.[1];
+  const projectName = link.match(/aria-label="Edit ([^"]+)"/)?.[1];
+  assert.ok(projectId && projectName, "read the project's id and name");
   const form = hiddenFields((await page(`/projects/${projectId}/edit`)).html);
   const hijacked = `Hijacked ${randomUUID()}`;
   form.set("name", hijacked);
