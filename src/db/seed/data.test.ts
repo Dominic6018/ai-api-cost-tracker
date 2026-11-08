@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { calculateCostUsd, type TokenPricing } from "@/lib/cost";
 import { providerEnum } from "../schema";
 import { sampleProjects, seedPrices } from "./data";
 
@@ -238,5 +239,85 @@ describe("sample projects", () => {
     expect(sampleProjects.length).toBeGreaterThan(0);
     const slugs = sampleProjects.map((p) => p.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
+  });
+});
+
+describe("OpenAI long-context prices", () => {
+  const price = (model: string, tier?: "flex" | "fast") =>
+    seedPrices.find(
+      (p) =>
+        p.provider === "openai" && p.model === model && p.serviceTier === tier,
+    );
+
+  const pricing = (model: string, tier?: "flex"): TokenPricing => {
+    const row = price(model, tier);
+    if (!row?.longContext) throw new Error(`expected a tier for ${model}`);
+    return {
+      inputPerMTokUsd: Number(row.inputPerMTokUsd),
+      outputPerMTokUsd: Number(row.outputPerMTokUsd),
+      cachedInputPerMTokUsd:
+        row.cachedInputPerMTokUsd === null
+          ? null
+          : Number(row.cachedInputPerMTokUsd),
+      longContext: {
+        thresholdTokens: row.longContext.thresholdTokens,
+        inputPerMTokUsd: Number(row.longContext.inputPerMTokUsd),
+        outputPerMTokUsd: Number(row.longContext.outputPerMTokUsd),
+        cachedInputPerMTokUsd: row.longContext.cachedInputPerMTokUsd
+          ? Number(row.longContext.cachedInputPerMTokUsd)
+          : null,
+      },
+    };
+  };
+
+  // [model, tier, short rates, long rates], from the pricing page.
+  it.each([
+    ["gpt-5.5", undefined, ["5", "30", "0.50"], ["10", "45", "1"]],
+    ["gpt-5.5-pro", undefined, ["30", "180", null], ["60", "270", undefined]],
+    ["gpt-5.4", undefined, ["2.50", "15", "0.25"], ["5", "22.50", "0.50"]],
+    ["gpt-5.4-pro", undefined, ["30", "180", null], ["60", "270", undefined]],
+    ["gpt-5.5", "flex", ["2.50", "15", "0.25"], ["5", "22.50", "0.50"]],
+    ["gpt-5.4", "flex", ["1.25", "7.50", "0.13"], ["2.50", "11.25", "0.25"]],
+    ["gpt-5.4-pro", "flex", ["15", "90", null], ["30", "135", undefined]],
+  ] as const)("seeds %s (%s) as published", (model, tier, short, long) => {
+    expect(price(model, tier)).toMatchObject({
+      inputPerMTokUsd: short[0],
+      outputPerMTokUsd: short[1],
+      cachedInputPerMTokUsd: short[2],
+      source: "https://developers.openai.com/api/docs/pricing",
+      checkedOn: "2026-11-08",
+    });
+    expect(price(model, tier)?.longContext).toEqual({
+      thresholdTokens: 272_000,
+      inputPerMTokUsd: long[0],
+      outputPerMTokUsd: long[1],
+      cachedInputPerMTokUsd: long[2],
+    });
+  });
+
+  it("leaves out tiers without published long rates", () => {
+    expect(price("gpt-5.5-pro", "flex")).toBeUndefined();
+    expect(price("gpt-5.5", "fast")).toBeUndefined();
+    expect(price("gpt-5.4", "fast")).toBeUndefined();
+  });
+
+  it("switches the whole request to long rates above 272,000 tokens", () => {
+    const usage = { outputTokens: 1_000 };
+    expect(
+      calculateCostUsd({ ...usage, inputTokens: 272_000 }, pricing("gpt-5.5")),
+    ).toBe(1.39);
+    expect(
+      calculateCostUsd({ ...usage, inputTokens: 272_001 }, pricing("gpt-5.5")),
+    ).toBe(2.76501);
+  });
+
+  it("counts cached tokens towards the threshold", () => {
+    // 72,001 uncached at $10 and 200,000 cached at $1, plus no output.
+    expect(
+      calculateCostUsd(
+        { inputTokens: 272_001, cachedInputTokens: 200_000, outputTokens: 0 },
+        pricing("gpt-5.5"),
+      ),
+    ).toBe(0.92001);
   });
 });
