@@ -110,6 +110,181 @@ const OPENAI_LONG_CONTEXT_TOKENS = 272_000;
 // gives no time zone, so midnight UTC is used, as for its other dates.
 const GEMINI_25_PRO_ROUTED = "2026-12-01T00:00:00Z";
 
+// OpenAI's models with priced cache writes, from its Standard, Flex and Fast
+// tables: [input, output, cached input, 30-minute write, 12-hour write] per
+// 1M tokens, under and over the threshold. 12-hour writes go in the longer-
+// lived cache write rates, as Anthropic's 1-hour writes do. The Batch table
+// is exactly half of Standard for every rate here. "Ultrafast" isn't a tier
+// the tracker records.
+type OpenAIRates = readonly [string, string, string, string, string];
+const OPENAI_CACHE_WRITE_RATES: ReadonlyArray<{
+  model: string;
+  serviceTier?: "flex" | "fast";
+  short: OpenAIRates;
+  long: OpenAIRates;
+}> = [
+  {
+    model: "gpt-6-astra",
+    short: ["10.00", "50.00", "1.00", "12.50", "25.00"],
+    long: ["20.00", "75.00", "2.00", "25.00", "50.00"],
+  },
+  {
+    model: "gpt-6-astra",
+    serviceTier: "flex",
+    short: ["5.00", "25.00", "0.50", "6.25", "12.50"],
+    long: ["10.00", "37.50", "1.00", "12.50", "25.00"],
+  },
+  {
+    model: "gpt-6-astra",
+    serviceTier: "fast",
+    short: ["20.00", "100.00", "2.00", "25.00", "50.00"],
+    long: ["40.00", "150.00", "4.00", "50.00", "100.00"],
+  },
+  {
+    model: "gpt-6.1-sol",
+    short: ["2.00", "10.00", "0.10", "2.50", "5.00"],
+    long: ["4.00", "15.00", "0.20", "5.00", "10.00"],
+  },
+  {
+    model: "gpt-6.1-sol",
+    serviceTier: "flex",
+    short: ["1.00", "5.00", "0.05", "1.25", "2.50"],
+    long: ["2.00", "7.50", "0.10", "2.50", "5.00"],
+  },
+  {
+    model: "gpt-6.1-sol",
+    serviceTier: "fast",
+    short: ["4.00", "20.00", "0.20", "5.00", "10.00"],
+    long: ["8.00", "30.00", "0.40", "10.00", "20.00"],
+  },
+  {
+    model: "gpt-6.1-terra",
+    short: ["1.00", "5.00", "0.05", "1.25", "2.50"],
+    long: ["2.00", "7.50", "0.10", "2.50", "5.00"],
+  },
+  {
+    model: "gpt-6.1-terra",
+    serviceTier: "flex",
+    short: ["0.50", "2.50", "0.025", "0.625", "1.25"],
+    long: ["1.00", "3.75", "0.05", "1.25", "2.50"],
+  },
+  {
+    model: "gpt-6.1-terra",
+    serviceTier: "fast",
+    short: ["2.00", "10.00", "0.10", "2.50", "5.00"],
+    long: ["4.00", "15.00", "0.20", "5.00", "10.00"],
+  },
+  {
+    model: "gpt-6-luna",
+    short: ["0.10", "0.50", "0.01", "0.125", "0.25"],
+    long: ["0.20", "0.75", "0.02", "0.25", "0.50"],
+  },
+  {
+    model: "gpt-6-luna",
+    serviceTier: "flex",
+    short: ["0.05", "0.25", "0.005", "0.0625", "0.125"],
+    long: ["0.10", "0.375", "0.01", "0.125", "0.25"],
+  },
+  {
+    model: "gpt-6-luna",
+    serviceTier: "fast",
+    short: ["0.20", "1.00", "0.02", "0.25", "0.50"],
+    long: ["0.40", "1.50", "0.04", "0.50", "1.00"],
+  },
+  {
+    model: "gpt-6-sol",
+    short: ["2.00", "10.00", "0.20", "2.50", "5.00"],
+    long: ["4.00", "15.00", "0.40", "5.00", "10.00"],
+  },
+  {
+    model: "gpt-6-sol",
+    serviceTier: "flex",
+    short: ["1.00", "5.00", "0.10", "1.25", "2.50"],
+    long: ["2.00", "7.50", "0.20", "2.50", "5.00"],
+  },
+  {
+    model: "gpt-6-sol",
+    serviceTier: "fast",
+    short: ["4.00", "20.00", "0.40", "5.00", "10.00"],
+    long: ["8.00", "30.00", "0.80", "10.00", "20.00"],
+  },
+  {
+    model: "gpt-5.6-sol",
+    short: ["4.00", "20.00", "0.40", "5.00", "10.00"],
+    long: ["8.00", "30.00", "0.80", "10.00", "20.00"],
+  },
+  {
+    model: "gpt-5.6-sol",
+    serviceTier: "flex",
+    short: ["2.00", "10.00", "0.20", "2.50", "5.00"],
+    long: ["4.00", "15.00", "0.40", "5.00", "10.00"],
+  },
+  {
+    model: "gpt-5.6-sol",
+    serviceTier: "fast",
+    short: ["8.00", "40.00", "0.80", "10.00", "20.00"],
+    long: ["16.00", "60.00", "1.60", "20.00", "40.00"],
+  },
+  {
+    model: "gpt-5.6-terra",
+    short: ["2.00", "12.00", "0.20", "2.50", "5.00"],
+    long: ["4.00", "18.00", "0.40", "5.00", "10.00"],
+  },
+  {
+    model: "gpt-5.6-terra",
+    serviceTier: "flex",
+    short: ["1.00", "6.00", "0.10", "1.25", "2.50"],
+    long: ["2.00", "9.00", "0.20", "2.50", "5.00"],
+  },
+  {
+    model: "gpt-5.6-terra",
+    serviceTier: "fast",
+    short: ["4.00", "24.00", "0.40", "5.00", "10.00"],
+    long: ["8.00", "36.00", "0.80", "10.00", "20.00"],
+  },
+  {
+    model: "gpt-5.6-luna",
+    short: ["0.20", "1.20", "0.02", "0.25", "0.50"],
+    long: ["0.40", "1.80", "0.04", "0.50", "1.00"],
+  },
+  {
+    model: "gpt-5.6-luna",
+    serviceTier: "flex",
+    short: ["0.10", "0.60", "0.01", "0.125", "0.25"],
+    long: ["0.20", "0.90", "0.02", "0.25", "0.50"],
+  },
+  {
+    model: "gpt-5.6-luna",
+    serviceTier: "fast",
+    short: ["0.40", "2.40", "0.04", "0.50", "1.00"],
+    long: ["0.80", "3.60", "0.08", "1.00", "2.00"],
+  },
+];
+
+const OPENAI_CACHE_WRITE_PRICES: SeedPrice[] = OPENAI_CACHE_WRITE_RATES.map(
+  ({ model, serviceTier, short, long }) => ({
+    provider: "openai",
+    model,
+    ...(serviceTier ? { serviceTier } : { batchMultiplier: "0.5" }),
+    inputPerMTokUsd: short[0],
+    outputPerMTokUsd: short[1],
+    cachedInputPerMTokUsd: short[2],
+    cacheWritePerMTokUsd: short[3],
+    cacheWrite1hPerMTokUsd: short[4],
+    longContext: {
+      thresholdTokens: OPENAI_LONG_CONTEXT_TOKENS,
+      inputPerMTokUsd: long[0],
+      outputPerMTokUsd: long[1],
+      cachedInputPerMTokUsd: long[2],
+      cacheWritePerMTokUsd: long[3],
+      cacheWrite1hPerMTokUsd: long[4],
+    },
+    effectiveFrom: LONG_CONTEXT_FROM,
+    source: OPENAI,
+    checkedOn: LONG_CONTEXT_CHECKED_ON,
+  }),
+);
+
 export const seedPrices: SeedPrice[] = [
   // Anthropic: flat pricing across the full context window, except Haiku
   // 5.5. Cached input is the "Cache hits and refreshes" rate; cache writes
@@ -226,9 +401,7 @@ export const seedPrices: SeedPrice[] = [
 
   // OpenAI: Standard tier, models priced by prompt length. A prompt over the
   // threshold pays the long rates "for the full session" (model pages). The
-  // pro models list no cached rates. gpt-6 and gpt-5.6 aren't seeded: their
-  // 30-minute and 12-hour cache writes have different rates, and usage
-  // doesn't say which was used.
+  // pro models list no cached rates.
   {
     provider: "openai",
     model: "gpt-5.5",
@@ -614,4 +787,5 @@ export const seedPrices: SeedPrice[] = [
     source: ANTHROPIC,
     checkedOn: TIERS_CHECKED_ON,
   },
+  ...OPENAI_CACHE_WRITE_PRICES,
 ];

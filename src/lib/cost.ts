@@ -10,8 +10,10 @@ export interface TokenUsage {
   /** Portion of inputTokens written to the provider's prompt cache. */
   cacheWriteInputTokens?: number;
   /**
-   * Portion of cacheWriteInputTokens written with a 1-hour TTL (Anthropic
-   * bills these at 2× input, against 1.25× for 5-minute writes).
+   * Portion of cacheWriteInputTokens written with the longer cache
+   * lifetime: Anthropic's 1-hour writes (2× input, against 1.25× for
+   * 5-minute writes) or OpenAI's 12-hour writes (2.5×, against 1.25× for
+   * 30-minute writes).
    */
   cacheWrite1hInputTokens?: number;
   /** Portion of inputTokens that is audio, cached or not. */
@@ -41,7 +43,7 @@ export interface TokenRates {
   cachedInputPerMTokUsd?: number | null;
   /** Falls back to the input price when cache writes aren't charged extra. */
   cacheWritePerMTokUsd?: number | null;
-  /** 1-hour cache writes; falls back to the (5-minute) cache-write price. */
+  /** The longer-lived cache writes; falls back to the cache-write price. */
   cacheWrite1hPerMTokUsd?: number | null;
 }
 

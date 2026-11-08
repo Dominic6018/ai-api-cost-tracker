@@ -31,9 +31,10 @@ export const usagePayloadSchema = z
     // Anthropic reports these as cache_creation_input_tokens. Like cached
     // tokens, they're part of inputTokens.
     cacheWriteInputTokens: tokenCount.default(0),
-    // The part of cacheWriteInputTokens written with a 1-hour TTL, which
-    // Anthropic bills at a higher rate (usage.cache_creation
-    // .ephemeral_1h_input_tokens).
+    // The part of cacheWriteInputTokens written with the longer cache
+    // lifetime, billed at a higher rate: Anthropic's 1-hour writes
+    // (usage.cache_creation.ephemeral_1h_input_tokens) or OpenAI's 12-hour
+    // writes (input_tokens_details.cache_write_tokens_details.ttl_12h_tokens).
     cacheWrite1hInputTokens: tokenCount.default(0),
     // Web searches the request ran (Anthropic: usage.server_tool_use
     // .web_search_requests), charged per search on top of tokens.

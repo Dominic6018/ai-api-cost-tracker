@@ -89,6 +89,44 @@ describe("usageFromResponse", () => {
     });
   });
 
+  it("reads OpenAI cache writes by lifetime from the Responses API", () => {
+    const usage = usageFromResponse({
+      id: "resp_w",
+      object: "response",
+      model: "gpt-6.1-sol",
+      usage: {
+        input_tokens: 12000,
+        input_tokens_details: {
+          cached_tokens: 4000,
+          cache_write_tokens: 7000,
+          cache_write_tokens_details: {
+            ttl_30m_tokens: 3000,
+            ttl_12h_tokens: 4000,
+          },
+        },
+        output_tokens: 0,
+      },
+    });
+    expect(usage).toMatchObject({
+      inputTokens: 12000,
+      cachedInputTokens: 4000,
+      cacheWriteInputTokens: 7000,
+      cacheWrite1hInputTokens: 4000,
+    });
+    expect(usagePayloadSchema.safeParse(usage).success).toBe(true);
+    // OpenAI's worked example: 1,000 ordinary input tokens at $2, 4,000
+    // reads at $0.10, 3,000 30-minute writes at $2.50, 4,000 12-hour at $5.
+    expect(
+      calculateCostUsd(usage!, {
+        inputPerMTokUsd: 2,
+        outputPerMTokUsd: 10,
+        cachedInputPerMTokUsd: 0.1,
+        cacheWritePerMTokUsd: 2.5,
+        cacheWrite1hPerMTokUsd: 5,
+      }),
+    ).toBe(0.0299);
+  });
+
   it("reads OpenAI audio tokens from Chat Completions", () => {
     const spoken = {
       ...openAIChat,

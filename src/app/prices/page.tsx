@@ -115,7 +115,7 @@ export default async function PricesPage() {
                   Cache write
                 </th>
                 <th scope="col" className="px-4 py-3 text-right font-medium">
-                  1-hour cache write
+                  1-hour / 12-hour cache write
                 </th>
                 <th scope="col" className="px-4 py-3 text-right font-medium">
                   Output

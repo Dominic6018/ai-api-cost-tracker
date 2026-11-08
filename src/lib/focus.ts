@@ -80,6 +80,12 @@ export const TOKEN_TYPES = [
 ] as const;
 type TokenType = (typeof TOKEN_TYPES)[number]["key"];
 
+/** OpenAI's longer-lived cache writes last 12 hours, not one. */
+const OPENAI_LONGER_WRITE = {
+  sku: "cache-write-12h",
+  meter: "12-Hour Cache Write Input Tokens",
+};
+
 /**
  * The tracker never sees the provider's billing account, which FOCUS
  * requires; these placeholders say so instead of inventing one.
@@ -383,7 +389,11 @@ export function focusRows(
   };
 
   const rows = TOKEN_TYPES.filter(({ key }) => tokens[key] > 0).map(
-    ({ key, meter }) => {
+    ({ key, meter: tokenMeter }) => {
+      const { sku, meter } =
+        usage.provider === "openai" && key === "cache-write-1h"
+          ? OPENAI_LONGER_WRITE
+          : { sku: key, meter: tokenMeter };
       const rate = unitPrice(rates[key]);
       const count = BigInt(tokens[key]);
       return row({
@@ -398,10 +408,10 @@ export function focusRows(
         ConsumedQuantity: String(tokens[key]),
         ConsumedUnit: "Tokens",
         ChargeDescription: `${usage.model} ${meter.toLowerCase()}${tier}`,
-        SkuId: `${usage.provider}/${usage.model}/${key}`,
+        SkuId: `${usage.provider}/${usage.model}/${sku}`,
         // One price per SKU: the stored price, its long-prompt tier, and
         // the batch price (audio and image rates have no long-prompt tier).
-        SkuPriceId: `${pricing.id}/${key}${long && !ownRate.has(key) ? "/long-prompt" : ""}${batch ? "/batch" : ""}`,
+        SkuPriceId: `${pricing.id}/${sku}${long && !ownRate.has(key) ? "/long-prompt" : ""}${batch ? "/batch" : ""}`,
         SkuMeter: meter,
       });
     },

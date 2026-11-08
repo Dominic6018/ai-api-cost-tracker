@@ -72,7 +72,7 @@ class Usage:
     #: Free-form labels such as ``{"env": "prod"}``: up to 20, keys of
     #: letters, digits and ``_ . / -``, values up to 200 characters.
     tags: Optional[Dict[str, str]] = None
-    #: The part of cache_write_input_tokens written with a 1-hour TTL, which
+    #: The part of cache_write_input_tokens written with the longer cache lifetime (Anthropic 1-hour, OpenAI 12-hour), which
     #: Anthropic bills at a higher rate. Last, so positional use is unchanged.
     cache_write_1h_input_tokens: int = 0
     #: "batch" for a provider's discounted Batch API (Anthropic: 50%); None
@@ -306,12 +306,17 @@ def usage_from_openai_response(response: Any) -> Optional[Usage]:
     cached = _n(_get(details, "cached_tokens"))
     audio_in = _n(_get(details, "audio_tokens"))
     reported = _n(_get(_get(realtime, "cached_tokens_details"), "audio_tokens")) if realtime is not None else None
+    # GPT-5.6 and later charge for cache writes; 12-hour writes cost more.
+    cache_write = _n(_get(details, "cache_write_tokens"))
+    cache_write_12h = min(_n(_get(_get(details, "cache_write_tokens_details"), "ttl_12h_tokens")), cache_write)
     return Usage(
         provider="openai",
         model=_get(response, "model") or "",
         input_tokens=input_tokens,
         output_tokens=_n(_get(usage, "output_tokens")),
         cached_input_tokens=cached,
+        cache_write_input_tokens=cache_write,
+        cache_write_1h_input_tokens=cache_write_12h,
         audio_input_tokens=audio_in,
         cached_audio_input_tokens=_cached_audio(input_tokens, cached, audio_in, reported),
         audio_output_tokens=_n(_get(_get(usage, "output_token_details"), "audio_tokens")),

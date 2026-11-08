@@ -85,8 +85,9 @@ export interface Usage extends Attribution {
   cachedInputTokens?: number;
   cacheWriteInputTokens?: number;
   /**
-   * The part of cacheWriteInputTokens written with a 1-hour TTL, which
-   * Anthropic bills at a higher rate than 5-minute writes.
+   * The part of cacheWriteInputTokens written with the longer cache
+   * lifetime, billed at a higher rate: Anthropic's 1-hour writes or
+   * OpenAI's 12-hour writes.
    */
   cacheWrite1hInputTokens?: number;
   /** Defaults to "standard"; "batch" for Batch API results. */
@@ -378,12 +379,22 @@ export function usageFromOpenAIResponse(response: AnyResponse): Usage | null {
   const cachedDetails = details(
     (realtime as Record<string, unknown> | undefined)?.cached_tokens_details,
   );
+  // GPT-5.6 and later charge for cache writes; 12-hour writes cost more.
+  const cacheWrites = n(inputDetails.cache_write_tokens);
+  const cacheWrites12h = Math.min(
+    n(details(inputDetails.cache_write_tokens_details).ttl_12h_tokens),
+    cacheWrites,
+  );
   return {
     provider: "openai",
     model: response.model ?? "",
     inputTokens,
     outputTokens: n(usage.output_tokens),
     cachedInputTokens,
+    ...(cacheWrites > 0 && {
+      cacheWriteInputTokens: cacheWrites,
+      cacheWrite1hInputTokens: cacheWrites12h,
+    }),
     ...audioUsage(
       inputTokens,
       cachedInputTokens,

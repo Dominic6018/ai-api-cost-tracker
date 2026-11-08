@@ -155,9 +155,9 @@ export function PriceForm({ action }: { action: Action }) {
         )}
         {field(
           "cacheWrite1hPerMTokUsd",
-          "1-hour cache write",
+          "1-hour / 12-hour cache write",
           RATE_PROPS,
-          "Anthropic's 1-hour cache writes. Leave empty if they cost the same as other cache writes.",
+          "Anthropic's 1-hour or OpenAI's 12-hour cache writes. Leave empty if they cost the same as other cache writes.",
         )}
       </fieldset>
 
@@ -177,7 +177,7 @@ export function PriceForm({ action }: { action: Action }) {
         {field("longCacheWritePerMTokUsd", "Long cache write", RATE_PROPS)}
         {field(
           "longCacheWrite1hPerMTokUsd",
-          "Long 1-hour cache write",
+          "Long 1-hour / 12-hour cache write",
           RATE_PROPS,
         )}
       </fieldset>
