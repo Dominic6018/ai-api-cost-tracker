@@ -468,3 +468,61 @@ describe("runSpendSignalAlerts", () => {
     expect(await storedSignals(ids)).toHaveLength(2);
   });
 });
+
+describe("email notifications", () => {
+  const emailOnly: AlertConfig = {
+    email: {
+      smtpUrl: "smtp://relay.internal",
+      from: "alerts@example.com",
+      to: ["a@example.com"],
+    },
+  };
+  const sent = () => vi.fn(async () => ({ rejected: [] as string[] }));
+
+  it("records a budget alert once, and retries a failure", async () => {
+    const { ids, now } = await setup("2033-02", [
+      { budget: "100.00", spent: "90.000000" },
+    ]);
+    const failing = vi.fn(async (): Promise<{ rejected: string[] }> => {
+      throw new Error("Connection timeout");
+    });
+    const failed = await runBudgetAlerts(db, {
+      config: emailOnly,
+      now,
+      sendEmail: failing,
+    });
+    expect(summary(failed, ids)).toEqual([[0, 80, "email", "failed"]]);
+    expect(await stored(ids)).toHaveLength(0);
+
+    const sendEmail = sent();
+    const first = await runBudgetAlerts(db, {
+      config: emailOnly,
+      now,
+      sendEmail,
+    });
+    expect(summary(first, ids)).toEqual([[0, 80, "email", "sent"]]);
+    expect(await stored(ids)).toMatchObject([{ channel: "email" }]);
+
+    const again = sent();
+    await runBudgetAlerts(db, { config: emailOnly, now, sendEmail: again });
+    expect(again).not.toHaveBeenCalled();
+  });
+
+  it("records a signal, reporting refused recipients", async () => {
+    const { ids } = await setup("2033-03", [
+      { budget: "100.00", spent: "50.000000" },
+    ]);
+    await spend(ids, ["21.000000"], new Date("2033-03-10T00:00:00Z"));
+    const results = await runSpendSignalAlerts(db, {
+      config: emailOnly,
+      now: new Date("2033-03-15T12:00:00Z"),
+      sendEmail: vi.fn(async () => ({ rejected: ["b@example.com"] })),
+    });
+    expect(results.find((r) => r.alert.project.id === ids[0])).toMatchObject({
+      channel: "email",
+      outcome: "sent",
+      error: "refused recipients: b@example.com",
+    });
+    expect(await storedSignals(ids)).toMatchObject([{ channel: "email" }]);
+  });
+});

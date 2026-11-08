@@ -44,7 +44,11 @@ Options:
 Environment (at least one destination):
   BUDGET_ALERT_WEBHOOK_URL         POST a JSON event to this URL
   BUDGET_ALERT_WEBHOOK_SECRET      Sign it (HMAC-SHA256, 16+ characters)
-  BUDGET_ALERT_SLACK_WEBHOOK_URL   A Slack incoming webhook URL`;
+  BUDGET_ALERT_SLACK_WEBHOOK_URL   A Slack incoming webhook URL
+  BUDGET_ALERT_SMTP_URL            Email, with the next two:
+                                   smtp(s)://user:password@host:port
+  BUDGET_ALERT_EMAIL_FROM          The sender's address
+  BUDGET_ALERT_EMAIL_TO            Recipients, separated by commas`;
 
 async function main() {
   const { values } = parseArgs({
@@ -60,9 +64,7 @@ async function main() {
   const config = parseAlertConfig(process.env);
   const channels = configuredChannels(config);
   if (channels.length === 0) {
-    throw new Error(
-      `Set BUDGET_ALERT_WEBHOOK_URL or BUDGET_ALERT_SLACK_WEBHOOK_URL.\n\n${USAGE}`,
-    );
+    throw new Error(`Set a webhook, Slack or email destination.\n\n${USAGE}`);
   }
 
   const client = postgres(parseEnv().DATABASE_URL, {

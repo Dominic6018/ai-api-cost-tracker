@@ -28,7 +28,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 - **Dated prices.** A price change never rewrites history. Seed prices for Anthropic, OpenAI and Google models record their official source and the date they were checked.
 - **One small API.** `POST /api/usage` with a per-project API key, or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, which read usage from OpenAI, Anthropic and Gemini responses, or [OpenTelemetry traces](docs/OPENTELEMETRY.md) with GenAI token attributes. Retries with the same `requestId` are safe.
 - **Dashboard.** Spend today, this month and over 30 days; a daily chart over 7, 30 or 90 days with spend by provider and model; a filterable history of every request; light and dark mode.
-- **Budgets.** A monthly budget per project, with alerts at 80% and 100%, also sent to a webhook or Slack, and an optional per-run budget. Apps can ask before spending whether a run or the month has room left.
+- **Budgets.** A monthly budget per project, with alerts at 80% and 100%, also sent to a webhook, Slack or email, and an optional per-run budget. Apps can ask before spending whether a run or the month has room left.
 - **Secure by default.** API keys and sessions are stored only as hashes, passwords with scrypt, and sign-in and API keys are rate limited.
 - **Self-hosted.** Docker Compose or Vercel with hosted Postgres, under the MIT license.
 
@@ -56,7 +56,6 @@ What it doesn't do yet, and where that's planned:
 
 - **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Importing usage from provider billing APIs is next ([Milestone 6](docs/ROADMAP.md#milestone-6-automatic-usage-capture)).
 - **Cost is broken down by project, provider and model.** Per customer, feature and run comes in Milestone 7; `metadata` is stored but not yet filterable.
-- **Budget alerts appear on the dashboard only**, with no email, Slack or webhook notifications (Milestone 8).
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's long-context tiers aren't seeded.
 - **One team per install.** Every account sees and manages every project, there are no roles (Milestone 10), and accounts are created and reset from the command line.
 - **Days are UTC days** for "today", "this month" and the charts.
@@ -122,7 +121,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
 | `npm run reconcile`        | Compare recorded costs with Anthropic's or OpenAI's bill (see below)  |
-| `npm run budget-alerts`    | Send budget notifications to a webhook or Slack (see below)           |
+| `npm run budget-alerts`    | Send budget notifications to a webhook, Slack or email (see below)    |
 | `npm run db:studio`        | Open Drizzle Studio                                                   |
 
 ## Project structure
@@ -168,7 +167,8 @@ src/
     spend.ts      UTC spend window boundaries
     spend-series.ts  Chart ranges, day filling and axis ticks
     budget.ts     Exact budget use, alert thresholds and statuses
-    budget-notifications.ts  Alert planning, webhook and Slack payloads, signing
+    budget-notifications.ts  Alert planning, webhook, Slack and email messages, signing
+    email.ts      Sends plain-text email over SMTP
     budget-check.ts  Budget check payloads and the exact allow/deny rule
     forecast.ts   Month-end forecast from the 7-full-day pace
     spike.ts      Spending spike rule, against the same 7-day pace
@@ -430,21 +430,25 @@ Both fields are optional. `estimatedCostUsd` is what the next step might cost, a
 
 ## Budget notifications
 
-The dashboard shows budget alerts; `npm run budget-alerts` also sends them. It checks this month's (UTC) spend against each project's budget, and when a project reaches 80% or 100% it notifies a webhook, Slack, or both:
+The dashboard shows budget alerts; `npm run budget-alerts` also sends them. It checks this month's (UTC) spend against each project's budget, and when a project reaches 80% or 100% it notifies a webhook, Slack, email, or any combination:
 
 ```bash
 BUDGET_ALERT_WEBHOOK_URL=https://hooks.example.com/budget \
 BUDGET_ALERT_WEBHOOK_SECRET=<16+ random characters> \
 BUDGET_ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/... \
+BUDGET_ALERT_SMTP_URL=smtps://alerts:password@mail.example.com:465 \
+BUDGET_ALERT_EMAIL_FROM=alerts@example.com \
+BUDGET_ALERT_EMAIL_TO=you@example.com,finance@example.com \
 npm run budget-alerts                 # add -- --dry-run to see what would be sent
 ```
 
 Run it on a schedule, for example every 15 minutes from cron or a Kubernetes CronJob (`docker compose run --rm migrate npm run budget-alerts` with Docker). The app doesn't schedule it.
 
 - **Once per threshold:** each project, month, threshold and destination is notified once, so running it again sends nothing new. A project that goes straight past 100% gets one "over budget" message, not two, and after "over budget" no 80% message follows, even if a raised budget brings it back under. Notifications start again each month. Sent notifications are recorded in `budget_notifications`.
-- **Failures are retried:** a failed delivery (a network error, a timeout after 10 seconds, or a non-2xx response, redirects included) isn't recorded, so the next run tries again. The other destinations and projects still go out, and the command exits with status 1.
+- **Failures are retried:** a failed delivery (a network error, a timeout after 10 seconds, a non-2xx response, redirects included, or a mail server refusing the message) isn't recorded, so the next run tries again. The other destinations and projects still go out, and the command exits with status 1.
 - **Overlapping runs** don't send twice: each notification is claimed in the database before it's sent. If the process dies between claiming and sending, that one notification is lost rather than repeated.
 - **Slack** gets a one-line message, e.g. ":warning: _Support Bot_ has used 81.2% of its $100.00 monthly budget for 2026-11: $81.23 spent." It must be an `https` incoming webhook URL.
+- **Email** is a plain-text message over SMTP, with the same sentence as Slack. All three settings are needed. `smtps://` uses TLS from the start; `smtp://` upgrades with STARTTLS and, when the URL has a username, refuses to continue without it, so a password is never sent in the clear. Percent-encode special characters in the username and password. If the server accepts some recipients and refuses others, the message counts as sent (retrying would repeat it to the others on every run), and the command prints the refused addresses.
 - **The webhook** gets a JSON POST with an `x-cost-tracker-event: budget.threshold_reached` header:
 
   ```json
