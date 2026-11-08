@@ -8,6 +8,7 @@ import { projectCreatedEntry, projectUpdatedEntry } from "@/lib/audit";
 import { parseEnv } from "@/lib/env";
 import { audited, COMMAND_LINE, listAuditEntries, userActor } from "./audit";
 import { createUser } from "./auth";
+import { endModelPrice } from "./pricing";
 import { createProject, getProject, updateProject } from "./projects";
 import { auditLog, projects, users } from "./schema";
 
@@ -78,6 +79,67 @@ describe("audited", () => {
       error: "slug_taken",
     });
     expect(await entriesFor(slug)).toHaveLength(1);
+  });
+
+  it("reports a duplicate slug on update, keeping the transaction", async () => {
+    const taken = newSlug();
+    await auditedCreate(taken);
+    const other = newSlug();
+    const created = await auditedCreate(other);
+    if (!created.ok) throw new Error("expected a project");
+    expect(
+      await audited(db, COMMAND_LINE, async (tx) => ({
+        result: await updateProject(tx, created.project.id, values(taken)),
+        entry: null,
+      })),
+    ).toEqual({ ok: false, error: "slug_taken" });
+  });
+
+  it("reports a malformed id instead of aborting", async () => {
+    expect(
+      await audited(db, COMMAND_LINE, async (tx) => ({
+        result: await getProject(tx, "not-a-uuid"),
+        entry: null,
+      })),
+    ).toBeUndefined();
+    expect(
+      await audited(db, COMMAND_LINE, async (tx) => ({
+        result: await updateProject(tx, "not-a-uuid", values(newSlug())),
+        entry: null,
+      })),
+    ).toEqual({ ok: false, error: "not_found" });
+    expect(
+      await audited(db, COMMAND_LINE, async (tx) => ({
+        result: await endModelPrice(
+          tx,
+          "not-a-uuid",
+          {
+            endsAt: new Date("2026-12-01T00:00:00Z"),
+            sourceUrl: "https://example.com/pricing",
+            checkedOn: "2026-11-08",
+          },
+          randomUUID(),
+        ),
+        entry: null,
+      })),
+    ).toEqual({ ok: false, error: "not_found" });
+  });
+
+  it("reports a taken email instead of aborting", async () => {
+    const email = `audit-${randomUUID()}@example.com`;
+    const input = { email, password: "a long test password" };
+    const first = await audited(db, COMMAND_LINE, async (tx) => ({
+      result: await createUser(tx, input),
+      entry: null,
+    }));
+    if (!first.ok) throw new Error("expected a user");
+    expect(
+      await audited(db, COMMAND_LINE, async (tx) => ({
+        result: await createUser(tx, input),
+        entry: null,
+      })),
+    ).toEqual({ ok: false, error: "email_taken" });
+    await db.delete(users).where(eq(users.id, first.user.id));
   });
 
   it("undoes the change when the entry can't be saved", async () => {

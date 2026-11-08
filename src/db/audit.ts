@@ -28,6 +28,10 @@ export const userActor = (user: { id: string; email: string }): AuditActor => ({
  * Runs a change and records it in one transaction, so a change is never
  * saved without its entry or the other way round. `change` returns the
  * entry to record, or null when nothing changed.
+ *
+ * A statement that fails aborts the transaction, and the driver rethrows
+ * it at the end even if `change` caught it. So a change that expects a
+ * failure, like a duplicate, must run that statement in a savepoint.
  */
 export function audited<
   T,
