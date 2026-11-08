@@ -6,7 +6,7 @@ import {
   hashSessionToken,
   SESSION_TTL_MS,
 } from "@/lib/sessions";
-import { sessions, users, type User } from "./schema";
+import { sessions, users, type User, type UserRole } from "./schema";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<
@@ -25,14 +25,18 @@ function pgErrorCode(error: unknown): string | undefined {
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 /** The fields of a user that are safe to hand to pages. */
-export type SessionUser = Pick<User, "id" | "email">;
+export type SessionUser = Pick<User, "id" | "email" | "role">;
 
 export type CreateUserResult =
   { ok: true; user: SessionUser } | { ok: false; error: "email_taken" };
 
 export async function createUser(
   db: Database,
-  { email, password }: { email: string; password: string },
+  {
+    email,
+    password,
+    role = "admin",
+  }: { email: string; password: string; role?: UserRole },
 ): Promise<CreateUserResult> {
   try {
     const [user] = await db
@@ -40,8 +44,9 @@ export async function createUser(
       .values({
         email: normalizeEmail(email),
         passwordHash: await hashPassword(password),
+        role,
       })
-      .returning({ id: users.id, email: users.email });
+      .returning({ id: users.id, email: users.email, role: users.role });
     return { ok: true, user };
   } catch (error) {
     if (pgErrorCode(error) === UNIQUE_VIOLATION) {
@@ -71,7 +76,7 @@ export async function verifyCredentials(
     return null;
   }
   return (await verifyPassword(password, user.passwordHash))
-    ? { id: user.id, email: user.email }
+    ? { id: user.id, email: user.email, role: user.role }
     : null;
 }
 
@@ -96,7 +101,7 @@ export async function getSessionUser(
   now: Date = new Date(),
 ): Promise<SessionUser | null> {
   const [row] = await db
-    .select({ id: users.id, email: users.email })
+    .select({ id: users.id, email: users.email, role: users.role })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(

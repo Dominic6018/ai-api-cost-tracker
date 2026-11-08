@@ -382,6 +382,9 @@ export const apiKeys = pgTable(
 );
 
 /** Dashboard accounts. Passwords are stored as scrypt hashes only. */
+export const USER_ROLES = ["admin", "member", "viewer"] as const;
+export type UserRole = (typeof USER_ROLES)[number];
+
 export const users = pgTable(
   "users",
   {
@@ -389,9 +392,14 @@ export const users = pgTable(
     // Stored lowercased, so lookups are case-insensitive.
     email: text("email").notNull(),
     passwordHash: text("password_hash").notNull(),
+    // What the account may change; see src/lib/roles.ts.
+    role: text("role").$type<UserRole>().notNull().default("admin"),
     ...timestamps,
   },
-  (t) => [uniqueIndex("users_email_idx").on(t.email)],
+  (t) => [
+    uniqueIndex("users_email_idx").on(t.email),
+    check("users_role_valid", sql`${t.role} in ('admin', 'member', 'viewer')`),
+  ],
 );
 
 /**

@@ -44,17 +44,23 @@ async function page(path) {
   };
 }
 
-/** Submits the form on `path` with `fields`, keeping React's hidden inputs. */
-async function submit(path, fields) {
-  const { status, html } = await page(path);
-  assert.equal(status, 200, `GET ${path}`);
-
+/** React's hidden server action inputs on a page, as form data. */
+function hiddenFields(html) {
   const form = new FormData();
   for (const [, name, value = ""] of html.matchAll(
     /<input type="hidden" name="([^"]+)"(?: value="([^"]*)")?/g,
   )) {
     form.append(decode(name), decode(value));
   }
+  return form;
+}
+
+/** Submits the form on `path` with `fields`, keeping React's hidden inputs. */
+async function submit(path, fields) {
+  const { status, html } = await page(path);
+  assert.equal(status, 200, `GET ${path}`);
+
+  const form = hiddenFields(html);
   assert.ok(
     [...form.keys()].some((key) => key.startsWith("$ACTION_")),
     `${path} renders a server action form`,
@@ -562,6 +568,55 @@ step("the usage CSV export downloads the filtered events");
     new URL(signedOut.headers.get("location"), base).pathname,
     "/login",
   );
+}
+
+if (process.env.SMOKE_VIEWER_EMAIL) {
+  step("a viewer can read but not change projects or prices");
+  // An admin's copy of the form, so the viewer's request reaches the real
+  // server action rather than stopping at a hidden link.
+  const form = hiddenFields((await page("/projects/new")).html);
+  const name = `Viewer ${randomUUID()}`;
+  form.set("name", name);
+  form.set("slug", `viewer-${randomUUID()}`);
+
+  const admin = cookie;
+  cookie = "";
+  const signedIn = await submit("/login", {
+    email: process.env.SMOKE_VIEWER_EMAIL,
+    password,
+  });
+  assert.equal(signedIn.status, 303, "viewer signs in");
+
+  for (const path of ["/projects/new", "/prices/new"]) {
+    const denied = await page(path);
+    assert.equal(denied.status, 307, `GET ${path} as a viewer`);
+    assert.equal(new URL(denied.location, base).pathname, "/no-access");
+  }
+  assert.match((await page("/no-access")).html, /viewer/);
+
+  const projectsPage = await page("/projects");
+  assert.equal(projectsPage.status, 200);
+  assert.doesNotMatch(projectsPage.html, /New project|aria-label="Edit /);
+  const pricesPage = await page("/prices");
+  assert.equal(pricesPage.status, 200);
+  assert.doesNotMatch(pricesPage.html, /Add price/);
+
+  const posted = await fetch(base + "/projects/new", {
+    method: "POST",
+    body: form,
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.equal(posted.status, 303, "the action refuses a viewer");
+  assert.equal(
+    new URL(posted.headers.get("location"), base).pathname,
+    "/no-access",
+  );
+  assert.ok(
+    !(await page("/projects")).html.includes(name),
+    "the viewer's project wasn't created",
+  );
+  cookie = admin;
 }
 
 step("signing out ends the session, even if the old cookie is replayed");

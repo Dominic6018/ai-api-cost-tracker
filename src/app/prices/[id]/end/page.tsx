@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { getModelPrice } from "@/db/pricing";
-import { requireUser } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { formatRate } from "@/lib/prices";
 import { endPriceAction } from "../../actions";
 import { EndPriceForm } from "../../end-price-form";
@@ -30,7 +30,7 @@ export default async function EndPricePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  await requireUser(`/prices/${id}/end`);
+  await requirePermission("prices:manage", `/prices/${id}/end`);
   const price = await getModelPrice(db, id);
   if (!price) notFound();
 

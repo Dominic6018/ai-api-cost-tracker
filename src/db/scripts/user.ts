@@ -4,21 +4,40 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { parseEnv } from "@/lib/env";
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@/lib/passwords";
-import { listUsers, resetPassword, revokeSessions } from "../accounts";
+import {
+  listUsers,
+  resetPassword,
+  revokeSessions,
+  setUserRole,
+} from "../accounts";
 import { createUser } from "../auth";
+import { USER_ROLES, type UserRole } from "../schema";
 
 const USAGE = `Usage:
-  npm run user -- create --email <email> < password-file
+  npm run user -- create --email <email> [--role <role>] < password-file
   npm run user -- reset-password --email <email> < password-file
   npm run user -- revoke-sessions --email <email>
+  npm run user -- set-role --email <email> --role <role>
   npm run user -- list
 
 create and reset-password read the password from standard input, so it
 doesn't end up in shell history or the process list, e.g.
   echo "$PASSWORD" | npm run user -- create --email <email>
-It must be ${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters. reset-password also signs the user out everywhere.`;
+It must be ${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters. reset-password also signs the user out everywhere.
 
-const COMMANDS = ["create", "reset-password", "revoke-sessions", "list"];
+Roles: admin (the default; can change everything), member (can manage
+projects, not prices), viewer (read-only). A new role applies straight away.`;
+
+const COMMANDS = [
+  "create",
+  "reset-password",
+  "revoke-sessions",
+  "set-role",
+  "list",
+];
+
+const isRole = (value: string): value is UserRole =>
+  (USER_ROLES as readonly string[]).includes(value);
 
 async function readPassword(): Promise<string> {
   if (process.stdin.isTTY) {
@@ -47,13 +66,18 @@ const sessionCount = (n: number) => `${n} session${n === 1 ? "" : "s"}`;
 async function main() {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
-    options: { email: { type: "string" } },
+    options: { email: { type: "string" }, role: { type: "string" } },
   });
   const [command] = positionals;
   if (!COMMANDS.includes(command) || (command !== "list" && !values.email)) {
     throw new Error(USAGE);
   }
   const email = values.email ?? "";
+  if (command === "set-role" && !values.role) throw new Error(USAGE);
+  if (values.role !== undefined && !isRole(values.role)) {
+    throw new Error(`Role must be one of: ${USER_ROLES.join(", ")}.`);
+  }
+  const role = values.role as UserRole | undefined;
   // Validated before connecting, so a bad password never reaches the database.
   const password =
     command === "create" || command === "reset-password"
@@ -68,10 +92,16 @@ async function main() {
   try {
     switch (command) {
       case "create": {
-        const result = await createUser(db, { email, password });
+        const result = await createUser(db, { email, password, role });
         if (!result.ok)
           throw new Error("A user with that email already exists.");
-        console.log(`Created user ${result.user.email}.`);
+        console.log(`Created user ${result.user.email} (${result.user.role}).`);
+        break;
+      }
+      case "set-role": {
+        const result = await setUserRole(db, { email, role: role as UserRole });
+        if (!result.ok) throw new Error("No user with that email.");
+        console.log(`${result.email} is now ${result.role}.`);
         break;
       }
       case "reset-password":
@@ -95,7 +125,7 @@ async function main() {
         if (accounts.length === 0) console.log("No users yet.");
         for (const account of accounts) {
           console.log(
-            `${account.email}  created ${account.createdAt.toISOString().slice(0, 10)}  ${sessionCount(account.activeSessions)} active`,
+            `${account.email}  ${account.role}  created ${account.createdAt.toISOString().slice(0, 10)}  ${sessionCount(account.activeSessions)} active`,
           );
         }
         break;
