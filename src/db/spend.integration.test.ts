@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseEnv } from "@/lib/env";
 import { projects, usageEvents } from "./schema";
 import { getSpendOverview } from "./spend";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -80,7 +81,7 @@ afterAll(async () => {
 
 describe("getSpendOverview", () => {
   it("sums each window exactly, including boundary timestamps", async () => {
-    const overview = await getSpendOverview(db, now);
+    const overview = await getSpendOverview(db, ALL_ORGANIZATIONS, now);
 
     expect(overview.totals).toEqual({
       today: "3.000001",
@@ -108,7 +109,7 @@ describe("getSpendOverview", () => {
   });
 
   it("lists projects without usage as zero", async () => {
-    const overview = await getSpendOverview(db, now);
+    const overview = await getSpendOverview(db, ALL_ORGANIZATIONS, now);
     expect(overview.projects.find((p) => p.id === idle)).toMatchObject({
       name: "Spend Idle",
       today: "0.000000",
@@ -119,7 +120,9 @@ describe("getSpendOverview", () => {
   });
 
   it("orders projects by this month's spend, highest first", async () => {
-    const ids = (await getSpendOverview(db, now)).projects.map((p) => p.id);
+    const ids = (
+      await getSpendOverview(db, ALL_ORGANIZATIONS, now)
+    ).projects.map((p) => p.id);
     expect(ids.indexOf(gamma)).toBeLessThan(ids.indexOf(beta));
     expect(ids.indexOf(beta)).toBeLessThan(ids.indexOf(alpha));
     expect(ids.indexOf(alpha)).toBeLessThan(ids.indexOf(idle));
@@ -128,6 +131,7 @@ describe("getSpendOverview", () => {
   it("returns zero totals when nothing falls in the windows", async () => {
     const overview = await getSpendOverview(
       db,
+      ALL_ORGANIZATIONS,
       new Date("2040-01-01T00:00:00Z"),
     );
     expect(overview.totals).toEqual({
@@ -140,7 +144,7 @@ describe("getSpendOverview", () => {
   });
 
   it("returns each project's budget once, without splitting rows", async () => {
-    const overview = await getSpendOverview(db, now);
+    const overview = await getSpendOverview(db, ALL_ORGANIZATIONS, now);
     const mine = overview.projects.filter((p) =>
       [alpha, beta, gamma, idle].includes(p.id),
     );
@@ -178,7 +182,7 @@ describe("the forecast's pace window", () => {
           occurredAt: new Date(occurredAt),
         })),
       );
-      const overview = await getSpendOverview(db, paceNow);
+      const overview = await getSpendOverview(db, ALL_ORGANIZATIONS, paceNow);
       expect(overview.projects.find((p) => p.id === project.id)).toMatchObject({
         last7FullDays: "1.500000",
         today: "4.000000",

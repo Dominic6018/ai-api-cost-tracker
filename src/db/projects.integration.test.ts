@@ -12,6 +12,7 @@ import {
   updateProject,
 } from "./projects";
 import { projects } from "./schema";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -48,7 +49,9 @@ describe("project data access", () => {
     const project = await create();
     expect(project.monthlyBudgetUsd).toBeNull();
     expect(project.runBudgetUsd).toBeNull();
-    expect(await getProject(db, project.id)).toEqual(project);
+    expect(await getProject(db, ALL_ORGANIZATIONS, project.id)).toEqual(
+      project,
+    );
   });
 
   it("stores a budget with two decimal places", async () => {
@@ -69,7 +72,7 @@ describe("project data access", () => {
 
   it("updates a project and bumps updated_at", async () => {
     const project = await create();
-    const result = await updateProject(db, project.id, {
+    const result = await updateProject(db, ALL_ORGANIZATIONS, project.id, {
       name: "Renamed",
       slug: project.slug,
       monthlyBudgetUsd: "250",
@@ -86,7 +89,7 @@ describe("project data access", () => {
 
   it("can clear a budget", async () => {
     const project = await create("10");
-    const result = await updateProject(db, project.id, {
+    const result = await updateProject(db, ALL_ORGANIZATIONS, project.id, {
       name: project.name,
       slug: project.slug,
       monthlyBudgetUsd: null,
@@ -99,7 +102,7 @@ describe("project data access", () => {
     const first = await create();
     const second = await create();
     expect(
-      await updateProject(db, second.id, {
+      await updateProject(db, ALL_ORGANIZATIONS, second.id, {
         name: second.name,
         slug: first.slug,
         monthlyBudgetUsd: null,
@@ -111,9 +114,9 @@ describe("project data access", () => {
   it.each([randomUUID(), "not-a-uuid"])(
     "treats the id %s as not found",
     async (id) => {
-      expect(await getProject(db, id)).toBeUndefined();
+      expect(await getProject(db, ALL_ORGANIZATIONS, id)).toBeUndefined();
       expect(
-        await updateProject(db, id, {
+        await updateProject(db, ALL_ORGANIZATIONS, id, {
           name: "x",
           slug: slug(),
           monthlyBudgetUsd: null,
@@ -125,7 +128,7 @@ describe("project data access", () => {
 
   it("lists projects ordered by name", async () => {
     const project = await create();
-    const all = await listProjects(db);
+    const all = await listProjects(db, ALL_ORGANIZATIONS);
     expect(all.map((p) => p.id)).toContain(project.id);
     const names = all.map((p) => p.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));

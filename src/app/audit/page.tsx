@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { listAuditEntries } from "@/db/audit";
+import { organizationScope } from "@/db/scope";
 import {
   AUDIT_ACTION_LABELS,
   formatAuditDetails,
@@ -31,9 +32,13 @@ export default async function AuditPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePermission("audit:read", "/audit");
+  const user = await requirePermission("audit:read", "/audit");
   const page = parseAuditPage((await searchParams).page);
-  const { entries, hasMore } = await listAuditEntries(db, page);
+  const { entries, hasMore } = await listAuditEntries(
+    db,
+    organizationScope(user),
+    page,
+  );
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-12 sm:px-8">

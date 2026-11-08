@@ -3,6 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { AttributionKey } from "@/lib/attribution";
 import type { BreakdownGroup } from "@/lib/breakdown";
 import { usageEvents } from "./schema";
+import { projectInOrganization, type OrganizationScope } from "./scope";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select">;
@@ -19,6 +20,7 @@ export interface AttributionSpend {
  */
 export async function getSpendByAttribution(
   db: Database,
+  scope: OrganizationScope,
   {
     key,
     start,
@@ -28,6 +30,7 @@ export async function getSpendByAttribution(
 ): Promise<AttributionSpend> {
   const column = usageEvents[key];
   const where = and(
+    projectInOrganization(usageEvents.projectId, scope),
     gte(usageEvents.occurredAt, start),
     projectId ? eq(usageEvents.projectId, projectId) : undefined,
   );

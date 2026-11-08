@@ -635,6 +635,69 @@ if (process.env.SMOKE_VIEWER_EMAIL) {
   cookie = admin;
 }
 
+if (process.env.SMOKE_OTHER_ORG_EMAIL) {
+  step("an account in another organization can't see or change this one");
+  const list = await page("/projects");
+  const match = list.html.match(
+    /href="\/projects\/([^/"]+)\/edit"[^>]*aria-label="Edit ([^"]+)"/,
+  );
+  assert.ok(match, "found a project to look for");
+  const [, projectId, projectName] = match;
+  const form = hiddenFields((await page(`/projects/${projectId}/edit`)).html);
+  const hijacked = `Hijacked ${randomUUID()}`;
+  form.set("name", hijacked);
+  form.set("slug", `hijacked-${randomUUID()}`);
+
+  const admin = cookie;
+  cookie = "";
+  const signedIn = await submit("/login", {
+    email: process.env.SMOKE_OTHER_ORG_EMAIL,
+    password,
+  });
+  assert.equal(
+    signedIn.status,
+    303,
+    "the other organization's account signs in",
+  );
+
+  for (const path of [
+    "/overview",
+    "/projects",
+    "/spend",
+    "/breakdown",
+    "/usage",
+    `/usage?project=${projectId}`,
+    "/audit",
+  ]) {
+    const result = await page(path);
+    assert.equal(result.status, 200, `GET ${path}`);
+    assert.ok(!result.html.includes(projectName), `${path} hides the project`);
+    assert.ok(!result.html.includes(email), `${path} hides the other account`);
+  }
+  assert.equal(
+    (await page(`/projects/${projectId}/edit`)).status,
+    404,
+    "another organization's project is a 404",
+  );
+  const csv = await page("/usage/export");
+  assert.equal(csv.status, 200);
+  assert.equal(csv.html.trim().split("\r\n").length, 1, "the export is empty");
+
+  const posted = await fetch(`${base}/projects/${projectId}/edit`, {
+    method: "POST",
+    body: form,
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.notEqual(posted.status, 303, "the action doesn't save");
+  await posted.text();
+
+  cookie = admin;
+  const after = await page("/projects");
+  assert.ok(after.html.includes(projectName), "the project is unchanged");
+  assert.ok(!after.html.includes(hijacked), "the project wasn't renamed");
+}
+
 step("signing out ends the session, even if the old cookie is replayed");
 {
   const signedIn = cookie;

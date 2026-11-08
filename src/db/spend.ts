@@ -3,6 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { forecastPaceWindow } from "@/lib/forecast";
 import { earliestWindowStart, spendWindows } from "@/lib/spend";
 import { projects, usageEvents } from "./schema";
+import { inOrganization, type OrganizationScope } from "./scope";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select">;
@@ -40,6 +41,7 @@ export interface SpendOverview {
  */
 export async function getSpendOverview(
   db: Database,
+  scope: OrganizationScope,
   now: Date = new Date(),
 ): Promise<SpendOverview> {
   const windows = spendWindows(now);
@@ -74,6 +76,7 @@ export async function getSpendOverview(
         gte(usageEvents.occurredAt, earliestWindowStart(windows)),
       ),
     )
+    .where(inOrganization(scope))
     .groupBy(
       sql`rollup((${projects.id}, ${projects.name}, ${projects.slug}, ${projects.monthlyBudgetUsd}))`,
     )

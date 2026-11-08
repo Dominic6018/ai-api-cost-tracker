@@ -2,6 +2,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { csvRow } from "@/lib/csv";
 import type { UsageFilters } from "@/lib/usage-filters";
 import { listUsageEvents, type UsageEventRow } from "./usage-events";
+import type { OrganizationScope } from "./scope";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select" | "selectDistinct">;
@@ -74,13 +75,19 @@ function line(row: UsageEventRow): string {
  */
 export async function* usageCsv(
   db: Database,
+  scope: OrganizationScope,
   filters: Omit<UsageFilters, "cursor">,
   pageSize = EXPORT_PAGE_SIZE,
 ): AsyncGenerator<string> {
   yield csvRow(USAGE_CSV_COLUMNS);
   let cursor: UsageFilters["cursor"];
   do {
-    const page = await listUsageEvents(db, { ...filters, cursor }, pageSize);
+    const page = await listUsageEvents(
+      db,
+      scope,
+      { ...filters, cursor },
+      pageSize,
+    );
     if (page.rows.length > 0) yield page.rows.map(line).join("");
     cursor = page.next;
   } while (cursor);

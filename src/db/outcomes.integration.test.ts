@@ -11,6 +11,7 @@ import {
   recordOutcome,
 } from "./outcomes";
 import { outcomes, projects } from "./schema";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -143,7 +144,7 @@ describe("outcome queries", () => {
   });
 
   it("sums one outcome's counts per attribution value", async () => {
-    const counts = await outcomeCountsByAttribution(db, {
+    const counts = await outcomeCountsByAttribution(db, ALL_ORGANIZATIONS, {
       key: "customerId",
       name: "ticket_resolved",
       start: later,
@@ -158,7 +159,7 @@ describe("outcome queries", () => {
   });
 
   it("covers every project when none is given", async () => {
-    const counts = await outcomeCountsByAttribution(db, {
+    const counts = await outcomeCountsByAttribution(db, ALL_ORGANIZATIONS, {
       key: "customerId",
       name: "ticket_resolved",
       start: later,
@@ -167,9 +168,11 @@ describe("outcome queries", () => {
   });
 
   it("lists the outcome names in a range", async () => {
-    expect(await listOutcomeNames(db, { start: later, projectId })).toEqual([
-      "order_completed",
-      "ticket_resolved",
-    ]);
+    expect(
+      await listOutcomeNames(db, ALL_ORGANIZATIONS, {
+        start: later,
+        projectId,
+      }),
+    ).toEqual(["order_completed", "ticket_resolved"]);
   });
 });

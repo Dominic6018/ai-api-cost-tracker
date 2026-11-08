@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseEnv } from "@/lib/env";
 import { projects, usageEvents } from "./schema";
 import { getDailySpend, getSpendBreakdown } from "./spend-series";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -99,22 +100,24 @@ afterAll(async () => {
 
 describe("getDailySpend", () => {
   it("sums by UTC day across all projects and skips empty days", async () => {
-    expect(await getDailySpend(db, { start })).toEqual([
+    expect(await getDailySpend(db, ALL_ORGANIZATIONS, { start })).toEqual([
       { day: "2032-05-01", costUsd: "3.500000" },
       { day: "2032-05-03", costUsd: "10.000001" },
     ]);
   });
 
   it("filters to one project", async () => {
-    expect(await getDailySpend(db, { start, projectId: beta })).toEqual([
-      { day: "2032-05-03", costUsd: "10.000001" },
-    ]);
+    expect(
+      await getDailySpend(db, ALL_ORGANIZATIONS, { start, projectId: beta }),
+    ).toEqual([{ day: "2032-05-03", costUsd: "10.000001" }]);
   });
 });
 
 describe("getSpendBreakdown", () => {
   it("totals spend and tokens per provider, highest spend first", async () => {
-    const { byProvider } = await getSpendBreakdown(db, { start });
+    const { byProvider } = await getSpendBreakdown(db, ALL_ORGANIZATIONS, {
+      start,
+    });
     expect(byProvider).toEqual([
       {
         provider: "anthropic",
@@ -136,7 +139,9 @@ describe("getSpendBreakdown", () => {
   });
 
   it("orders models by numeric spend, not text", async () => {
-    const { byModel } = await getSpendBreakdown(db, { start });
+    const { byModel } = await getSpendBreakdown(db, ALL_ORGANIZATIONS, {
+      start,
+    });
     expect(byModel.map((r) => [r.model, r.costUsd])).toEqual([
       ["m-c", "10.000000"],
       ["m-b", "2.500000"],
@@ -145,7 +150,7 @@ describe("getSpendBreakdown", () => {
   });
 
   it("filters to one project", async () => {
-    const { byModel } = await getSpendBreakdown(db, {
+    const { byModel } = await getSpendBreakdown(db, ALL_ORGANIZATIONS, {
       start,
       projectId: alpha,
     });

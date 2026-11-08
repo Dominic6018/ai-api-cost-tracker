@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { getSpendByAttribution } from "@/db/attribution-spend";
 import { listOutcomeNames, outcomeCountsByAttribution } from "@/db/outcomes";
 import { listProjects } from "@/db/projects";
+import { organizationScope } from "@/db/scope";
 import { ATTRIBUTION_FIELDS } from "@/lib/attribution";
 import { requireUser } from "@/lib/auth";
 import { microsToUsd } from "@/lib/budget";
@@ -47,7 +48,8 @@ export default async function BreakdownPage({
   const params = await searchParams;
   const dimension = parseBreakdownDimension(params.by);
   const range = parseSpendRange(params.range);
-  const projects = await listProjects(db);
+  const orgScope = organizationScope(user);
+  const projects = await listProjects(db, orgScope);
   // Only accept a project that exists; anything else means all projects.
   const requested = Array.isArray(params.project)
     ? params.project[0]
@@ -55,14 +57,14 @@ export default async function BreakdownPage({
   const project = projects.find((p) => p.id === requested);
 
   const { start, dayKeys } = dailyRange(new Date(), range);
-  const { top, totals } = await getSpendByAttribution(db, {
+  const { top, totals } = await getSpendByAttribution(db, orgScope, {
     key: dimension.key,
     start,
     projectId: project?.id,
     limit: BREAKDOWN_LIMIT,
   });
   // Cost per outcome, when one of the recorded outcome names is chosen.
-  const outcomeNames = await listOutcomeNames(db, {
+  const outcomeNames = await listOutcomeNames(db, orgScope, {
     start,
     projectId: project?.id,
   });
@@ -71,7 +73,7 @@ export default async function BreakdownPage({
     : params.outcome;
   const outcome = outcomeNames.find((name) => name === requestedOutcome);
   const outcomeCounts = outcome
-    ? await outcomeCountsByAttribution(db, {
+    ? await outcomeCountsByAttribution(db, orgScope, {
         key: dimension.key,
         name: outcome,
         start,

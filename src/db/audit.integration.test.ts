@@ -10,7 +10,8 @@ import { audited, COMMAND_LINE, listAuditEntries, userActor } from "./audit";
 import { createUser } from "./auth";
 import { endModelPrice } from "./pricing";
 import { createProject, getProject, updateProject } from "./projects";
-import { auditLog, projects, users } from "./schema";
+import { auditLog, DEFAULT_ORGANIZATION_ID, projects, users } from "./schema";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -89,7 +90,12 @@ describe("audited", () => {
     if (!created.ok) throw new Error("expected a project");
     expect(
       await audited(db, COMMAND_LINE, async (tx) => ({
-        result: await updateProject(tx, created.project.id, values(taken)),
+        result: await updateProject(
+          tx,
+          ALL_ORGANIZATIONS,
+          created.project.id,
+          values(taken),
+        ),
         entry: null,
       })),
     ).toEqual({ ok: false, error: "slug_taken" });
@@ -98,13 +104,18 @@ describe("audited", () => {
   it("reports a malformed id instead of aborting", async () => {
     expect(
       await audited(db, COMMAND_LINE, async (tx) => ({
-        result: await getProject(tx, "not-a-uuid"),
+        result: await getProject(tx, ALL_ORGANIZATIONS, "not-a-uuid"),
         entry: null,
       })),
     ).toBeUndefined();
     expect(
       await audited(db, COMMAND_LINE, async (tx) => ({
-        result: await updateProject(tx, "not-a-uuid", values(newSlug())),
+        result: await updateProject(
+          tx,
+          ALL_ORGANIZATIONS,
+          "not-a-uuid",
+          values(newSlug()),
+        ),
         entry: null,
       })),
     ).toEqual({ ok: false, error: "not_found" });
@@ -145,7 +156,11 @@ describe("audited", () => {
   it("undoes the change when the entry can't be saved", async () => {
     const slug = newSlug();
     await expect(
-      auditedCreate(slug, { userId: randomUUID(), label: "no such user" }),
+      auditedCreate(slug, {
+        userId: randomUUID(),
+        label: "no such user",
+        organizationId: DEFAULT_ORGANIZATION_ID,
+      }),
     ).rejects.toThrow();
     const rows = await db
       .select()
@@ -160,11 +175,20 @@ describe("audited", () => {
     if (!created.ok) throw new Error("expected a project");
     const update = (monthlyBudgetUsd: string | null) =>
       audited(db, COMMAND_LINE, async (tx) => {
-        const before = await getProject(tx, created.project.id);
-        const result = await updateProject(tx, created.project.id, {
-          ...values(slug),
-          monthlyBudgetUsd,
-        });
+        const before = await getProject(
+          tx,
+          ALL_ORGANIZATIONS,
+          created.project.id,
+        );
+        const result = await updateProject(
+          tx,
+          ALL_ORGANIZATIONS,
+          created.project.id,
+          {
+            ...values(slug),
+            monthlyBudgetUsd,
+          },
+        );
         return {
           result,
           entry:
@@ -206,7 +230,7 @@ describe("listAuditEntries", () => {
     const second = newSlug();
     await auditedCreate(first);
     await auditedCreate(second);
-    const { entries } = await listAuditEntries(db, 1);
+    const { entries } = await listAuditEntries(db, ALL_ORGANIZATIONS, 1);
     const targets = entries.map((e) => e.target);
     expect(targets.indexOf(second)).toBeLessThan(targets.indexOf(first));
     expect(targets.indexOf(first)).toBeGreaterThanOrEqual(0);

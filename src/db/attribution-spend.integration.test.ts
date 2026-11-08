@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseEnv } from "@/lib/env";
 import { getSpendByAttribution } from "./attribution-spend";
 import { projects, usageEvents } from "./schema";
+import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -66,7 +67,7 @@ afterAll(async () => {
 
 describe("getSpendByAttribution", () => {
   it("groups exact sums by the field, highest first, with not-set as null", async () => {
-    const result = await getSpendByAttribution(db, {
+    const result = await getSpendByAttribution(db, ALL_ORGANIZATIONS, {
       key: "customerId",
       start,
       projectId,
@@ -86,7 +87,7 @@ describe("getSpendByAttribution", () => {
   });
 
   it("limits the groups returned but totals everything", async () => {
-    const result = await getSpendByAttribution(db, {
+    const result = await getSpendByAttribution(db, ALL_ORGANIZATIONS, {
       key: "customerId",
       start,
       projectId,
@@ -97,7 +98,7 @@ describe("getSpendByAttribution", () => {
   });
 
   it("covers every project when none is given", async () => {
-    const result = await getSpendByAttribution(db, {
+    const result = await getSpendByAttribution(db, ALL_ORGANIZATIONS, {
       key: "customerId",
       start,
       limit: 50,
@@ -108,7 +109,7 @@ describe("getSpendByAttribution", () => {
   });
 
   it("groups by another field, where everything is not set", async () => {
-    const result = await getSpendByAttribution(db, {
+    const result = await getSpendByAttribution(db, ALL_ORGANIZATIONS, {
       key: "feature",
       start,
       projectId,
@@ -121,7 +122,7 @@ describe("getSpendByAttribution", () => {
   });
 
   it("returns zero totals for a range without usage", async () => {
-    const result = await getSpendByAttribution(db, {
+    const result = await getSpendByAttribution(db, ALL_ORGANIZATIONS, {
       key: "customerId",
       start: new Date("2099-01-01T00:00:00Z"),
       projectId,

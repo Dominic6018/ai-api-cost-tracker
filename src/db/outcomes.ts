@@ -3,6 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { AttributionKey } from "@/lib/attribution";
 import type { OutcomeInput } from "@/lib/outcomes";
 import { outcomes, type Outcome } from "./schema";
+import { projectInOrganization, type OrganizationScope } from "./scope";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<
@@ -94,8 +95,9 @@ export async function recordOutcome(
   }
 }
 
-const where = (start: Date, projectId?: string) =>
+const where = (scope: OrganizationScope, start: Date, projectId?: string) =>
   and(
+    projectInOrganization(outcomes.projectId, scope),
     gte(outcomes.occurredAt, start),
     projectId ? eq(outcomes.projectId, projectId) : undefined,
   );
@@ -103,12 +105,13 @@ const where = (start: Date, projectId?: string) =>
 /** Outcome names recorded since `start`, for the breakdown's selector. */
 export async function listOutcomeNames(
   db: Database,
+  scope: OrganizationScope,
   { start, projectId }: { start: Date; projectId?: string },
 ): Promise<string[]> {
   const rows = await db
     .selectDistinct({ name: outcomes.name })
     .from(outcomes)
-    .where(where(start, projectId))
+    .where(where(scope, start, projectId))
     .orderBy(asc(outcomes.name))
     .limit(100);
   return rows.map((row) => row.name);
@@ -123,6 +126,7 @@ export interface OutcomeCounts {
 /** One outcome's counts since `start`, grouped by an attribution field. */
 export async function outcomeCountsByAttribution(
   db: Database,
+  scope: OrganizationScope,
   {
     key,
     name,
@@ -137,7 +141,7 @@ export async function outcomeCountsByAttribution(
       count: sql<string>`sum(${outcomes.count})::text`,
     })
     .from(outcomes)
-    .where(and(where(start, projectId), eq(outcomes.name, name)))
+    .where(and(where(scope, start, projectId), eq(outcomes.name, name)))
     .groupBy(column);
   const byValue = new Map(rows.map((row) => [row.value, Number(row.count)]));
   const total = [...byValue.values()].reduce((sum, n) => sum + n, 0);
