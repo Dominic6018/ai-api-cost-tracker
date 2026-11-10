@@ -29,7 +29,8 @@ export async function seed(db: Database): Promise<SeedResult> {
   const insertedProjects = await db
     .insert(projects)
     .values(sampleProjects)
-    .onConflictDoNothing({ target: projects.slug })
+    // Into the default organization, as the column default puts them.
+    .onConflictDoNothing({ target: [projects.organizationId, projects.slug] })
     .returning({ id: projects.id });
 
   const upsertedPrices = await db

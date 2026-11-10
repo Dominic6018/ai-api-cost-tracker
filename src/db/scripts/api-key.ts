@@ -8,7 +8,7 @@ import { audited, COMMAND_LINE } from "../audit";
 import { API_KEY_SCOPES, type ApiKeyScope } from "../schema";
 
 const USAGE = `Usage:
-  npm run api-key -- create --project <slug> --name <label> [--scope ingest|read]
+  npm run api-key -- create --project <slug> --name <label> [--scope ingest|read] [--org <slug>]
   npm run api-key -- revoke <key prefix>
 
 --scope ingest (the default) creates a key that sends usage, outcomes and
@@ -23,6 +23,7 @@ async function main() {
       project: { type: "string" },
       name: { type: "string" },
       scope: { type: "string" },
+      org: { type: "string" },
     },
   });
   const [command, argument] = positionals;
@@ -42,6 +43,7 @@ async function main() {
       const result = await audited(db, COMMAND_LINE, async (tx) => {
         const created = await createApiKey(tx, {
           projectSlug: project,
+          organizationSlug: values.org,
           name,
           scope: scope as ApiKeyScope,
         });
@@ -52,13 +54,19 @@ async function main() {
             ? {
                 action: "api_key.created" as const,
                 target: created.record.keyPrefix,
+                organizationId: created.organizationId,
                 details: { project, name, scope },
               }
             : null,
         };
       });
-      if (!result.ok)
-        throw new Error(`No project with slug "${values.project}"`);
+      if (!result.ok) {
+        throw new Error(
+          result.error === "project_ambiguous"
+            ? `More than one organization has a project "${values.project}"; add --org <slug>.`
+            : `No project with slug "${values.project}"${values.org ? ` in organization "${values.org}"` : ""}`,
+        );
+      }
       console.log(
         `Created ${scope} API key "${values.name}" for project "${values.project}" ` +
           `(prefix ${result.record.keyPrefix}).\n` +
@@ -71,7 +79,11 @@ async function main() {
         return {
           result: done,
           entry: done
-            ? { action: "api_key.revoked" as const, target: argument }
+            ? {
+                action: "api_key.revoked" as const,
+                target: argument,
+                organizationId: done.organizationId,
+              }
             : null,
         };
       });

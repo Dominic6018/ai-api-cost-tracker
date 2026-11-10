@@ -62,7 +62,12 @@ describe("resetPassword", () => {
         email: user.email.toUpperCase(),
         password: newPassword,
       }),
-    ).toEqual({ ok: true, email: user.email, revokedSessions: 2 });
+    ).toEqual({
+      ok: true,
+      email: user.email,
+      organizationId: user.organizationId,
+      revokedSessions: 2,
+    });
 
     expect(await getSessionUser(db, first.token)).toBeNull();
     expect(await getSessionUser(db, second.token)).toBeNull();
@@ -121,6 +126,7 @@ describe("revokeSessions", () => {
     expect(await revokeSessions(db, user.email)).toEqual({
       ok: true,
       email: user.email,
+      organizationId: user.organizationId,
       revokedSessions: 1,
     });
     expect(await getSessionUser(db, mine.token)).toBeNull();
@@ -184,6 +190,7 @@ describe("setUserRole", () => {
     ).toEqual({
       ok: true,
       email: user.email,
+      organizationId: user.organizationId,
       role: "viewer",
       previousRole: "admin",
     });

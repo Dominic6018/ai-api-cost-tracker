@@ -10,7 +10,12 @@ import { sessions, users, type UserRole } from "./schema";
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select" | "transaction">;
 
 export type AccountResult =
-  | { ok: true; email: string; revokedSessions: number }
+  | {
+      ok: true;
+      email: string;
+      organizationId: string;
+      revokedSessions: number;
+    }
   | { ok: false; error: "user_not_found" };
 
 /**
@@ -29,7 +34,11 @@ export async function resetPassword(
       .update(users)
       .set({ passwordHash })
       .where(eq(users.email, normalizeEmail(email)))
-      .returning({ id: users.id, email: users.email });
+      .returning({
+        id: users.id,
+        email: users.email,
+        organizationId: users.organizationId,
+      });
     if (!user) return { ok: false, error: "user_not_found" } as const;
 
     const revoked = await tx
@@ -40,6 +49,7 @@ export async function resetPassword(
     return {
       ok: true,
       email: user.email,
+      organizationId: user.organizationId,
       revokedSessions: revoked.length,
     } as const;
   });
@@ -52,7 +62,11 @@ export async function revokeSessions(
 ): Promise<AccountResult> {
   return db.transaction(async (tx) => {
     const [user] = await tx
-      .select({ id: users.id, email: users.email })
+      .select({
+        id: users.id,
+        email: users.email,
+        organizationId: users.organizationId,
+      })
       .from(users)
       .where(eq(users.email, normalizeEmail(email)));
     if (!user) return { ok: false, error: "user_not_found" } as const;
@@ -64,6 +78,7 @@ export async function revokeSessions(
     return {
       ok: true,
       email: user.email,
+      organizationId: user.organizationId,
       revokedSessions: revoked.length,
     } as const;
   });
@@ -77,7 +92,13 @@ export async function setUserRole(
   db: Pick<Database, "transaction">,
   { email, role }: { email: string; role: UserRole },
 ): Promise<
-  | { ok: true; email: string; role: UserRole; previousRole: UserRole }
+  | {
+      ok: true;
+      email: string;
+      organizationId: string;
+      role: UserRole;
+      previousRole: UserRole;
+    }
   | { ok: false; error: "user_not_found" }
 > {
   return db.transaction(async (tx) => {
@@ -88,11 +109,11 @@ export async function setUserRole(
       .where(where)
       .for("update");
     if (!before) return { ok: false, error: "user_not_found" } as const;
-    const [user] = await tx
-      .update(users)
-      .set({ role })
-      .where(where)
-      .returning({ email: users.email, role: users.role });
+    const [user] = await tx.update(users).set({ role }).where(where).returning({
+      email: users.email,
+      organizationId: users.organizationId,
+      role: users.role,
+    });
     return { ok: true, ...user, previousRole: before.role } as const;
   });
 }

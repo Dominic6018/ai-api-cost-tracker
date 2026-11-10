@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { parseEnv } from "@/lib/env";
+import { createApiKey } from "./api-keys";
 import { createUser } from "./auth";
 import {
   createOrganization,
@@ -174,5 +175,47 @@ describe("managing organizations", () => {
         organization: { id: DEFAULT_ORGANIZATION_ID, slug: "default" },
       }),
     ).toEqual({ ok: false, error: "user_not_found" });
+  });
+});
+
+describe("project slugs", () => {
+  it("can repeat across organizations, but not within one", async () => {
+    const first = await newOrganization();
+    const second = await newOrganization();
+    const shared = slug();
+    for (const organization of [first, second]) {
+      const [project] = await db
+        .insert(projects)
+        .values({
+          name: "Shared",
+          slug: shared,
+          organizationId: organization.id,
+        })
+        .returning();
+      projectIds.push(project.id);
+    }
+    await expect(
+      db
+        .insert(projects)
+        .values({ name: "Again", slug: shared, organizationId: first.id }),
+    ).rejects.toThrow();
+
+    // A key for that slug needs the organization to say which project.
+    expect(await createApiKey(db, { projectSlug: shared, name: "ci" })).toEqual(
+      { ok: false, error: "project_ambiguous" },
+    );
+    const key = await createApiKey(db, {
+      projectSlug: shared,
+      organizationSlug: second.slug,
+      name: "ci",
+    });
+    expect(key.ok && key.organizationId).toBe(second.id);
+    expect(
+      await createApiKey(db, {
+        projectSlug: shared,
+        organizationSlug: slug(),
+        name: "ci",
+      }),
+    ).toEqual({ ok: false, error: "project_not_found" });
   });
 });

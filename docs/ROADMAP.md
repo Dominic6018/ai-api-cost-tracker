@@ -124,7 +124,7 @@ Numbers people can trust, before anything is built on them. Details and evidence
 - [x] Keep usage that has no price, and price it later with `npm run reprice` (#133)
 - [x] Reserve budget atomically before spending (#135)
 - [ ] Ingestion health: accepted, replayed, conflicting, rejected and unpriced counts per project and day
-- [ ] Project slugs unique per organization; command-line changes logged in the organization they concern
+- [x] Project slugs unique per organization; command-line changes logged in the organization they concern (#141)
 
 ## Milestone 12: Integration experience
 

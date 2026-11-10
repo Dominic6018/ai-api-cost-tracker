@@ -71,7 +71,8 @@ export const projects = pgTable(
   },
   (t) => [
     index("projects_organization_id_idx").on(t.organizationId),
-    uniqueIndex("projects_slug_idx").on(t.slug),
+    // Per organization: two organizations can both have "web-app".
+    uniqueIndex("projects_organization_slug_idx").on(t.organizationId, t.slug),
     check(
       "projects_budget_non_negative",
       sql`${t.monthlyBudgetUsd} IS NULL OR ${t.monthlyBudgetUsd} >= 0`,

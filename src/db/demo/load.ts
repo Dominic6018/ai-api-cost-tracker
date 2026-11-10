@@ -1,6 +1,11 @@
-import { like } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { outcomes, projects, usageEvents } from "../schema";
+import {
+  DEFAULT_ORGANIZATION_ID,
+  outcomes,
+  projects,
+  usageEvents,
+} from "../schema";
 import { DEMO_SLUG_PREFIX, type DemoData } from "./generate";
 
 /** Any Drizzle Postgres database, so the CLI and tests can pass their own. */
@@ -8,8 +13,15 @@ type Database = Pick<PgDatabase<PgQueryResultHKT>, "transaction">;
 
 const INSERT_BATCH = 1_000;
 
-/** Demo projects are found by slug prefix; deleting them cascades to their events. */
-const isDemoProject = like(projects.slug, `${DEMO_SLUG_PREFIX}%`);
+/**
+ * Demo projects live in the default organization and are found by slug
+ * prefix there, so another organization's "demo-..." project is never
+ * touched. Deleting them cascades to their events.
+ */
+const isDemoProject = and(
+  eq(projects.organizationId, DEFAULT_ORGANIZATION_ID),
+  like(projects.slug, `${DEMO_SLUG_PREFIX}%`),
+);
 
 /**
  * Replaces any existing demo data with `data` in one transaction, so a
@@ -24,7 +36,12 @@ export async function loadDemoData(
 
     const created = await tx
       .insert(projects)
-      .values(data.projects)
+      .values(
+        data.projects.map((p) => ({
+          ...p,
+          organizationId: DEFAULT_ORGANIZATION_ID,
+        })),
+      )
       .returning({ id: projects.id, slug: projects.slug });
     const idBySlug = new Map(created.map((p) => [p.slug, p.id]));
 

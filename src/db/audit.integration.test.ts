@@ -10,7 +10,13 @@ import { audited, COMMAND_LINE, listAuditEntries, userActor } from "./audit";
 import { createUser } from "./auth";
 import { endModelPrice } from "./pricing";
 import { createProject, getProject, updateProject } from "./projects";
-import { auditLog, DEFAULT_ORGANIZATION_ID, projects, users } from "./schema";
+import {
+  auditLog,
+  DEFAULT_ORGANIZATION_ID,
+  organizations,
+  projects,
+  users,
+} from "./schema";
 import { ALL_ORGANIZATIONS } from "./scope";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
@@ -207,6 +213,37 @@ describe("audited", () => {
     expect(entries.find((e) => e.action === "project.updated")).toMatchObject({
       details: { monthlyBudgetUsd: { from: "100.00", to: null } },
     });
+  });
+
+  it("logs an entry in the organization it names", async () => {
+    const [organization] = await db
+      .insert(organizations)
+      .values({ name: "Audit target", slug: `it-${randomUUID()}` })
+      .returning();
+    const target = `acct-${randomUUID()}`;
+    try {
+      await audited(db, COMMAND_LINE, async () => ({
+        result: null,
+        entry: {
+          action: "account.role_changed" as const,
+          target,
+          organizationId: organization.id,
+        },
+      }));
+      const [entry] = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.target, target));
+      expect(entry).toMatchObject({
+        organizationId: organization.id,
+        actorLabel: "command line",
+      });
+    } finally {
+      await db.delete(auditLog).where(eq(auditLog.target, target));
+      await db
+        .delete(organizations)
+        .where(eq(organizations.id, organization.id));
+    }
   });
 
   it("keeps the actor's name after the account is deleted", async () => {

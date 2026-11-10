@@ -64,8 +64,8 @@ export function audited<
       await tx.insert(auditLog).values({
         actorUserId: actor.userId,
         actorLabel: actor.label,
-        organizationId: actor.organizationId,
         ...entry,
+        organizationId: entry.organizationId ?? actor.organizationId,
       });
     }
     return result;
