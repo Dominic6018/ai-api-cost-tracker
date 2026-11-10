@@ -362,8 +362,9 @@ export const usageEvents = pgTable(
       "usage_events_image_valid",
       sql`${t.cachedImageInputTokens} >= 0 AND ${t.cachedImageInputTokens} <= ${t.imageInputTokens} AND ${t.imageOutputTokens} >= 0 AND (${t.imageInputTokens} = 0 AND ${t.imageOutputTokens} = 0 OR (${t.cachedAudioInputTokens} + ${t.cachedImageInputTokens} <= ${t.cachedInputTokens} AND ${t.audioInputTokens} - ${t.cachedAudioInputTokens} + ${t.imageInputTokens} - ${t.cachedImageInputTokens} <= ${t.inputTokens} - ${t.cachedInputTokens} - ${t.cacheWriteInputTokens} AND ${t.audioOutputTokens} + ${t.imageOutputTokens} <= ${t.outputTokens}))`,
     ),
-    uniqueIndex("usage_events_provider_request_idx")
-      .on(t.provider, t.requestId)
+    // Per project, so no project can block or detect another's events.
+    uniqueIndex("usage_events_project_provider_request_idx")
+      .on(t.projectId, t.provider, t.requestId)
       .where(sql`${t.requestId} IS NOT NULL`),
     check(
       "usage_events_tokens_non_negative",

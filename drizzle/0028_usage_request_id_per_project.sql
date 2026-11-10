@@ -1,0 +1,2 @@
+DROP INDEX "usage_events_provider_request_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "usage_events_project_provider_request_idx" ON "usage_events" USING btree ("project_id","provider","request_id") WHERE "usage_events"."request_id" IS NOT NULL;

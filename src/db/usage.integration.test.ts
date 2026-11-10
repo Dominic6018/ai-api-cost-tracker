@@ -520,17 +520,33 @@ describe("recordUsage idempotency", () => {
     expect(await countEvents(requestId)).toBe(1);
   });
 
-  it("never returns another project's event for the same request id", async () => {
+  it("keeps request ids apart between projects", async () => {
     const [other] = await db
       .insert(projects)
       .values({ name: "Other project", slug: `it-${randomUUID()}` })
       .returning();
     try {
       const requestId = `req-${randomUUID()}`;
-      await recordUsage(db, usage({ requestId }));
-      expect(
-        await recordUsage(db, usage({ requestId, projectId: other.id })),
-      ).toEqual({ ok: false, error: "request_id_conflict" });
+      const mine = await recordUsage(db, usage({ requestId }));
+      // Another project, which could be another organization's, records
+      // its own event: it can neither be blocked nor learn that ours exists.
+      const theirs = await recordUsage(
+        db,
+        usage({ requestId, projectId: other.id, outputTokens: 7 }),
+      );
+      if (!mine.ok || !theirs.ok) throw new Error("expected both to succeed");
+      expect(theirs.replayed).toBe(false);
+      expect(theirs.event.id).not.toBe(mine.event.id);
+      expect(theirs.event.projectId).toBe(other.id);
+      // Each project's retries still replay its own event.
+      const retry = await recordUsage(
+        db,
+        usage({ requestId, projectId: other.id, outputTokens: 7 }),
+      );
+      expect(retry.ok && retry.replayed && retry.event.id).toBe(
+        theirs.event.id,
+      );
+      expect(await countEvents(requestId)).toBe(2);
     } finally {
       await db.delete(projects).where(eq(projects.id, other.id));
     }

@@ -95,8 +95,22 @@ export function hasAudio(usage: TokenUsage): boolean {
   );
 }
 
-const TOKENS_PER_MILLION = 1_000_000;
-const USD_DECIMALS = 6;
+const MICRO_UNITS = 1_000_000n;
+/** Tokens × micro-dollars per million tokens, in picodollars, per micro. */
+const PICOS_PER_MICRO = 1_000_000n;
+
+/**
+ * A rate or multiplier as whole millionths. They're stored with 6 decimals,
+ * so this is exact; anything finer is rounded to the nearest millionth.
+ */
+function rateUnits(value: number): bigint {
+  return BigInt(Math.round(value * 1_000_000));
+}
+
+/** `value / divisor`, rounded half up; both non-negative. */
+function roundHalfUp(value: bigint, divisor: bigint): bigint {
+  return (value * 2n + divisor) / (divisor * 2n);
+}
 
 function assertCount(name: string, value: number): void {
   if (!Number.isInteger(value) || value < 0) {
@@ -127,17 +141,21 @@ export function ratesForUsage(
 }
 
 /**
- * Computes the USD cost of a request, rounded to 6 decimal places to match
- * the `cost_usd` column precision. Cached and cache-write input tokens are
- * billed at their own rates and not double-counted at the input rate, and
- * so are audio and image tokens, at the model's audio and image rates.
- * Batch usage costs the standard price times the model's batch multiplier;
- * it throws when the model has none, which callers check first.
+ * Computes the cost of a request in micro-dollars, the `cost_usd` column's
+ * precision. Cached and cache-write input tokens are billed at their own
+ * rates and not double-counted at the input rate, and so are audio and
+ * image tokens, at the model's audio and image rates. Batch usage costs the
+ * standard price times the model's batch multiplier; it throws when the
+ * model has none, which callers check first.
+ *
+ * The arithmetic is exact: rates are stored with 6 decimals, so each is a
+ * whole number of micro-dollars per million tokens, and token counts are
+ * whole numbers. The total is rounded once, half up, to a micro-dollar.
  */
-export function calculateCostUsd(
+export function calculateCostMicros(
   usage: TokenUsage,
   pricing: TokenPricing,
-): number {
+): bigint {
   const cached = usage.cachedInputTokens ?? 0;
   const writes = usage.cacheWriteInputTokens ?? 0;
   const writes1h = usage.cacheWrite1hInputTokens ?? 0;
@@ -214,17 +232,27 @@ export function calculateCostUsd(
 
   // Audio and image tokens are part of the input, cached and output
   // totals, and billed at their own rates instead of the text ones.
-  let audioCost = 0;
+  // Each term is tokens × micro-dollars per million tokens: picodollars.
+  let picos =
+    BigInt(
+      usage.inputTokens - cached - writes - uncachedAudio - uncachedImage,
+    ) *
+      rateUnits(inputRate) +
+    BigInt(cached - cachedAudio - cachedImage) * rateUnits(cachedRate) +
+    BigInt(writes - writes1h) * rateUnits(writeRate) +
+    BigInt(writes1h) * rateUnits(write1hRate) +
+    BigInt(usage.outputTokens - audioOut - imageOut) *
+      rateUnits(rates.outputPerMTokUsd);
   if (audio) {
     const audioCachedRate =
       audio.cachedInputPerMTokUsd ?? audio.inputPerMTokUsd;
     assertPrice("audio.inputPerMTokUsd", audio.inputPerMTokUsd);
     assertPrice("audio.cachedInputPerMTokUsd", audioCachedRate);
     assertPrice("audio.outputPerMTokUsd", audio.outputPerMTokUsd);
-    audioCost =
-      uncachedAudio * audio.inputPerMTokUsd +
-      cachedAudio * audioCachedRate +
-      audioOut * audio.outputPerMTokUsd;
+    picos +=
+      BigInt(uncachedAudio) * rateUnits(audio.inputPerMTokUsd) +
+      BigInt(cachedAudio) * rateUnits(audioCachedRate) +
+      BigInt(audioOut) * rateUnits(audio.outputPerMTokUsd);
   }
   const image = pricing.image;
   const imageInRate = image?.inputPerMTokUsd ?? inputRate;
@@ -234,25 +262,12 @@ export function calculateCostUsd(
   assertPrice("image.inputPerMTokUsd", imageInRate);
   assertPrice("image.cachedInputPerMTokUsd", imageCachedRate);
   assertPrice("image.outputPerMTokUsd", imageOutRate);
-  const imageCost =
-    uncachedImage * imageInRate +
-    cachedImage * imageCachedRate +
-    imageOut * imageOutRate;
+  picos +=
+    BigInt(uncachedImage) * rateUnits(imageInRate) +
+    BigInt(cachedImage) * rateUnits(imageCachedRate) +
+    BigInt(imageOut) * rateUnits(imageOutRate);
 
-  const standard =
-    ((usage.inputTokens - cached - writes - uncachedAudio - uncachedImage) *
-      inputRate +
-      (cached - cachedAudio - cachedImage) * cachedRate +
-      (writes - writes1h) * writeRate +
-      writes1h * write1hRate +
-      (usage.outputTokens - audioOut - imageOut) * rates.outputPerMTokUsd +
-      audioCost +
-      imageCost) /
-    TOKENS_PER_MILLION;
-
-  if (usage.serviceTier !== "batch") {
-    return Number(standard.toFixed(USD_DECIMALS));
-  }
+  if (usage.serviceTier !== "batch") return roundHalfUp(picos, PICOS_PER_MICRO);
 
   // The batch discount applies to the whole request, before rounding.
   const multiplier = pricing.batchMultiplier;
@@ -264,11 +279,18 @@ export function calculateCostUsd(
       `batchMultiplier must be in (0, 1], got ${multiplier}`,
     );
   }
-  // Halving often lands exactly on half a micro-dollar, where float noise
-  // (427.4999… instead of 427.5) would decide the rounding. Drop the noise,
-  // then round half up, as the exact FOCUS export does.
-  const micros = Number((standard * multiplier * 1e6).toFixed(6));
-  return Math.round(micros) / 1e6;
+  return roundHalfUp(
+    picos * rateUnits(multiplier),
+    PICOS_PER_MICRO * MICRO_UNITS,
+  );
+}
+
+/** The same cost in USD, e.g. 0.000375, for display and existing callers. */
+export function calculateCostUsd(
+  usage: TokenUsage,
+  pricing: TokenPricing,
+): number {
+  return Number(calculateCostMicros(usage, pricing)) / Number(MICRO_UNITS);
 }
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
