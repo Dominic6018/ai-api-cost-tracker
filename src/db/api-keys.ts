@@ -6,7 +6,13 @@ import {
   generateApiKey,
   isWellFormedApiKey,
 } from "@/lib/api-keys";
-import { apiKeys, projects, type ApiKey, type ApiKeyScope } from "./schema";
+import {
+  apiKeys,
+  organizations,
+  projects,
+  type ApiKey,
+  type ApiKeyScope,
+} from "./schema";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<
@@ -24,26 +30,43 @@ function pgErrorCode(error: unknown): string | undefined {
 }
 
 export type CreateApiKeyResult =
-  | { ok: true; key: string; record: ApiKey }
-  | { ok: false; error: "project_not_found" };
+  | { ok: true; key: string; record: ApiKey; organizationId: string }
+  | { ok: false; error: "project_not_found" | "project_ambiguous" };
 
 /**
- * Creates a key for a project, identified by slug. The returned `key` is the
- * only copy of the secret; just its prefix and hash are stored.
+ * Creates a key for a project, identified by slug, and by organization
+ * slug when more than one organization has that project slug. The
+ * returned `key` is the only copy of the secret; just its prefix and hash
+ * are stored.
  */
 export async function createApiKey(
   db: Database,
   {
     projectSlug,
+    organizationSlug,
     name,
     scope = "ingest",
-  }: { projectSlug: string; name: string; scope?: ApiKeyScope },
+  }: {
+    projectSlug: string;
+    organizationSlug?: string;
+    name: string;
+    scope?: ApiKeyScope;
+  },
 ): Promise<CreateApiKeyResult> {
-  const [project] = await db
-    .select({ id: projects.id })
+  const matches = await db
+    .select({ id: projects.id, organizationId: projects.organizationId })
     .from(projects)
-    .where(eq(projects.slug, projectSlug));
-  if (!project) return { ok: false, error: "project_not_found" };
+    .innerJoin(organizations, eq(organizations.id, projects.organizationId))
+    .where(
+      and(
+        eq(projects.slug, projectSlug),
+        organizationSlug ? eq(organizations.slug, organizationSlug) : undefined,
+      ),
+    )
+    .limit(2);
+  if (matches.length === 0) return { ok: false, error: "project_not_found" };
+  if (matches.length > 1) return { ok: false, error: "project_ambiguous" };
+  const [project] = matches;
 
   // A prefix collision is astronomically unlikely, but retry rather than fail.
   for (let attempt = 1; ; attempt++) {
@@ -59,7 +82,12 @@ export async function createApiKey(
           scope,
         })
         .returning();
-      return { ok: true, key: generated.key, record };
+      return {
+        ok: true,
+        key: generated.key,
+        record,
+        organizationId: project.organizationId,
+      };
     } catch (error) {
       if (pgErrorCode(error) !== UNIQUE_VIOLATION) throw error;
       if (attempt >= MAX_CREATE_ATTEMPTS) throw error;
@@ -103,16 +131,24 @@ export async function authenticateApiKey(
   };
 }
 
-/** Revokes a key by its displayed prefix. Returns false if no active key matched. */
+/**
+ * Revokes a key by its displayed prefix. Returns the organization of the
+ * key's project, or null if no active key matched.
+ */
 export async function revokeApiKey(
   db: Database,
   prefix: string,
   now: Date = new Date(),
-): Promise<boolean> {
-  const revoked = await db
+): Promise<{ organizationId: string } | null> {
+  const [revoked] = await db
     .update(apiKeys)
     .set({ revokedAt: now })
     .where(and(eq(apiKeys.keyPrefix, prefix), isNull(apiKeys.revokedAt)))
-    .returning({ id: apiKeys.id });
-  return revoked.length > 0;
+    .returning({ projectId: apiKeys.projectId });
+  if (!revoked) return null;
+  const [project] = await db
+    .select({ organizationId: projects.organizationId })
+    .from(projects)
+    .where(eq(projects.id, revoked.projectId));
+  return project ?? null;
 }

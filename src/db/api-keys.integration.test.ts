@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateApiKey } from "@/lib/api-keys";
 import { parseEnv } from "@/lib/env";
 import { authenticateApiKey, createApiKey, revokeApiKey } from "./api-keys";
-import { apiKeys, projects } from "./schema";
+import { apiKeys, DEFAULT_ORGANIZATION_ID, projects } from "./schema";
 
 // Runs against the database in DATABASE_URL after `npm run db:migrate`.
 const client = postgres(parseEnv().DATABASE_URL, {
@@ -120,10 +120,12 @@ describe("authenticateApiKey", () => {
     const { key, record } = await newKey();
     expect((await authenticateApiKey(db, key)).ok).toBe(true);
 
-    expect(await revokeApiKey(db, record.keyPrefix)).toBe(true);
+    expect(await revokeApiKey(db, record.keyPrefix)).toEqual({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+    });
     expect(await authenticateApiKey(db, key)).toEqual({ ok: false });
 
     // Revoking again finds no active key.
-    expect(await revokeApiKey(db, record.keyPrefix)).toBe(false);
+    expect(await revokeApiKey(db, record.keyPrefix)).toBeNull();
   });
 });

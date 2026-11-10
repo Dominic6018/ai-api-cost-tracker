@@ -173,6 +173,7 @@ async function main() {
                 ? {
                     action: "account.role_changed" as const,
                     target: changed.email,
+                    organizationId: changed.organizationId,
                     details: {
                       role: { from: changed.previousRole, to: changed.role },
                     },
@@ -200,6 +201,7 @@ async function main() {
                       ? ("account.password_reset" as const)
                       : ("account.sessions_revoked" as const),
                   target: done.email,
+                  organizationId: done.organizationId,
                   details: { revokedSessions: done.revokedSessions },
                 }
               : null,

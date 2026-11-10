@@ -12,6 +12,11 @@ export interface AuditEntry {
   /** What changed, by name: a project slug, an email, a key prefix. */
   target: string;
   details?: AuditDetails;
+  /**
+   * The organization the change concerns, when it isn't the actor's: an
+   * account or project changed from the command line.
+   */
+  organizationId?: string;
 }
 
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
