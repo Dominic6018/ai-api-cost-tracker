@@ -308,7 +308,14 @@ export const usageEvents = pgTable(
     })
       .notNull()
       .default("0"),
-    costUsd: numeric("cost_usd", { precision: 14, scale: 6 }).notNull(),
+    // Null while the event is unpriced: kept, but out of every total.
+    costUsd: numeric("cost_usd", { precision: 14, scale: 6 }),
+    pricingStatus: text("pricing_status")
+      .$type<PricingStatus>()
+      .notNull()
+      .default("priced"),
+    // Which price was missing; set only while unpriced.
+    unpricedReason: text("unpriced_reason").$type<UnpricedReason>(),
     // Provider request id, used to de-duplicate ingested events.
     requestId: text("request_id"),
     occurredAt: timestamp("occurred_at", { withTimezone: true })
@@ -344,6 +351,14 @@ export const usageEvents = pgTable(
     // Spend totals across all projects filter by time alone.
     index("usage_events_occurred_idx").on(t.occurredAt),
     index("usage_events_provider_model_idx").on(t.provider, t.model),
+    // Serves the overview's unpriced count and repricing.
+    index("usage_events_unpriced_idx")
+      .on(t.projectId, t.occurredAt)
+      .where(sql`${t.pricingStatus} = 'unpriced'`),
+    check(
+      "usage_events_pricing_status_valid",
+      sql`(${t.pricingStatus} = 'priced' and ${t.costUsd} is not null and ${t.unpricedReason} is null) or (${t.pricingStatus} = 'unpriced' and ${t.costUsd} is null and ${t.unpricedReason} is not null and ${t.unpricedReason} in ('no_pricing', 'no_tier_pricing', 'no_batch_pricing', 'no_audio_pricing', 'no_web_search_pricing'))`,
+    ),
     check(
       "usage_events_service_tier_valid",
       sql`${t.serviceTier} in ('standard', 'batch', 'flex', 'fast')`,
@@ -503,6 +518,19 @@ export const rateLimits = pgTable(
 );
 
 /** How a request was processed, which decides its price. */
+export const PRICING_STATUSES = ["priced", "unpriced"] as const;
+export type PricingStatus = (typeof PRICING_STATUSES)[number];
+
+/** The price an unpriced event is waiting for. */
+export const UNPRICED_REASONS = [
+  "no_pricing",
+  "no_tier_pricing",
+  "no_batch_pricing",
+  "no_audio_pricing",
+  "no_web_search_pricing",
+] as const;
+export type UnpricedReason = (typeof UNPRICED_REASONS)[number];
+
 export const SERVICE_TIERS = ["standard", "batch", "flex", "fast"] as const;
 export type ServiceTier = (typeof SERVICE_TIERS)[number];
 
@@ -523,6 +551,7 @@ export const AUDIT_ACTIONS = [
   "api_key.revoked",
   "organization.created",
   "account.organization_changed",
+  "usage.repriced",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -560,7 +589,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced')`,
     ),
   ],
 );

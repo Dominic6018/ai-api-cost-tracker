@@ -29,6 +29,8 @@ export async function recordedDailyCost(
     .where(
       and(
         eq(usageEvents.provider, provider),
+        // Unpriced usage has no cost to compare.
+        eq(usageEvents.pricingStatus, "priced"),
         gte(usageEvents.occurredAt, from),
         lt(usageEvents.occurredAt, to),
       ),

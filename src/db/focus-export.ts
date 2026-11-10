@@ -65,6 +65,8 @@ export async function* focusCsv(
     }
 
     const lines = page.rows.flatMap((event) => {
+      // FOCUS rows report a cost; unpriced events have none yet.
+      if (event.pricingStatus !== "priced") return [];
       // Each tier has its own prices; batch uses the standard row.
       const tier = priceTierFor(event.serviceTier);
       const lookup = selectEffectivePricing(

@@ -300,6 +300,38 @@ describe("usage_events constraints", () => {
     expect(rows).toHaveLength(4);
   });
 
+  it("keeps priced and unpriced events consistent", async () => {
+    const project = await createProject();
+    // Unpriced: no cost, and a reason.
+    await db.insert(usageEvents).values(
+      usage(project.id, {
+        costUsd: null,
+        pricingStatus: "unpriced",
+        unpricedReason: "no_pricing",
+      }),
+    );
+    for (const bad of [
+      { costUsd: null },
+      {
+        pricingStatus: "unpriced" as const,
+        unpricedReason: "no_pricing" as const,
+      },
+      { costUsd: null, pricingStatus: "unpriced" as const },
+      {
+        costUsd: null,
+        pricingStatus: "unpriced" as const,
+        unpricedReason: "made_up" as "no_pricing",
+      },
+      { unpricedReason: "no_pricing" as const },
+    ]) {
+      expect(
+        await pgErrorCode(
+          db.insert(usageEvents).values(usage(project.id, bad)),
+        ),
+      ).toBe(CHECK_VIOLATION);
+    }
+  });
+
   it("cascades deletes from projects to usage events", async () => {
     const project = await createProject();
     await db.insert(usageEvents).values(usage(project.id));

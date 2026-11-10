@@ -204,6 +204,13 @@
       "when": 1794314959600,
       "tag": "0028_usage_request_id_per_project",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794317219734,
+      "tag": "0029_keep_unpriced_usage",
+      "breakpoints": true
     }
   ]
 }

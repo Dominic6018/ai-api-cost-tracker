@@ -331,7 +331,16 @@ export default async function UsagePage({
                     {count(event.outputTokens)}
                   </td>
                   <td className="px-3 py-2 text-right font-medium">
-                    {formatUsd(Number(event.costUsd))}
+                    {event.costUsd === null ? (
+                      <span
+                        className="font-normal text-foreground/60"
+                        title="No price for this model yet; not in any total"
+                      >
+                        Unpriced
+                      </span>
+                    ) : (
+                      formatUsd(Number(event.costUsd))
+                    )}
                   </td>
                   <td className="px-3 py-2 text-xs">
                     <AttributionCell event={event} filters={withoutCursor} />

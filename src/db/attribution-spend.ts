@@ -34,7 +34,8 @@ export async function getSpendByAttribution(
     gte(usageEvents.occurredAt, start),
     projectId ? eq(usageEvents.projectId, projectId) : undefined,
   );
-  const costSum = sql`sum(${usageEvents.costUsd})`;
+  // Unpriced events have no cost; a group of only those sums to zero.
+  const costSum = sql`coalesce(sum(${usageEvents.costUsd}), 0)`;
   const [top, [totals]] = await Promise.all([
     db
       .select({

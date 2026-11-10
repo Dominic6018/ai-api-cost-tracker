@@ -108,8 +108,8 @@ describe("POST /api/otel/v1/traces", () => {
     const { handler } = setup({
       results: [
         stored,
-        { ok: false, error: "no_pricing" },
-        { ok: false, error: "no_pricing" },
+        { ok: false, error: "request_id_conflict" },
+        { ok: false, error: "request_id_conflict" },
       ],
     });
     const response = await handler(
@@ -125,7 +125,7 @@ describe("POST /api/otel/v1/traces", () => {
     expect(await response.json()).toEqual({
       partialSuccess: {
         rejectedSpans: 2,
-        errorMessage: "2 span(s): no price for openai/unpriced-model",
+        errorMessage: "2 span(s): request_id_conflict",
       },
     });
   });

@@ -10,6 +10,7 @@ import {
 import {
   projects,
   usageEvents,
+  type PricingStatus,
   type Provider,
   type ServiceTier,
 } from "./schema";
@@ -43,7 +44,9 @@ export interface UsageEventRow {
   cachedImageInputTokens: number;
   imageOutputTokens: number;
   outputTokens: number;
-  costUsd: string;
+  /** Null while unpriced. */
+  costUsd: string | null;
+  pricingStatus: PricingStatus;
   requestId: string | null;
   customerId: string | null;
   userId: string | null;
@@ -103,6 +106,7 @@ export function usageEventsQuery(
         imageOutputTokens: usageEvents.imageOutputTokens,
         outputTokens: usageEvents.outputTokens,
         costUsd: usageEvents.costUsd,
+        pricingStatus: usageEvents.pricingStatus,
         requestId: usageEvents.requestId,
         customerId: usageEvents.customerId,
         userId: usageEvents.userId,

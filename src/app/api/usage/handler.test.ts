@@ -37,6 +37,8 @@ const storedEvent: UsageEvent = {
   cachedImageInputTokens: 0,
   imageOutputTokens: 0,
   costUsd: "0.006000",
+  pricingStatus: "priced",
+  unpricedReason: null,
   requestId: "req_1",
   occurredAt: now,
   metadata: null,
@@ -121,6 +123,8 @@ describe("POST /api/usage handler", () => {
         cachedImageInputTokens: 0,
         imageOutputTokens: 0,
         costUsd: "0.006000",
+        pricingStatus: "priced",
+        unpricedReason: null,
         requestId: "req_1",
         customerId: null,
         userId: null,
@@ -320,11 +324,6 @@ describe("POST /api/usage handler", () => {
   });
 
   it.each([
-    ["no_pricing", 422],
-    ["no_tier_pricing", 422],
-    ["no_batch_pricing", 422],
-    ["no_web_search_pricing", 422],
-    ["no_audio_pricing", 422],
     ["project_not_found", 404],
     ["request_id_conflict", 409],
   ] as const)("maps %s to HTTP %d", async (error, status) => {
@@ -332,6 +331,28 @@ describe("POST /api/usage handler", () => {
     const response = await handler(post(body));
     expect(response.status).toBe(status);
     expect((await response.json()).error.code).toBe(error);
+  });
+
+  it("returns 201 for usage stored without a price, saying which is missing", async () => {
+    const { handler } = setup({
+      result: {
+        ok: true,
+        event: {
+          ...storedEvent,
+          costUsd: null,
+          pricingStatus: "unpriced",
+          unpricedReason: "no_pricing",
+        },
+        replayed: false,
+      },
+    });
+    const response = await handler(post(body));
+    expect(response.status).toBe(201);
+    expect((await response.json()).event).toMatchObject({
+      costUsd: null,
+      pricingStatus: "unpriced",
+      unpricedReason: "no_pricing",
+    });
   });
 
   it("returns 200 with the stored event when a retry is replayed", async () => {

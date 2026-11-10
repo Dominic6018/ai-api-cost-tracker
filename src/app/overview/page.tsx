@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/db";
 import { getSpendOverview } from "@/db/spend";
+import { getUnpricedSummary } from "@/db/unpriced";
 import { organizationScope } from "@/db/scope";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/roles";
@@ -13,6 +14,7 @@ import { logoutAction } from "../login/actions";
 import { BudgetAlerts } from "../budget-alerts";
 import { BudgetStatusIcon } from "../budget-status";
 import { BudgetMeter } from "./budget-meter";
+import { UnpricedNotice } from "./unpriced-notice";
 
 export const metadata: Metadata = {
   title: "Spend overview · AI API Cost Tracker",
@@ -47,8 +49,10 @@ export default async function OverviewPage() {
   const user = await requireUser("/overview");
   // One "now" for the sums and the forecast, so they agree.
   const now = new Date();
-  const overview = await getSpendOverview(db, organizationScope(user), now);
+  const scope = organizationScope(user);
+  const overview = await getSpendOverview(db, scope, now);
   const { totals, windows } = overview;
+  const unpriced = await getUnpricedSummary(db, scope, windows.last30Days);
   const totalForecast = forecastMonth(totals.month, totals.last7FullDays, now);
   const hasUsage = totals.events > 0;
 
@@ -94,6 +98,10 @@ export default async function OverviewPage() {
       </header>
 
       <BudgetAlerts projects={overview.projects} />
+      <UnpricedNotice
+        summary={unpriced}
+        canManagePrices={can(user, "prices:manage")}
+      />
 
       <section
         aria-label="Total spend"
