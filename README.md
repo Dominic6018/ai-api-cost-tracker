@@ -20,13 +20,13 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 
 <sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
 
-> **Status:** Milestones 0–5 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting and the public release. Milestone 6 added the TypeScript and Python clients, OpenTelemetry intake and bill reconciliation. Milestone 7 added cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports and a reporting API. Milestone 8, guardrails, is under way: budget notifications and a budget check before spending are done; see [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status:** Milestones 0–9 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting, the TypeScript and Python clients, OpenTelemetry intake, reconciliation with Anthropic, OpenAI and Google Cloud bills, cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports, a reporting API, budget notifications and checks, and audited price management. Milestone 10 added roles, an audit log and organizations; single sign-on and customer billing are not built. See [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
 
 ## Features
 
 - **Exact costs.** Input, cached input, cache writes and output are priced separately, including prompt-length tiers such as Claude Haiku 5.5 above 100,000 tokens. Money is stored as exact decimals, never floating point.
 - **Dated prices.** A price change never rewrites history. Seed prices for Anthropic, OpenAI and Google models record their official source and the date they were checked.
-- **One small API.** `POST /api/usage` with a per-project API key, or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, which read usage from OpenAI, Anthropic and Gemini responses, or [OpenTelemetry traces](docs/OPENTELEMETRY.md) with GenAI token attributes. Retries with the same `requestId` are safe.
+- **One small API.** `POST /api/usage` with a per-project API key, or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, which read usage from OpenAI, Anthropic and Gemini responses, or [OpenTelemetry traces](docs/OPENTELEMETRY.md) with GenAI token attributes. Retries with the same `requestId` are safe; request IDs are unique per project.
 - **Dashboard.** Spend today, this month and over 30 days; a daily chart over 7, 30 or 90 days with spend by provider and model; a filterable history of every request; light and dark mode.
 - **Budgets.** A monthly budget per project, with alerts at 80% and 100%, also sent to a webhook, Slack or email, and an optional per-run budget. Apps can ask before spending whether a run or the month has room left.
 - **Secure by default.** API keys and sessions are stored only as hashes, passwords with scrypt, and sign-in and API keys are rate limited.
@@ -52,10 +52,12 @@ Open http://localhost:3000 and sign in. To record real usage, create an API key 
 
 ## Limitations
 
-What it doesn't do yet, and where that's planned:
+What it doesn't do yet (the plan is in [docs/PRODUCT_UPGRADE_PLAN.md](docs/PRODUCT_UPGRADE_PLAN.md)):
 
-- **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Importing usage from provider billing APIs is next ([Milestone 6](docs/ROADMAP.md#milestone-6-automatic-usage-capture)).
-- **Cost is broken down by project, provider and model.** Per customer, feature and run comes in Milestone 7; `metadata` is stored but not yet filterable.
+- **Usage without a price is refused.** A request for a model, tier, batch, audio or web search with no stored price gets a `422` and isn't stored, so add the price first. Keeping such usage as "unpriced" and pricing it later is planned.
+- **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Provider bills are compared with recorded costs (`npm run reconcile`), not imported as usage. The clients don't wrap streams to collect usage automatically; pass them the chunk that carries usage, or send it with `record()`.
+- **The budget check is advisory.** It reserves nothing, so concurrent steps can each be allowed (see [Budget check](#budget-check-before-spending)).
+- **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. There's no customer billing, credits or revenue.
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's Ultrafast tier isn't tracked.
 - **Organizations are managed from the command line**, as accounts are. An account is in one organization, and prices are shared across the install.
 - **Days are UTC days** for "today", "this month" and the charts.
@@ -342,18 +344,18 @@ Cached and cache-write tokens are part of `inputTokens`, so together they can't 
 
 **Retries are safe when you send `requestId`** (the provider's request ID, such as OpenAI's `x-request-id`). Repeating a request returns the original event with status 200 instead of storing it twice. The stored cost is kept, even if prices have changed since. The retry must come from the same project and have the same `model` and token counts. `occurredAt`, `metadata` and attribution aren't compared. Otherwise it gets a 409. Events without a `requestId` are always stored.
 
-| Status | `error.code`          | Meaning                                                                                      |
-| ------ | --------------------- | -------------------------------------------------------------------------------------------- |
-| 201    |                       | Stored; the body is `{ "event": { ..., "costUsd": "0.006000" }, "replayed": false }`         |
-| 200    |                       | Retry of a stored request; returns the original event with `"replayed": true`                |
-| 400    | `invalid_json`        | Body isn't valid JSON                                                                        |
-| 400    | `invalid_payload`     | Validation failed; see `error.fieldErrors`                                                   |
-| 401    | `unauthorized`        | Missing, malformed, unknown or revoked API key                                               |
-| 404    | `project_not_found`   | The key's project no longer exists                                                           |
-| 409    | `request_id_conflict` | This `provider` and `requestId` were already used for different usage, or by another project |
-| 413    | `payload_too_large`   | Body is over 64 KB                                                                           |
-| 422    | `no_pricing`          | No price for the model at `occurredAt`                                                       |
-| 429    | `rate_limited`        | Over 30 invalid API keys from this IP in 15 minutes; wait for the `Retry-After` seconds      |
+| Status | `error.code`          | Meaning                                                                                 |
+| ------ | --------------------- | --------------------------------------------------------------------------------------- |
+| 201    |                       | Stored; the body is `{ "event": { ..., "costUsd": "0.006000" }, "replayed": false }`    |
+| 200    |                       | Retry of a stored request; returns the original event with `"replayed": true`           |
+| 400    | `invalid_json`        | Body isn't valid JSON                                                                   |
+| 400    | `invalid_payload`     | Validation failed; see `error.fieldErrors`                                              |
+| 401    | `unauthorized`        | Missing, malformed, unknown or revoked API key                                          |
+| 404    | `project_not_found`   | The key's project no longer exists                                                      |
+| 409    | `request_id_conflict` | This `provider` and `requestId` were already used in this project for different usage   |
+| 413    | `payload_too_large`   | Body is over 64 KB                                                                      |
+| 422    | `no_pricing`          | No price for the model at `occurredAt`                                                  |
+| 429    | `rate_limited`        | Over 30 invalid API keys from this IP in 15 minutes; wait for the `Retry-After` seconds |
 
 ## Reporting API
 
