@@ -712,7 +712,8 @@ if (process.env.SMOKE_OIDC) {
   const admin = cookie;
   cookie = "";
   const login = await page("/login");
-  assert.match(login.html, /Sign in with Test IdP/);
+  // React separates text nodes with comments.
+  assert.match(login.html.replace(/<!-- -->/g, ""), /Sign in with Test IdP/);
 
   /** Starts SSO; returns the provider's URL and this attempt's cookie. */
   const start = async (next) => {
