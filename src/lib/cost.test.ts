@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateCostMicros,
   calculateCostUsd,
   formatUsd,
   hasAudio,
@@ -12,6 +13,66 @@ const pricing = {
   outputPerMTokUsd: 15,
   cachedInputPerMTokUsd: 0.3,
 };
+
+describe("exact arithmetic", () => {
+  // Cases that floating point recorded a micro-dollar low: each costs
+  // exactly half a micro-dollar more than a whole one.
+  it.each([
+    [2_089_336, 0.0625, 42_624, 0.375, 146_568n],
+    [2_496_027, 2.5, 102_080, 0.375, 6_278_348n],
+    [844_344, 0.0625, 108_992, 0.0625, 59_584n],
+  ])(
+    "rounds %i input at $%f and %i output at $%f half up",
+    (inputTokens, inputRate, outputTokens, outputRate, micros) => {
+      const rates = {
+        inputPerMTokUsd: inputRate,
+        outputPerMTokUsd: outputRate,
+      };
+      const usage = { inputTokens, outputTokens };
+      expect(calculateCostMicros(usage, rates)).toBe(micros);
+      expect(calculateCostUsd(usage, rates)).toBe(Number(micros) / 1e6);
+    },
+  );
+
+  it("stays exact at large volumes", () => {
+    // 2 billion tokens at the smallest rate: $0.002 + $0.004.
+    expect(
+      calculateCostMicros(
+        { inputTokens: 2_000_000_000, outputTokens: 4_000_000_000 },
+        { inputPerMTokUsd: 0.000001, outputPerMTokUsd: 0.000001 },
+      ),
+    ).toBe(6_000n);
+    // Sums past 2^53 picodollars, where floating point loses whole cents.
+    expect(
+      calculateCostMicros(
+        { inputTokens: 900_000_000, outputTokens: 900_000_000 },
+        { inputPerMTokUsd: 123.456789, outputPerMTokUsd: 987.654321 },
+      ),
+    ).toBe(999_999_999_000n);
+  });
+
+  it("is zero for no tokens, or a free model", () => {
+    expect(
+      calculateCostMicros({ inputTokens: 0, outputTokens: 0 }, pricing),
+    ).toBe(0n);
+    expect(
+      calculateCostMicros(
+        { inputTokens: 5_000, outputTokens: 5_000 },
+        { inputPerMTokUsd: 0, outputPerMTokUsd: 0 },
+      ),
+    ).toBe(0n);
+  });
+
+  it("rounds a batch discount once, on the whole request", () => {
+    // 855 tokens at $1 is 855 micros; half is 427.5, which rounds up.
+    expect(
+      calculateCostMicros(
+        { inputTokens: 855, outputTokens: 0, serviceTier: "batch" },
+        { inputPerMTokUsd: 1, outputPerMTokUsd: 1, batchMultiplier: 0.5 },
+      ),
+    ).toBe(428n);
+  });
+});
 
 describe("calculateCostUsd", () => {
   it("prices input and output tokens per million", () => {

@@ -208,7 +208,9 @@ describe("attribution", () => {
 
   it("leaves every token count, cost and timestamp as before attribution", () => {
     // Fingerprint of the data generated before attribution was added, for
-    // the same seed and time. Attribution has its own random stream.
+    // the same seed and time. Attribution has its own random stream. Updated
+    // when costs became exact: 547 events that cost exactly half a
+    // micro-dollar more than a whole one now round up, as they should.
     const core = data.events.map((e) => [
       e.projectSlug,
       e.provider,
@@ -224,7 +226,7 @@ describe("attribution", () => {
     expect(data.events).toHaveLength(13_727);
     expect(
       createHash("sha256").update(JSON.stringify(core)).digest("hex"),
-    ).toBe("1186b1fe14ec255f2a3262add93c606343cc6acbe8ed37fe63c80466d99be606");
+    ).toBe("28a596407823929505381d16f81f12d97bfacc240b64b8832dcbb6a23db26745");
     expect(data.projects.map((p) => p.monthlyBudgetUsd)).toEqual([
       "15.04",
       "104.91",
