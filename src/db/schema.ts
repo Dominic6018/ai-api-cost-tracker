@@ -357,7 +357,7 @@ export const usageEvents = pgTable(
       .where(sql`${t.pricingStatus} = 'unpriced'`),
     check(
       "usage_events_pricing_status_valid",
-      sql`(${t.pricingStatus} = 'priced' and ${t.costUsd} is not null and ${t.unpricedReason} is null) or (${t.pricingStatus} = 'unpriced' and ${t.costUsd} is null and ${t.unpricedReason} in ('no_pricing', 'no_tier_pricing', 'no_batch_pricing', 'no_audio_pricing', 'no_web_search_pricing'))`,
+      sql`(${t.pricingStatus} = 'priced' and ${t.costUsd} is not null and ${t.unpricedReason} is null) or (${t.pricingStatus} = 'unpriced' and ${t.costUsd} is null and ${t.unpricedReason} is not null and ${t.unpricedReason} in ('no_pricing', 'no_tier_pricing', 'no_batch_pricing', 'no_audio_pricing', 'no_web_search_pricing'))`,
     ),
     check(
       "usage_events_service_tier_valid",

@@ -1,5 +1,5 @@
 {
-  "id": "6aab5dba-ce0d-4778-8407-0c55101671ab",
+  "id": "0b1b0585-b3fc-4ac5-9b78-78ebc5c1a8a1",
   "prevId": "3ddd37b0-5f87-4a76-8902-2aa2722f2be9",
   "version": "7",
   "dialect": "postgresql",
@@ -1708,7 +1708,7 @@
       "checkConstraints": {
         "usage_events_pricing_status_valid": {
           "name": "usage_events_pricing_status_valid",
-          "value": "(\"usage_events\".\"pricing_status\" = 'priced' and \"usage_events\".\"cost_usd\" is not null and \"usage_events\".\"unpriced_reason\" is null) or (\"usage_events\".\"pricing_status\" = 'unpriced' and \"usage_events\".\"cost_usd\" is null and \"usage_events\".\"unpriced_reason\" in ('no_pricing', 'no_tier_pricing', 'no_batch_pricing', 'no_audio_pricing', 'no_web_search_pricing'))"
+          "value": "(\"usage_events\".\"pricing_status\" = 'priced' and \"usage_events\".\"cost_usd\" is not null and \"usage_events\".\"unpriced_reason\" is null) or (\"usage_events\".\"pricing_status\" = 'unpriced' and \"usage_events\".\"cost_usd\" is null and \"usage_events\".\"unpriced_reason\" is not null and \"usage_events\".\"unpriced_reason\" in ('no_pricing', 'no_tier_pricing', 'no_batch_pricing', 'no_audio_pricing', 'no_web_search_pricing'))"
         },
         "usage_events_service_tier_valid": {
           "name": "usage_events_service_tier_valid",
