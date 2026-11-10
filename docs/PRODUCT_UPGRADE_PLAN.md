@@ -1,6 +1,6 @@
 # Product upgrade plan
 
-How the product gets from what [the audit](PRODUCT_UPGRADE_AUDIT.md) found to a trustworthy AI cost and profitability platform. Work is ordered so that nothing depends on numbers that can't yet be trusted: the cost ledger and tenant boundaries first, customer billing only after them. Status is tracked in [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md).
+Phases A to E are Milestones 11 to 15 in the [roadmap](ROADMAP.md). How the product gets from what [the audit](PRODUCT_UPGRADE_AUDIT.md) found to a trustworthy AI cost and profitability platform. Work is ordered so that nothing depends on numbers that can't yet be trusted: the cost ledger and tenant boundaries first, customer billing only after them. Status is tracked in [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md).
 
 Each slice ships as one pull request: schema and migration, logic, API, authorization, UI where it applies, tests, then docs.
 
