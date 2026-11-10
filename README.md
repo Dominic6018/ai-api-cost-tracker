@@ -379,6 +379,10 @@ Cached and cache-write tokens are part of `inputTokens`, so together they can't 
 | 413    | `payload_too_large`   | Body is over 64 KB                                                                      |
 | 429    | `rate_limited`        | Over 30 invalid API keys from this IP in 15 minutes; wait for the `Retry-After` seconds |
 
+### Ingestion health
+
+`/ingestion` shows what each project sent over the last 7 days (UTC), counted per day by outcome: **stored** (new events with a price), **unpriced** (new events waiting for a price), **replayed** (retries that returned the stored event), **conflicts** (a `requestId` reused for different usage, `409`) and **invalid** (bodies or OpenTelemetry spans that failed validation, `400`). Conflicts and invalid requests are usage that wasn't stored, so a non-zero count there is worth a look. It covers `POST /api/usage` and OpenTelemetry for the signed-in account's organization; requests with an unknown key have no project and aren't counted. A count that fails to save is logged and never fails the request.
+
 ### Unpriced usage
 
 Usage is never lost because a price is missing. When there's no price for the model at `occurredAt`, or for its tier, batch, audio or web searches, the event is stored with status 201 and `"costUsd": null, "pricingStatus": "unpriced"`, and `unpricedReason` names what's missing: `no_pricing`, `no_tier_pricing`, `no_batch_pricing`, `no_audio_pricing` or `no_web_search_pricing`. OpenTelemetry spans are kept the same way.

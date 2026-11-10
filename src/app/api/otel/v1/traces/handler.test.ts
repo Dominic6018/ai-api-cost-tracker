@@ -60,13 +60,15 @@ function setup({
   const recordUsage = vi.fn(
     async () => results.shift() ?? (stored as RecordUsageResult),
   );
+  const countInvalid = vi.fn(async () => {});
   const handler = createOtlpTracesHandler({
     authenticate,
     recordAuthFailure,
     recordUsage,
+    countInvalid,
     now: () => now,
   });
-  return { handler, recordUsage, recordAuthFailure };
+  return { handler, recordUsage, recordAuthFailure, countInvalid };
 }
 
 function post(
@@ -144,6 +146,18 @@ describe("POST /api/otel/v1/traces", () => {
       },
     });
     expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("counts invalid spans, not ones refused for another reason", async () => {
+    const { handler, countInvalid } = setup({
+      results: [{ ok: false, error: "request_id_conflict" }],
+    });
+    const noModel = {
+      ...genAiSpan("s2"),
+      attributes: [intAttr("gen_ai.usage.input_tokens", 10)],
+    };
+    await handler(post(exportOf(genAiSpan("s1"), noModel)));
+    expect(countInvalid).toHaveBeenCalledWith(projectId, 1);
   });
 
   it("requires an API key, and counts rejected ones", async () => {

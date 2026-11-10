@@ -425,6 +425,26 @@ step("spend over time filters by range and project");
     assert.equal(total(fallback.html), expected, "unknown project means all");
 }
 
+step("ingestion health lists what each project sent today");
+{
+  const result = await page("/ingestion");
+  assert.equal(result.status, 200);
+  const text = result.html.replace(/<!-- -->/g, "");
+  for (const label of [
+    "Stored",
+    "Unpriced",
+    "Replayed",
+    "Conflicts",
+    "Invalid",
+  ]) {
+    assert.ok(text.includes(label), `the ingestion page has "${label}"`);
+  }
+  assert.ok(
+    text.includes(new Date().toISOString().slice(0, 10)),
+    "today's usage is counted",
+  );
+}
+
 step("usage events are listed and filterable");
 {
   const all = await page("/usage");
@@ -670,6 +690,7 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     `/usage?project=${projectId}`,
     "/audit",
     "/prices",
+    "/ingestion",
   ]) {
     const result = await page(path);
     assert.equal(result.status, 200, `GET ${path}`);

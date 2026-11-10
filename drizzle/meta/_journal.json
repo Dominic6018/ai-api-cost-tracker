@@ -232,6 +232,13 @@
       "when": 1794339463024,
       "tag": "0032_project_slug_per_organization",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794340420548,
+      "tag": "0033_ingestion_counts",
+      "breakpoints": true
     }
   ]
 }

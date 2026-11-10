@@ -7,6 +7,8 @@ export const MAX_BODY_BYTES = 64 * 1024;
 
 export interface UsageHandlerDeps extends ApiKeyDeps {
   recordUsage: (usage: UsageInput) => Promise<RecordUsageResult>;
+  /** Counts records that failed validation, for ingestion health. */
+  countInvalid?: (projectId: string, n: number) => Promise<void>;
 }
 
 type RecordUsageError = Extract<RecordUsageResult, { ok: false }>["error"];
@@ -48,6 +50,7 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
 
     const parsed = parseUsagePayload(body, now());
     if (!parsed.ok) {
+      await deps.countInvalid?.(auth.projectId, 1);
       return errorResponse(400, "invalid_payload", "Invalid usage payload", {
         fieldErrors: parsed.fieldErrors,
         formErrors: parsed.formErrors,

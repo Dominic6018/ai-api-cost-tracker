@@ -4,14 +4,14 @@ Phases A to E are Milestones 11 to 15 in the [roadmap](ROADMAP.md). How the prod
 
 Each slice ships as one pull request: schema and migration, logic, API, authorization, UI where it applies, tests, then docs.
 
-## Phase A: financial reliability (in progress)
+## Phase A: financial reliability (done)
 
 | Slice | What                                                                                                                                                                                                                                                                            | Depends on | Status      |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------- |
 | A1    | Exact integer cost arithmetic                                                                                                                                                                                                                                                   | —          | Done (#132) |
 | A3a   | Request ids unique per project                                                                                                                                                                                                                                                  | —          | Done (#132) |
 | A2    | Keep unpriced usage: nullable cost and a `pricing_status` (`priced`, `unpriced`), shown as a count on the overview and excluded from totals with a visible caveat; an idempotent, audited `npm run reprice` once a price is added; OpenTelemetry spans kept instead of rejected | A1         | Done (#133) |
-| A3b   | Ingestion health: counts of accepted, replayed, conflicting, rejected and unpriced events per project and day                                                                                                                                                                   | A2         | Planned     |
+| A3b   | Ingestion health: counts of accepted, replayed, conflicting, rejected and unpriced events per project and day                                                                                                                                                                   | A2         | Done (#143) |
 | A4    | Budget reservations: `POST /api/budget/reserve` (atomic, row-locked per project), settle on recorded usage by reservation id, expire unsettled ones; the existing check stays advisory and is labelled so in the UI                                                             | A2         | Done (#135) |
 | A5    | Per-organization project slugs; organization-scoped audit for command-line changes                                                                                                                                                                                              | —          | Done (#141) |
 
