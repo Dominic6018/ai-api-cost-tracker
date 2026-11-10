@@ -270,7 +270,7 @@ describe("usage_events constraints", () => {
     ).toBe(FOREIGN_KEY_VIOLATION);
   });
 
-  it("de-duplicates by provider and request_id but allows repeated null request_ids", async () => {
+  it("de-duplicates by project, provider and request_id but allows repeated null request_ids", async () => {
     const project = await createProject();
     const requestId = `req-${randomUUID()}`;
 
@@ -285,6 +285,10 @@ describe("usage_events constraints", () => {
     await db
       .insert(usageEvents)
       .values(usage(project.id, { requestId, provider: "anthropic" }));
+
+    // So is the same one in another project.
+    const other = await createProject();
+    await db.insert(usageEvents).values(usage(other.id, { requestId }));
 
     await db.insert(usageEvents).values(usage(project.id));
     await db.insert(usageEvents).values(usage(project.id));

@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { microsToDecimal, toMicros } from "@/lib/budget";
-import { calculateCostUsd, hasAudio, webSearchCostMicros } from "@/lib/cost";
+import { microsToDecimal } from "@/lib/budget";
+import { calculateCostMicros, hasAudio, webSearchCostMicros } from "@/lib/cost";
 import { priceTierFor } from "@/lib/pricing";
 import type { UsageInput } from "@/lib/usage";
 import { findEffectivePricing } from "./pricing";
@@ -39,16 +39,20 @@ function pgErrorCode(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
+/**
+ * A request id identifies an event within one project: two projects, even
+ * in different organizations, can't block or detect each other's events.
+ */
 async function findByRequestId(
   db: Database,
-  provider: UsageInput["provider"],
-  requestId: string,
+  { projectId, provider, requestId }: UsageInput & { requestId: string },
 ): Promise<UsageEvent | undefined> {
   const [event] = await db
     .select()
     .from(usageEvents)
     .where(
       and(
+        eq(usageEvents.projectId, projectId),
         eq(usageEvents.provider, provider),
         eq(usageEvents.requestId, requestId),
       ),
@@ -87,7 +91,8 @@ function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
 
 /**
  * Prices a usage record with the rate in effect when it occurred and stores
- * it. Repeating a `(provider, requestId)` returns the stored event instead
+ * it. Repeating a `(provider, requestId)` in the same project returns the
+ * stored event instead
  * of inserting another. Expected failures come back as typed errors;
  * anything else throws.
  */
@@ -98,7 +103,10 @@ export async function recordUsage(
   // Replay before pricing, so a retry gets its original event even if the
   // price has changed since.
   if (usage.requestId !== undefined) {
-    const existing = await findByRequestId(db, usage.provider, usage.requestId);
+    const existing = await findByRequestId(db, {
+      ...usage,
+      requestId: usage.requestId,
+    });
     if (existing) return replay(existing, usage);
   }
 
@@ -136,8 +144,7 @@ export async function recordUsage(
     usage.webSearchRequests > 0 && searchPrice !== null
       ? webSearchCostMicros(usage.webSearchRequests, searchPrice)
       : 0n;
-  const costMicros =
-    toMicros(calculateCostUsd(usage, lookup.pricing).toFixed(6)) + searchMicros;
+  const costMicros = calculateCostMicros(usage, lookup.pricing) + searchMicros;
 
   try {
     const [event] = await db
@@ -180,11 +187,10 @@ export async function recordUsage(
     // A concurrent request with the same id was inserted first; the unique
     // index decided the winner, so replay it.
     if (code === UNIQUE_VIOLATION && usage.requestId !== undefined) {
-      const existing = await findByRequestId(
-        db,
-        usage.provider,
-        usage.requestId,
-      );
+      const existing = await findByRequestId(db, {
+        ...usage,
+        requestId: usage.requestId,
+      });
       if (existing) return replay(existing, usage);
     }
     throw error;
