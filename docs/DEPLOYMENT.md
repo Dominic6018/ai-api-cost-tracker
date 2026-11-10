@@ -13,6 +13,8 @@ The app needs two things: a Node.js server and a PostgreSQL 17 database. This gu
 
 `npm run budget-alerts`, run on a schedule, reads its destinations from `BUDGET_ALERT_WEBHOOK_URL`, `BUDGET_ALERT_WEBHOOK_SECRET`, `BUDGET_ALERT_SLACK_WEBHOOK_URL`, and for email `BUDGET_ALERT_SMTP_URL`, `BUDGET_ALERT_EMAIL_FROM` and `BUDGET_ALERT_EMAIL_TO`; see [Budget notifications](../README.md#budget-notifications). With Docker Compose, a host crontab entry such as `*/15 * * * * cd /srv/ai-api-cost-tracker && docker compose run --rm -e BUDGET_ALERT_SLACK_WEBHOOK_URL migrate npm run --silent budget-alerts` runs it every 15 minutes. Treat a Slack webhook URL as a secret, since anyone holding it can post to the channel, and the SMTP URL too, since it contains the mail account's password.
 
+Single sign-on is optional: `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` and `OIDC_NAME` (see [Single sign-on](../README.md#single-sign-on)). Both URLs must use https; treat the client secret as a secret.
+
 With `NODE_ENV=production`, the session cookie is marked `Secure`, so **signing in only works over HTTPS**, or on `http://localhost`.
 
 ## Option A: Docker Compose on one server

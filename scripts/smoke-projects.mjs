@@ -705,6 +705,118 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
   assert.ok(!after.html.includes(hijacked), "the project wasn't renamed");
 }
 
+if (process.env.SMOKE_OIDC) {
+  step(
+    "single sign-on signs in an existing account, only with its checks intact",
+  );
+  const admin = cookie;
+  cookie = "";
+  const login = await page("/login");
+  // React separates text nodes with comments.
+  assert.match(login.html.replace(/<!-- -->/g, ""), /Sign in with Test IdP/);
+
+  /** Starts SSO; returns the provider's URL and this attempt's cookie. */
+  const start = async (next) => {
+    const response = await fetch(
+      `${base}/login/oidc?next=${encodeURIComponent(next)}`,
+      { redirect: "manual" },
+    );
+    assert.equal(response.status, 307, "start redirects to the provider");
+    const sso = response.headers.get("set-cookie")?.match(/oidc_login=[^;]+/);
+    assert.ok(sso, "start sets the SSO cookie");
+    const authorize = response.headers.get("location");
+    assert.match(authorize, /code_challenge_method=S256/);
+    assert.match(authorize, /[?&]nonce=/);
+    return { authorize, sso: sso[0] };
+  };
+  /** Signs in at the test provider; returns the callback URL it sends to. */
+  const provider = async (authorize, subject, claims) => {
+    const response = await fetch(authorize, {
+      method: "POST",
+      body: new URLSearchParams({
+        username: subject,
+        claims: JSON.stringify(claims),
+      }),
+      redirect: "manual",
+    });
+    assert.equal(response.status, 302, "the provider redirects back");
+    return response.headers.get("location");
+  };
+  const callback = async (url, sso) => {
+    const response = await fetch(url, {
+      headers: sso ? { cookie: sso } : {},
+      redirect: "manual",
+    });
+    await response.text();
+    return {
+      status: response.status,
+      location: new URL(response.headers.get("location"), base),
+      session: response.headers
+        .get("set-cookie")
+        ?.match(/session=([^;]+)/)?.[1],
+    };
+  };
+  const verified = { email, email_verified: true };
+
+  // An existing account signs in, and lands where it asked to go.
+  {
+    const { authorize, sso } = await start("/spend");
+    const done = await callback(
+      await provider(authorize, "smoke-sso", verified),
+      sso,
+    );
+    assert.equal(done.status, 303);
+    assert.equal(done.location.pathname, "/spend");
+    assert.ok(done.session, "signing in sets a session");
+    cookie = `session=${done.session}`;
+    assert.equal((await page("/spend")).status, 200);
+    cookie = "";
+  }
+  const refused = async (name, run, error) => {
+    const result = await run();
+    assert.equal(result.location.pathname, "/login", name);
+    assert.equal(result.location.searchParams.get("error"), error, name);
+    assert.ok(!result.session, `${name}: no session`);
+  };
+  await refused(
+    "a tampered state",
+    async () => {
+      const { authorize, sso } = await start("/");
+      const url = new URL(await provider(authorize, "smoke-sso", verified));
+      url.searchParams.set("state", "tampered");
+      return callback(url, sso);
+    },
+    "sso_failed",
+  );
+  await refused(
+    "a callback without its cookie",
+    async () => {
+      const { authorize } = await start("/");
+      return callback(await provider(authorize, "smoke-sso", verified), null);
+    },
+    "sso_failed",
+  );
+  for (const [name, subject, claims] of [
+    [
+      "an unknown email",
+      "nobody-sso",
+      { email: "nobody@example.com", email_verified: true },
+    ],
+    ["an unverified email", "smoke-sso", { email, email_verified: false }],
+    ["another subject for a bound account", "someone-else", verified],
+  ]) {
+    await refused(
+      name,
+      async () => {
+        const { authorize, sso } = await start("/");
+        return callback(await provider(authorize, subject, claims), sso);
+      },
+      "sso_denied",
+    );
+  }
+  cookie = admin;
+}
+
 step("signing out ends the session, even if the old cookie is replayed");
 {
   const signedIn = cookie;
