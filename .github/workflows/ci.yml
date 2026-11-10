@@ -90,8 +90,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # A test OpenID Connect provider for the single sign-on smoke test.
+      oidc:
+        image: ghcr.io/navikt/mock-oauth2-server:6.1.4
+        ports:
+          - 8080:8080
     env:
       DATABASE_URL: postgres://cost_tracker:cost_tracker@localhost:5432/cost_tracker
+      OIDC_ISSUER: http://localhost:8080/default
+      OIDC_CLIENT_ID: ci-client
+      OIDC_CLIENT_SECRET: ci-secret
+      OIDC_REDIRECT_URI: http://localhost:3000/login/oidc/callback
+      OIDC_NAME: Test IdP
+      OIDC_ALLOW_HTTP: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -173,6 +184,7 @@ jobs:
 
           # Dashboard: a throwaway account with a random, masked password
           export SMOKE_EMAIL=smoke@example.com
+          export SMOKE_OIDC=1
           export SMOKE_PASSWORD=$(openssl rand -base64 24)
           echo "::add-mask::$SMOKE_PASSWORD"
           if echo "too-short" | npm run --silent user -- create --email short@example.com; then

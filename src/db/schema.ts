@@ -435,12 +435,17 @@ export const users = pgTable(
       .notNull()
       .default(DEFAULT_ORGANIZATION_ID)
       .references(() => organizations.id, { onDelete: "restrict" }),
+    // The single sign-on provider's subject, bound at the first SSO sign-in.
+    oidcSubject: text("oidc_subject"),
     // What the account may change; see src/lib/roles.ts.
     role: text("role").$type<UserRole>().notNull().default("admin"),
     ...timestamps,
   },
   (t) => [
     uniqueIndex("users_email_idx").on(t.email),
+    uniqueIndex("users_oidc_subject_idx")
+      .on(t.oidcSubject)
+      .where(sql`${t.oidcSubject} is not null`),
     index("users_organization_id_idx").on(t.organizationId),
     check("users_role_valid", sql`${t.role} in ('admin', 'member', 'viewer')`),
   ],

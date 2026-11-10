@@ -103,7 +103,7 @@ Recording usage shouldn't require hand-written API calls.
 - [x] OpenAI long-context tiers: gpt-5.5, gpt-5.5-pro, gpt-5.4 and gpt-5.4-pro (#116)
 - [x] OpenAI's gpt-6 and gpt-5.6 models, with 30-minute and 12-hour cache writes at their own rates (#118)
 
-## Milestone 10: Teams
+## Milestone 10: Teams ✅
 
 - [x] Roles on accounts: admin, member and viewer (#120)
 - Organizations:
@@ -111,7 +111,7 @@ Recording usage shouldn't require hand-written API calls.
   - [x] Scope every dashboard page and query to the signed-in account's organization (#128)
   - [x] Create organizations and assign accounts from the command line; only the default organization's admins change the shared prices (#130)
 - [x] An audit log of changes (#122)
-- [ ] Single sign-on with OpenID Connect (#137)
+- [x] Single sign-on with OpenID Connect (#137)
 
 Per-customer billing through Stripe moved to [Milestone 13](#milestone-13-billing-credits-and-profitability): it needs the billing ledger built there first.
 

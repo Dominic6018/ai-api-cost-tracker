@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "oidc_subject" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "users_oidc_subject_idx" ON "users" USING btree ("oidc_subject") WHERE "users"."oidc_subject" is not null;
