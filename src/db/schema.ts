@@ -600,6 +600,45 @@ export const auditLog = pgTable(
   ],
 );
 
+export const INGESTION_OUTCOMES = [
+  "stored",
+  "unpriced",
+  "replayed",
+  "conflict",
+  "invalid",
+] as const;
+export type IngestionOutcome = (typeof INGESTION_OUTCOMES)[number];
+
+/**
+ * How many usage records each project sent per UTC day, by outcome, from
+ * POST /api/usage and OpenTelemetry. One row per project, day and outcome,
+ * incremented as requests arrive.
+ */
+export const ingestionCounts = pgTable(
+  "ingestion_counts",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    day: date("day", { mode: "string" }).notNull(),
+    outcome: text("outcome").$type<IngestionOutcome>().notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex("ingestion_counts_project_day_outcome_idx").on(
+      t.projectId,
+      t.day,
+      t.outcome,
+    ),
+    index("ingestion_counts_day_idx").on(t.day),
+    check(
+      "ingestion_counts_outcome_valid",
+      sql`${t.outcome} in ('stored', 'unpriced', 'replayed', 'conflict', 'invalid')`,
+    ),
+    check("ingestion_counts_count_valid", sql`${t.count} >= 0`),
+  ],
+);
+
 export const RESERVATION_STATUSES = ["held", "released", "settled"] as const;
 export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
 

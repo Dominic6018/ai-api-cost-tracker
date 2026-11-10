@@ -12,6 +12,8 @@ export const MAX_OTLP_BYTES = 4 * 1024 * 1024;
 
 export interface OtlpTracesHandlerDeps extends ApiKeyDeps {
   recordUsage: (usage: UsageInput) => Promise<RecordUsageResult>;
+  /** Counts spans that failed validation, for ingestion health. */
+  countInvalid?: (projectId: string, n: number) => Promise<void>;
 }
 
 /**
@@ -124,6 +126,10 @@ export function createOtlpTracesHandler(deps: OtlpTracesHandlerDeps) {
       }
     }
 
+    const invalidSpans = [...reasons]
+      .filter(([reason]) => reason.startsWith("invalid"))
+      .reduce((sum, [, n]) => sum + n, 0);
+    await deps.countInvalid?.(auth.projectId, invalidSpans);
     const rejectedSpans = [...reasons.values()].reduce((a, b) => a + b, 0);
     if (rejectedSpans === 0) return Response.json({});
     return Response.json({

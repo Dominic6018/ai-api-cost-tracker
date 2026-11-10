@@ -70,13 +70,21 @@ function setup({
   const authenticate = vi.fn().mockResolvedValue(auth);
   const recordAuthFailure = vi.fn().mockResolvedValue(limit);
   const recordUsage = vi.fn().mockResolvedValue(result);
+  const countInvalid = vi.fn().mockResolvedValue(undefined);
   const handler = createUsageHandler({
     authenticate,
     recordAuthFailure,
     recordUsage,
+    countInvalid,
     now: () => now,
   });
-  return { handler, authenticate, recordAuthFailure, recordUsage };
+  return {
+    handler,
+    authenticate,
+    recordAuthFailure,
+    recordUsage,
+    countInvalid,
+  };
 }
 
 function post(
@@ -314,6 +322,14 @@ describe("POST /api/usage handler", () => {
     const response = await handler(post("{not json"));
     expect(response.status).toBe(400);
     expect((await response.json()).error.code).toBe("invalid_json");
+  });
+
+  it("counts an invalid body for the key's project", async () => {
+    const { handler, recordUsage, countInvalid } = setup();
+    const response = await handler(post({ provider: "openai" }));
+    expect(response.status).toBe(400);
+    expect(countInvalid).toHaveBeenCalledWith(projectId, 1);
+    expect(recordUsage).not.toHaveBeenCalled();
   });
 
   it("returns 413 for an oversized body", async () => {

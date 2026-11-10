@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { authenticateApiKey } from "@/db/api-keys";
 import { hitRateLimit } from "@/db/rate-limits";
-import { recordUsage } from "@/db/usage";
+import { countIngestion, recordAndCount } from "@/db/ingestion-health";
 import { RATE_LIMITS, rateLimitKey } from "@/lib/rate-limit";
 import { createUsageHandler } from "./handler";
 
@@ -13,5 +13,6 @@ export const POST = createUsageHandler({
       RATE_LIMITS.apiKeyIp,
       rateLimitKey(RATE_LIMITS.apiKeyIp, clientIp),
     ),
-  recordUsage: (usage) => recordUsage(db, usage),
+  recordUsage: (usage) => recordAndCount(db, usage),
+  countInvalid: (projectId, n) => countIngestion(db, projectId, "invalid", n),
 });

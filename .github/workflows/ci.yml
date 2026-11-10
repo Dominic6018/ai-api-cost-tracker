@@ -514,6 +514,10 @@ jobs:
           STATUS=$(gzip -c otlp.json | curl -s -o otel.json -w '%{http_code}' -X POST http://localhost:3000/api/otel/v1/traces -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/json' -H 'content-encoding: gzip' --data-binary @-)
           cat otel.json; echo; test "$STATUS" = 200
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id = '$OTEL_ID'")" = 1
+          # Ingestion health counted every outcome the requests above produced
+          for outcome in stored unpriced replayed conflict invalid; do
+            test "$(psql "$DATABASE_URL" -tAc "SELECT coalesce(sum(c.count), 0) > 0 FROM ingestion_counts c JOIN projects p ON p.id = c.project_id WHERE p.slug = 'sample-app' AND c.outcome = '$outcome' AND c.day = (now() at time zone 'utc')::date")" = t
+          done
           # Protobuf isn't supported; the error says how to configure JSON
           STATUS=$(curl -s -o otel.json -w '%{http_code}' -X POST http://localhost:3000/api/otel/v1/traces -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/x-protobuf' --data-binary 'x')
           cat otel.json; echo; test "$STATUS" = 415

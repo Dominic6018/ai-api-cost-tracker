@@ -115,7 +115,7 @@ Recording usage shouldn't require hand-written API calls.
 
 Per-customer billing through Stripe moved to [Milestone 13](#milestone-13-billing-credits-and-profitability): it needs the billing ledger built there first.
 
-## Milestone 11: Financial reliability
+## Milestone 11: Financial reliability ✅
 
 Numbers people can trust, before anything is built on them. Details and evidence are in the [upgrade plan](PRODUCT_UPGRADE_PLAN.md) and [audit](PRODUCT_UPGRADE_AUDIT.md).
 
@@ -123,7 +123,7 @@ Numbers people can trust, before anything is built on them. Details and evidence
 - [x] Request ids unique per project, so projects can't block or detect each other's events (#132)
 - [x] Keep usage that has no price, and price it later with `npm run reprice` (#133)
 - [x] Reserve budget atomically before spending (#135)
-- [ ] Ingestion health: accepted, replayed, conflicting, rejected and unpriced counts per project and day
+- [x] Ingestion health: stored, unpriced, replayed, conflicting and invalid counts per project and day (#143)
 - [x] Project slugs unique per organization; command-line changes logged in the organization they concern (#141)
 
 ## Milestone 12: Integration experience
