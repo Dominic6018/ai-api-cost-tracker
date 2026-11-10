@@ -139,6 +139,7 @@ describe("revokeSessions", () => {
     expect(await revokeSessions(db, user.email)).toEqual({
       ok: true,
       email: user.email,
+      organizationId: user.organizationId,
       revokedSessions: 0,
     });
   });
