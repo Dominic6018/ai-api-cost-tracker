@@ -56,7 +56,7 @@ What it doesn't do yet (the plan is in [docs/PRODUCT_UPGRADE_PLAN.md](docs/PRODU
 
 - **Unpriced usage isn't estimated.** Usage with no stored price is kept as unpriced and left out of totals, budgets and exports until a price is added and `npm run reprice` runs; the tracker never guesses a cost.
 - **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Provider bills are compared with recorded costs (`npm run reconcile`), not imported as usage. The clients don't wrap streams to collect usage automatically; pass them the chunk that carries usage, or send it with `record()`.
-- **The budget check is advisory.** It reserves nothing, so concurrent steps can each be allowed (see [Budget check](#budget-check-before-spending)).
+- **Budgets only hold for calls that ask first.** A reservation stops concurrent steps from overspending, but a provider call your app makes without reserving isn't stopped (see [Reserving budget](#reserving-budget)). The clients don't reserve yet; call the API.
 - **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. There's no customer billing, credits or revenue.
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's Ultrafast tier isn't tracked.
 - **Organizations are managed from the command line**, as accounts are. An account is in one organization, and prices are shared across the install.
@@ -135,6 +135,7 @@ src/
   app/            Next.js App Router pages and layouts
     api/usage/    POST /api/usage route and its request handler
     api/budget/check/  POST /api/budget/check: allow or deny before spending
+    api/budget/reserve/, release/  Hold budget for a step, and end a hold
     login/        Sign-in page and sign-in/sign-out actions
     overview/     Spend totals for today, this month and the last 30 days
     spend/        Daily spend chart and provider/model breakdown
@@ -154,7 +155,8 @@ src/
     accounts.ts   Password reset, session revocation, roles and account list
     audit.ts      Saves a change and its audit entry together; lists entries
     budget-notifications.ts  Sends each budget notification once, retrying failures
-    budget-check.ts  Caps and spend for the budget check, in one query
+    budget-check.ts  Caps, spend and holds for the budget check, in one query
+    budget-reservations.ts  Atomic reservations, settlement and release
     scripts/      `npm run api-key`, `user`, `db:demo`, `reconcile` and `budget-alerts` commands
     seed/         Sample project and dated model prices (`npm run db:seed`)
     demo/         Deterministic demo data generator and loader (`npm run db:demo`)
@@ -461,9 +463,27 @@ Both fields are optional. `estimatedCostUsd` is what the next step might cost, a
 - **Two caps:** the **monthly budget** against this UTC month's spend, counted as on the dashboard, and the project's **run budget** (set on the project form) against everything recorded with that `runId`. A cap without a value never denies; its `capUsd` and `remainingUsd` are `null`, and spend is still reported. `run` is `null` without a `runId`.
 - **The rule:** a cap denies when nothing is left (spend at or over it, matching the dashboard's "over" at exactly 100%), or when the estimate is more than what's left. An estimate may use up exactly what's left. Comparisons are exact, in micro-dollars, and `remainingUsd` is negative when over.
 - **Denials are answers, not errors:** `reasons` lists `monthly_budget` and/or `run_budget`. Errors are `400` for an invalid body, `401`/`429` for keys as for usage, `403` for a read key, and `404` if the key's project was deleted. Responses are never cached.
-- **A check reserves nothing.** It sees only usage already recorded, so steps checked at the same moment can each be allowed, and a step's cost counts once its usage is sent. Check before each step with an estimate, and record usage promptly.
+- **A check reserves nothing.** It sees recorded usage and unexpired [reservations](#reserving-budget) (reported as `heldUsd`), so steps checked at the same moment can each be allowed. To stop that, reserve instead.
 - **Failing open or closed is your choice.** If the tracker can't be reached, decide in your app whether to proceed.
 - **From the clients:** `tracker.checkBudget({ estimatedCostUsd, runId })` in [TypeScript](clients/typescript/README.md#budget-check) and `tracker.check_budget(estimated_cost_usd, run_id=...)` in [Python](clients/python/README.md#budget-check). A scoped tracker's run ID is used by default.
+
+### Reserving budget
+
+A check only advises. To make concurrent steps share a budget safely, reserve the estimate first, then send the usage under the same id:
+
+```bash
+curl -X POST https://costs.example.com/api/budget/reserve \
+  -H "Authorization: Bearer act_..." -H "Content-Type: application/json" \
+  -d '{"reservationId": "run_42-step_3", "estimatedCostUsd": "0.25", "runId": "run_42"}'
+```
+
+The answer is the budget check's, plus `reservation` (`reservationId`, `amountUsd`, `runId`, `status`, `expiresAt`) and `replayed`. When it's allowed, the estimate is **held**: it counts against the monthly and run budgets like spend. When it's denied, nothing is held and `reservation` is `null`.
+
+- **Concurrent reservations can't overspend.** Each one locks the project while it decides, so twenty steps reserving at once each see the holds before them, and together never exceed the budget.
+- **Settled by its usage.** Send the step's usage with `"reservationId": "run_42-step_3"` in `POST /api/usage`, and the hold becomes `settled`: the recorded cost counts instead. If the step didn't spend, `POST /api/budget/release` with `{"reservationId": "..."}` ends it as `released` (404 `reservation_not_found` if there's none).
+- **Holds expire.** `ttlSeconds` (default 600, at most 86400) sets how long a hold lasts; after that it stops counting and shows as `expired`, so a crashed step can't hold budget for ever.
+- **Safe to retry.** `reservationId` is yours, unique per project: repeating a reservation returns the same hold with `"replayed": true`, and reusing it for a different amount or run is a 409 `reservation_conflict`. A usage retry leaves the hold settled.
+- **What it doesn't do:** it only covers calls that reserve first; it can't stop a provider call made without asking. Between the usage being stored and the hold being settled, both briefly count, which errs on the side of denying.
 
 ## Budget notifications
 

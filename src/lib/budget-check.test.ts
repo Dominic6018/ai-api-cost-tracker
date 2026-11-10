@@ -69,9 +69,24 @@ describe("checkCap", () => {
     expect(checkCap(5_000_000n, null, 9_000_000n)).toEqual({
       capUsd: null,
       spentUsd: "5.000000",
+      heldUsd: "0.000000",
       remainingUsd: null,
       allowed: true,
     });
+  });
+
+  it("counts held reservations like spend", () => {
+    // $10 cap, $6 spent, $3 held: $1 left.
+    expect(checkCap(6_000_000n, 10_000_000n, 1_000_000n, 3_000_000n)).toEqual({
+      capUsd: "10.000000",
+      spentUsd: "6.000000",
+      heldUsd: "3.000000",
+      remainingUsd: "1.000000",
+      allowed: true,
+    });
+    expect(
+      checkCap(6_000_000n, 10_000_000n, 1_000_001n, 3_000_000n).allowed,
+    ).toBe(false);
   });
 
   it("allows an estimate that uses up exactly what's left", () => {
@@ -125,6 +140,7 @@ describe("decideBudgetCheck", () => {
         period: "2026-11",
         capUsd: "100.000000",
         spentUsd: "40.000000",
+        heldUsd: "0.000000",
         remainingUsd: "60.000000",
         allowed: true,
       },
@@ -132,6 +148,7 @@ describe("decideBudgetCheck", () => {
         runId: "run_42",
         capUsd: "2.000000",
         spentUsd: "1.250000",
+        heldUsd: "0.000000",
         remainingUsd: "0.750000",
         allowed: true,
       },

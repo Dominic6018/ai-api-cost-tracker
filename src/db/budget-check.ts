@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { BudgetCheckInputs } from "@/lib/budget-check";
 import { spendWindows } from "@/lib/spend";
-import { projects, usageEvents } from "./schema";
+import { budgetReservations, projects, usageEvents } from "./schema";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select">;
@@ -28,6 +28,10 @@ export async function getBudgetCheckInputs(
   const sum = (where: ReturnType<typeof sql>) =>
     sql<string>`(select coalesce(sum(${usageEvents.costUsd}), 0)::numeric(14, 6)::text from ${usageEvents} where ${usageEvents.projectId} = ${projectId}::uuid and ${where})`;
 
+  // Unexpired holds from POST /api/budget/reserve count like spend.
+  const held = (where: ReturnType<typeof sql>) =>
+    sql<string>`(select coalesce(sum(${budgetReservations.amountUsd}), 0)::numeric(14, 6)::text from ${budgetReservations} where ${budgetReservations.projectId} = ${projectId}::uuid and ${budgetReservations.status} = 'held' and ${budgetReservations.expiresAt} > ${now.toISOString()}::timestamptz and ${where})`;
+
   const [row] = await db
     .select({
       monthlyBudgetUsd: projects.monthlyBudgetUsd,
@@ -39,6 +43,11 @@ export async function getBudgetCheckInputs(
         runId === undefined
           ? sql<null>`null`
           : sum(sql`${usageEvents.runId} = ${runId}`),
+      monthHeldUsd: held(sql`true`),
+      runHeldUsd:
+        runId === undefined
+          ? sql<null>`null`
+          : held(sql`${budgetReservations.runId} = ${runId}`),
     })
     .from(projects)
     .where(eq(projects.id, projectId));

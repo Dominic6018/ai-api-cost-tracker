@@ -4,11 +4,15 @@ import { microsToDecimal } from "@/lib/budget";
 import { calculateCostMicros, hasAudio, webSearchCostMicros } from "@/lib/cost";
 import { priceTierFor } from "@/lib/pricing";
 import type { UsageInput } from "@/lib/usage";
+import { endReservation } from "./budget-reservations";
 import { findEffectivePricing } from "./pricing";
 import { usageEvents, type UnpricedReason, type UsageEvent } from "./schema";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
-type Database = Pick<PgDatabase<PgQueryResultHKT>, "select" | "insert">;
+type Database = Pick<
+  PgDatabase<PgQueryResultHKT>,
+  "select" | "insert" | "update"
+>;
 
 export type RecordUsageResult =
   | {
@@ -158,12 +162,30 @@ function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
 
 /**
  * Prices a usage record with the rate in effect when it occurred and stores
- * it, as unpriced when a price is missing. Repeating a `(provider, requestId)` in the same project returns the
- * stored event instead
- * of inserting another. Expected failures come back as typed errors;
- * anything else throws.
+ * it, as unpriced when a price is missing, and settles the reservation it
+ * names. Repeating a `(provider, requestId)` in the same project returns the
+ * stored event instead of inserting another. Expected failures come back as
+ * typed errors; anything else throws.
  */
 export async function recordUsage(
+  db: Database,
+  usage: UsageInput,
+): Promise<RecordUsageResult> {
+  const result = await storeUsage(db, usage);
+  // Recorded usage replaces the hold it was reserved under. Settled after
+  // the insert, so a crash in between leaves the hold until it expires:
+  // briefly counted twice, never not at all. A retry settles it too.
+  if (result.ok && usage.reservationId !== undefined) {
+    await endReservation(db, {
+      projectId: usage.projectId,
+      reservationId: usage.reservationId,
+      status: "settled",
+    });
+  }
+  return result;
+}
+
+async function storeUsage(
   db: Database,
   usage: UsageInput,
 ): Promise<RecordUsageResult> {
