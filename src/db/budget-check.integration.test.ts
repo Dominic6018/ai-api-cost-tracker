@@ -73,6 +73,8 @@ describe("getBudgetCheckInputs", () => {
       runBudgetUsd: "1.50",
       monthSpentUsd: "3.250001",
       runSpentUsd: "1.400001",
+      monthHeldUsd: "0.000000",
+      runHeldUsd: "0.000000",
     });
   });
 
@@ -91,6 +93,8 @@ describe("getBudgetCheckInputs", () => {
       runBudgetUsd: null,
       monthSpentUsd: "5.000000",
       runSpentUsd: "5.000000",
+      monthHeldUsd: "0.000000",
+      runHeldUsd: "0.000000",
     });
   });
 

@@ -412,6 +412,28 @@ jobs:
           grep -q '"allowed":true' check.json
           test "$(check '')" = 200
           grep -q '"run":null' check.json
+          # Reservations: holding what is left of run_ci budget leaves nothing for
+          # another step, and the check sees the hold too
+          reserve() { curl -s -o reserve.json -w '%{http_code}' -X POST "http://localhost:3000/api/budget/$1" -H "authorization: Bearer $API_KEY_2" -H 'content-type: application/json' -d "$2"; }
+          test "$(reserve reserve "{\"reservationId\":\"ci-hold-1\",\"runId\":\"run_ci\",\"estimatedCostUsd\":\"$LEFT\"}")" = 200; cat reserve.json; echo
+          grep -q '"allowed":true' reserve.json
+          grep -q '"status":"held"' reserve.json
+          test "$(reserve reserve '{"reservationId":"ci-hold-2","runId":"run_ci","estimatedCostUsd":"0.000001"}')" = 200; cat reserve.json; echo
+          grep -q '"allowed":false,"reasons":\["run_budget"\]' reserve.json
+          grep -q '"reservation":null' reserve.json
+          test "$(check '{"runId":"run_ci"}')" = 200
+          grep -q '"heldUsd":"'"$LEFT"'","remainingUsd":"0.000000"' check.json
+          # A retry replays the hold; its id with a different amount is a conflict
+          test "$(reserve reserve "{\"reservationId\":\"ci-hold-1\",\"runId\":\"run_ci\",\"estimatedCostUsd\":\"$LEFT\"}")" = 200
+          grep -q '"replayed":true' reserve.json
+          test "$(reserve reserve '{"reservationId":"ci-hold-1","runId":"run_ci","estimatedCostUsd":"0.000002"}')" = 409
+          # Releasing it frees the budget for the next step
+          test "$(reserve release '{"reservationId":"ci-hold-1"}')" = 200
+          grep -q '"status":"released"' reserve.json
+          test "$(reserve reserve '{"reservationId":"ci-hold-2","runId":"run_ci","estimatedCostUsd":"0.000001"}')" = 200
+          grep -q '"allowed":true' reserve.json
+          test "$(reserve release '{"reservationId":"ci-hold-2"}')" = 200
+          test "$(reserve release '{"reservationId":"never-made"}')" = 404
           # A used-up monthly budget denies even without an estimate
           psql "$DATABASE_URL" -c "UPDATE projects SET monthly_budget_usd = 0 WHERE slug = 'sample-app'"
           test "$(check '{}')" = 200; cat check.json; echo

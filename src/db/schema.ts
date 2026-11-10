@@ -594,6 +594,53 @@ export const auditLog = pgTable(
   ],
 );
 
+export const RESERVATION_STATUSES = ["held", "released", "settled"] as const;
+export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
+
+/**
+ * Budget held for a step before it spends (POST /api/budget/reserve).
+ * Unexpired holds count against the budgets like recorded spend, until
+ * released, settled by recorded usage, or past `expires_at`.
+ */
+export const budgetReservations = pgTable(
+  "budget_reservations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    // The caller's id for the hold; retries reuse it.
+    reservationKey: text("reservation_key").notNull(),
+    runId: text("run_id"),
+    amountUsd: numeric("amount_usd", { precision: 14, scale: 6 }).notNull(),
+    status: text("status").$type<ReservationStatus>().notNull().default("held"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("budget_reservations_project_key_idx").on(
+      t.projectId,
+      t.reservationKey,
+    ),
+    // Serves the sum of a project's unexpired holds.
+    index("budget_reservations_held_idx")
+      .on(t.projectId, t.expiresAt)
+      .where(sql`${t.status} = 'held'`),
+    check(
+      "budget_reservations_status_valid",
+      sql`${t.status} in ('held', 'released', 'settled')`,
+    ),
+    check("budget_reservations_amount_valid", sql`${t.amountUsd} >= 0`),
+    check(
+      "budget_reservations_ended_valid",
+      sql`(${t.status} = 'held') = (${t.endedAt} is null)`,
+    ),
+  ],
+);
+
 export const ALERT_CHANNELS = ["webhook", "slack", "email"] as const;
 export type AlertChannel = (typeof ALERT_CHANNELS)[number];
 
@@ -694,6 +741,7 @@ export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 export type Provider = (typeof providerEnum.enumValues)[number];
 export type User = typeof users.$inferSelect;
 export type AuditLogEntry = typeof auditLog.$inferSelect;
+export type BudgetReservation = typeof budgetReservations.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
 export type Project = typeof projects.$inferSelect;

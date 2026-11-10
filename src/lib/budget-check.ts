@@ -72,7 +72,10 @@ export function parseBudgetCheckPayload(body: unknown): ParseBudgetCheckResult {
 export interface CapCheck {
   /** Null when no cap is set, which never denies. */
   capUsd: string | null;
+  /** Recorded spend. */
   spentUsd: string;
+  /** Unexpired reservations, which count like spend. */
+  heldUsd: string;
   /** Negative when over the cap; null without a cap. */
   remainingUsd: string | null;
   allowed: boolean;
@@ -87,15 +90,24 @@ export function checkCap(
   spentMicros: bigint,
   capMicros: bigint | null,
   estimateMicros: bigint,
+  heldMicros: bigint = 0n,
 ): CapCheck {
   const spentUsd = microsToDecimal(spentMicros);
+  const heldUsd = microsToDecimal(heldMicros);
   if (capMicros === null) {
-    return { capUsd: null, spentUsd, remainingUsd: null, allowed: true };
+    return {
+      capUsd: null,
+      spentUsd,
+      heldUsd,
+      remainingUsd: null,
+      allowed: true,
+    };
   }
-  const remaining = capMicros - spentMicros;
+  const remaining = capMicros - spentMicros - heldMicros;
   return {
     capUsd: microsToDecimal(capMicros),
     spentUsd,
+    heldUsd,
     remainingUsd: microsToDecimal(remaining),
     allowed: remaining > 0n && estimateMicros <= remaining,
   };
@@ -110,6 +122,9 @@ export interface BudgetCheckInputs {
   monthSpentUsd: string;
   /** Null when the request named no run. */
   runSpentUsd: string | null;
+  /** Unexpired reservations: all of the project's, and the run's. */
+  monthHeldUsd?: string;
+  runHeldUsd?: string | null;
 }
 
 export interface BudgetCheckResult {
@@ -134,6 +149,7 @@ export function decideBudgetCheck(
     toMicros(inputs.monthSpentUsd),
     cap(inputs.monthlyBudgetUsd),
     request.estimateMicros,
+    toMicros(inputs.monthHeldUsd ?? "0"),
   );
   const run =
     request.runId !== undefined && inputs.runSpentUsd !== null
@@ -141,6 +157,7 @@ export function decideBudgetCheck(
           toMicros(inputs.runSpentUsd),
           cap(inputs.runBudgetUsd),
           request.estimateMicros,
+          toMicros(inputs.runHeldUsd ?? "0"),
         )
       : null;
   const reasons: DenyReason[] = [];

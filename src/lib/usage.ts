@@ -61,6 +61,8 @@ export const usagePayloadSchema = z
     runId: attribution,
     tags: tagsSchema.optional(),
     occurredAt: z.iso.datetime({ offset: true }).optional(),
+    // A hold from POST /api/budget/reserve that this usage settles.
+    reservationId: attribution,
     metadata: z
       .record(z.string(), z.unknown())
       .refine(
