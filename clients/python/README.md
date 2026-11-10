@@ -75,13 +75,13 @@ for result in client.messages.batches.results(batch_id):
         tracker.track(result.result.message, service_tier="batch")
 ```
 
-`Usage` has a `service_tier` field for `record()`. Batch usage for a model without a batch price is refused (`no_batch_pricing`) rather than billed at the full price.
+`Usage` has a `service_tier` field for `record()`. Batch usage for a model without a batch price is kept unpriced (`no_batch_pricing`) rather than billed at the full price.
 
-Flex and fast processing (OpenAI's Flex and Fast, formerly Priority; Anthropic's fast mode) work the same way, with `service_tier="flex"` or `"fast"`, and are billed at that tier's own price. Usage for a tier without a price is refused (`no_tier_pricing`).
+Flex and fast processing (OpenAI's Flex and Fast, formerly Priority; Anthropic's fast mode) work the same way, with `service_tier="flex"` or `"fast"`, and are billed at that tier's own price. Usage for a tier without a price is kept unpriced (`no_tier_pricing`).
 
-Anthropic web searches are read from `usage.server_tool_use.web_search_requests` into `web_search_requests` and charged per 1,000 on top of tokens ($10 for Claude models). Searches for a model without a web search price are refused (`no_web_search_pricing`).
+Anthropic web searches are read from `usage.server_tool_use.web_search_requests` into `web_search_requests` and charged per 1,000 on top of tokens ($10 for Claude models). Searches for a model without a web search price are kept unpriced (`no_web_search_pricing`).
 
-OpenAI audio tokens are read from Chat Completions (`prompt_tokens_details.audio_tokens`, `completion_tokens_details.audio_tokens`) and from a Realtime API `response.done` event's response (`input_token_details`, cached audio included), and billed at the model's audio rates. A Realtime response names no model, so pass it to `track()` (`model="gpt-realtime-2.1"`). Audio for a model without audio rates is refused (`no_audio_pricing`).
+OpenAI audio tokens are read from Chat Completions (`prompt_tokens_details.audio_tokens`, `completion_tokens_details.audio_tokens`) and from a Realtime API `response.done` event's response (`input_token_details`, cached audio included), and billed at the model's audio rates. A Realtime response names no model, so pass it to `track()` (`model="gpt-realtime-2.1"`). Audio for a model without audio rates is kept unpriced (`no_audio_pricing`).
 
 OpenAI Images API responses (`images.generate`, `images.edit`) are read too: image input from `input_tokens_details.image_tokens`, and the output as image tokens. They name no model, so pass it to `track()` (`model="gpt-image-2"`). Image tokens are billed at the model's image rates; on a model without them (a vision model) they're billed as text.
 

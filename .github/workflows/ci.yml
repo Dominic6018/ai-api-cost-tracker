@@ -270,15 +270,26 @@ jobs:
           grep -q '"serviceTier":"fast"' response.json
           BODY=$(tier_body standard); STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 201
           grep -q '"costUsd":"0.002000"' response.json
-          # No flex price: refused, not billed at the standard price
+          # No flex price: kept unpriced, never billed at the standard price
           BODY=$(tier_body flex); STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
-          test "$STATUS" = 422
-          grep -q '"no_tier_pricing"' response.json
-          # No batch price is seeded for OpenAI, so batch usage is refused
+          test "$STATUS" = 201
+          grep -q '"costUsd":null,"pricingStatus":"unpriced","unpricedReason":"no_tier_pricing"' response.json
+          # Adding the flex price and repricing prices it, once:
+          # 1,000 * $0.50 + 500 * $1 per 1M = $0.001
+          npm run --silent reprice -- --dry-run | tee reprice-dry.log
+          AUDITED=$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action = 'usage.repriced'")
+          grep -q 'Still unpriced (no_tier_pricing): ' reprice-dry.log
+          psql "$DATABASE_URL" -qc "INSERT INTO model_pricing (provider, model, service_tier, input_per_mtok_usd, output_per_mtok_usd, effective_from) VALUES ('other', 'ci-tiers', 'flex', 0.5, 1, '2026-01-01')"
+          npm run --silent reprice | tee reprice.log
+          grep -q '; 1 priced\.' reprice.log
+          test "$(psql "$DATABASE_URL" -tAc "SELECT concat_ws('|', pricing_status, cost_usd) FROM usage_events WHERE model = 'ci-tiers' AND service_tier = 'flex'")" = "priced|0.001000"
+          npm run --silent reprice | grep -q '; 0 priced\.'
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action = 'usage.repriced'")" = "$((AUDITED + 1))"
+          # No batch price is seeded for OpenAI, so batch usage is kept unpriced
           BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"serviceTier\":\"batch\",\"occurredAt\":\"$YESTERDAY\"}"
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
-          test "$STATUS" = 422
-          grep -q '"no_batch_pricing"' response.json
+          test "$STATUS" = 201
+          grep -q '"costUsd":null,"pricingStatus":"unpriced","unpricedReason":"no_batch_pricing"' response.json
 
           # Web search: 3 searches at Anthropic's $10 per 1,000 = $0.03, on
           # top of tokens (none here, so reconciliation's Sonnet token total
@@ -288,11 +299,11 @@ jobs:
           test "$STATUS" = 201
           grep -q '"webSearchRequests":3,"webSearchCostUsd":"0.030000"' response.json
           grep -q '"costUsd":"0.030000"' response.json
-          # No web search price is seeded for OpenAI, so searches are refused
+          # No web search price is seeded for OpenAI, so the usage is kept unpriced
           BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"outputTokens\":500,\"webSearchRequests\":1,\"occurredAt\":\"$YESTERDAY\"}"
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
-          test "$STATUS" = 422
-          grep -q '"no_web_search_pricing"' response.json
+          test "$STATUS" = 201
+          grep -q '"costUsd":null,"pricingStatus":"unpriced","unpricedReason":"no_web_search_pricing"' response.json
 
           # Audio tokens at their own rates (gpt-realtime-2.1's), on an "other"
           # model so reconciliation is unaffected. Text: 1,000 x $4 + 500
@@ -307,11 +318,11 @@ jobs:
           # More audio output than output is invalid
           BODY='{"provider":"other","model":"ci-audio","inputTokens":10,"outputTokens":10,"audioOutputTokens":11}'
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); test "$STATUS" = 400
-          # gpt-4.1 has no audio rates, so audio usage is refused, not billed as text
+          # gpt-4.1 has no audio rates, so audio usage is kept unpriced, not billed as text
           BODY="{\"provider\":\"openai\",\"model\":\"gpt-4.1\",\"inputTokens\":1000,\"audioInputTokens\":500,\"outputTokens\":100,\"occurredAt\":\"$YESTERDAY\"}"
           STATUS=$(post -H "authorization: Bearer $API_KEY_2"); cat response.json; echo
-          test "$STATUS" = 422
-          grep -q '"no_audio_pricing"' response.json
+          test "$STATUS" = 201
+          grep -q '"costUsd":null,"pricingStatus":"unpriced","unpricedReason":"no_audio_pricing"' response.json
 
           # Image tokens at their own rates (gpt-image-2's), on an "other"
           # model: 200 text x $5 + 800 image x $8 in, 4,000 image out x $30,
@@ -446,8 +457,9 @@ jobs:
           JSON
           STATUS=$(otel); cat otel.json; echo
           test "$STATUS" = 200
-          grep -q '"rejectedSpans":1' otel.json
-          grep -q 'no price for openai/not-a-real-model' otel.json
+          # Every span is stored, the unknown model's as unpriced
+          test "$(cat otel.json)" = "{}"
+          test "$(psql "$DATABASE_URL" -tAc "SELECT concat_ws('|', pricing_status, unpriced_reason) FROM usage_events WHERE request_id = 'otel:$GITHUB_RUN_ID:unpriced'")" = "unpriced|no_pricing"
           # Same Sonnet 5.5 cost as the client checks: $0.009900
           OTEL_ID="otel:$GITHUB_RUN_ID:$SPAN_ID"
           # Attribution: span attributes, plus the feature set once on the resource

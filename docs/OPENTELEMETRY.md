@@ -74,13 +74,13 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=authorization=Bearer%20act_your_key
 
 ## Responses
 
-Following OTLP, a successful export returns `200` with `{}`. Spans that couldn't be stored, for example because their model has no price, are reported without failing the rest of the export:
+Following OTLP, a successful export returns `200` with `{}`. A span whose model has no price is stored as [unpriced](../README.md#unpriced-usage), not rejected. Spans that couldn't be stored, for example because they have no model or reuse a span ID for different usage, are reported without failing the rest of the export:
 
 ```json
 {
   "partialSuccess": {
     "rejectedSpans": 2,
-    "errorMessage": "2 span(s): no price for openai/my-fine-tune"
+    "errorMessage": "2 span(s): invalid model"
   }
 }
 ```

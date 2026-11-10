@@ -15,30 +15,6 @@ const RECORD_ERRORS: Record<
   RecordUsageError,
   { status: number; message: string }
 > = {
-  no_pricing: {
-    status: 422,
-    message: "No price is configured for this model at occurredAt",
-  },
-  no_tier_pricing: {
-    status: 422,
-    message:
-      "No price for this model's serviceTier at occurredAt; flex and fast usage needs that tier's own price (add one at /prices/new)",
-  },
-  no_web_search_pricing: {
-    status: 422,
-    message:
-      "No web search price is configured for this model at occurredAt; add one at /prices/new, or omit webSearchRequests",
-  },
-  no_audio_pricing: {
-    status: 422,
-    message:
-      "No audio price is configured for this model at occurredAt; add the audio rates at /prices/new, or send the usage without audio token counts",
-  },
-  no_batch_pricing: {
-    status: 422,
-    message:
-      "No batch price is configured for this model at occurredAt; add one at /prices/new or send serviceTier standard",
-  },
   project_not_found: { status: 404, message: "Project not found" },
   request_id_conflict: {
     status: 409,
@@ -110,7 +86,10 @@ export function createUsageHandler(deps: UsageHandlerDeps) {
           imageInputTokens: event.imageInputTokens,
           cachedImageInputTokens: event.cachedImageInputTokens,
           imageOutputTokens: event.imageOutputTokens,
+          // Null while unpriced; `unpricedReason` names the missing price.
           costUsd: event.costUsd,
+          pricingStatus: event.pricingStatus,
+          unpricedReason: event.unpricedReason,
           requestId: event.requestId,
           customerId: event.customerId,
           userId: event.userId,

@@ -39,7 +39,8 @@ function where(
 }
 
 const utcDay = sql<string>`to_char(${usageEvents.occurredAt} at time zone 'UTC', 'YYYY-MM-DD')`;
-const costSum = sql`sum(${usageEvents.costUsd})`;
+// Unpriced events have no cost; a group of only those sums to zero.
+const costSum = sql`coalesce(sum(${usageEvents.costUsd}), 0)`;
 const totals = {
   costUsd: sql<string>`${costSum}::numeric(14, 6)::text`,
   inputTokens: sql<string>`sum(${usageEvents.inputTokens})::text`,

@@ -105,6 +105,7 @@ export function createUsageReportHandler(deps: ReportHandlerDeps) {
         imageOutputTokens: row.imageOutputTokens,
         outputTokens: row.outputTokens,
         costUsd: row.costUsd,
+        pricingStatus: row.pricingStatus,
         requestId: row.requestId,
         customerId: row.customerId,
         userId: row.userId,

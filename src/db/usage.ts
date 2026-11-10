@@ -5,7 +5,7 @@ import { calculateCostMicros, hasAudio, webSearchCostMicros } from "@/lib/cost";
 import { priceTierFor } from "@/lib/pricing";
 import type { UsageInput } from "@/lib/usage";
 import { findEffectivePricing } from "./pricing";
-import { usageEvents, type UsageEvent } from "./schema";
+import { usageEvents, type UnpricedReason, type UsageEvent } from "./schema";
 
 /** Any Drizzle Postgres database, so callers and tests can pass their own. */
 type Database = Pick<PgDatabase<PgQueryResultHKT>, "select" | "insert">;
@@ -19,15 +19,82 @@ export type RecordUsageResult =
     }
   | {
       ok: false;
-      error:
-        | "no_pricing"
-        | "no_batch_pricing"
-        | "no_tier_pricing"
-        | "no_web_search_pricing"
-        | "no_audio_pricing"
-        | "project_not_found"
-        | "request_id_conflict";
+      error: "project_not_found" | "request_id_conflict";
     };
+
+/** What pricing needs from a usage record. */
+export type PricedFields = Omit<UsageInput, "projectId" | "requestId"> & {
+  requestId?: string;
+};
+
+export type PriceResult =
+  | { ok: true; costMicros: bigint; searchMicros: bigint }
+  | { ok: false; reason: UnpricedReason };
+
+/**
+ * Prices usage with the rates in effect when it occurred. Each missing
+ * price is a reason, not an error: the caller stores the usage as
+ * unpriced, never at a wrong price.
+ */
+export async function priceUsage(
+  db: Pick<Database, "select">,
+  usage: PricedFields,
+): Promise<PriceResult> {
+  const tier = priceTierFor(usage.serviceTier);
+  const lookup = await findEffectivePricing(db, {
+    provider: usage.provider,
+    model: usage.model,
+    at: usage.occurredAt,
+    serviceTier: tier,
+  });
+  if (!lookup.found) {
+    // A flex or fast request is never billed at the standard price.
+    return {
+      ok: false,
+      reason: tier === "standard" ? "no_pricing" : "no_tier_pricing",
+    };
+  }
+  if (usage.serviceTier === "batch" && lookup.pricing.batchMultiplier == null) {
+    return { ok: false, reason: "no_batch_pricing" };
+  }
+  // Searches are charged on top of tokens; without a price they'd be
+  // recorded as free.
+  const searchPrice = lookup.row.webSearchPer1kUsd;
+  if (usage.webSearchRequests > 0 && searchPrice === null) {
+    return { ok: false, reason: "no_web_search_pricing" };
+  }
+  // Audio tokens are billed at audio rates; without them they'd be
+  // billed as (much cheaper) text.
+  if (hasAudio(usage) && !lookup.pricing.audio) {
+    return { ok: false, reason: "no_audio_pricing" };
+  }
+  const searchMicros =
+    usage.webSearchRequests > 0 && searchPrice !== null
+      ? webSearchCostMicros(usage.webSearchRequests, searchPrice)
+      : 0n;
+  return {
+    ok: true,
+    costMicros: calculateCostMicros(usage, lookup.pricing) + searchMicros,
+    searchMicros,
+  };
+}
+
+/** The stored cost columns for a pricing result. */
+export function costColumns(price: PriceResult) {
+  return price.ok
+    ? {
+        costUsd: microsToDecimal(price.costMicros),
+        webSearchCostUsd: microsToDecimal(price.searchMicros),
+        pricingStatus: "priced" as const,
+        unpricedReason: null,
+      }
+    : {
+        costUsd: null,
+        webSearchCostUsd: "0",
+        pricingStatus: "unpriced" as const,
+        unpricedReason: price.reason,
+      };
+}
 
 const FOREIGN_KEY_VIOLATION = "23503";
 const UNIQUE_VIOLATION = "23505";
@@ -91,7 +158,7 @@ function replay(existing: UsageEvent, usage: UsageInput): RecordUsageResult {
 
 /**
  * Prices a usage record with the rate in effect when it occurred and stores
- * it. Repeating a `(provider, requestId)` in the same project returns the
+ * it, as unpriced when a price is missing. Repeating a `(provider, requestId)` in the same project returns the
  * stored event instead
  * of inserting another. Expected failures come back as typed errors;
  * anything else throws.
@@ -110,41 +177,8 @@ export async function recordUsage(
     if (existing) return replay(existing, usage);
   }
 
-  const tier = priceTierFor(usage.serviceTier);
-  const lookup = await findEffectivePricing(db, {
-    provider: usage.provider,
-    model: usage.model,
-    at: usage.occurredAt,
-    serviceTier: tier,
-  });
-  if (!lookup.found) {
-    // A flex or fast request is never billed at the standard price.
-    return {
-      ok: false,
-      error: tier === "standard" ? "no_pricing" : "no_tier_pricing",
-    };
-  }
-  if (usage.serviceTier === "batch" && lookup.pricing.batchMultiplier == null) {
-    return { ok: false, error: "no_batch_pricing" };
-  }
-  // Searches are charged on top of tokens; without a price they'd be
-  // recorded as free.
-  const searchPrice = lookup.row.webSearchPer1kUsd;
-  if (usage.webSearchRequests > 0 && searchPrice === null) {
-    return { ok: false, error: "no_web_search_pricing" };
-  }
-
-  // Audio tokens are billed at audio rates; without them they'd be
-  // billed as (much cheaper) text.
-  if (hasAudio(usage) && !lookup.pricing.audio) {
-    return { ok: false, error: "no_audio_pricing" };
-  }
-
-  const searchMicros =
-    usage.webSearchRequests > 0 && searchPrice !== null
-      ? webSearchCostMicros(usage.webSearchRequests, searchPrice)
-      : 0n;
-  const costMicros = calculateCostMicros(usage, lookup.pricing) + searchMicros;
+  // Usage without a price is kept as unpriced, to be priced later.
+  const price = await priceUsage(db, usage);
 
   try {
     const [event] = await db
@@ -159,9 +193,8 @@ export async function recordUsage(
         cacheWriteInputTokens: usage.cacheWriteInputTokens,
         cacheWrite1hInputTokens: usage.cacheWrite1hInputTokens,
         serviceTier: usage.serviceTier,
-        costUsd: microsToDecimal(costMicros),
+        ...costColumns(price),
         webSearchRequests: usage.webSearchRequests,
-        webSearchCostUsd: microsToDecimal(searchMicros),
         audioInputTokens: usage.audioInputTokens,
         cachedAudioInputTokens: usage.cachedAudioInputTokens,
         audioOutputTokens: usage.audioOutputTokens,

@@ -107,6 +107,20 @@ afterAll(async () => {
   await client.end();
 });
 
+/** Expects usage stored without a price, for the given reason. */
+async function expectUnpriced(input: UsageInput, reason: string) {
+  const result = await recordUsage(db, input);
+  if (!result.ok) throw new Error(`expected it stored, got ${result.error}`);
+  expect(result.replayed).toBe(false);
+  expect(result.event).toMatchObject({
+    costUsd: null,
+    webSearchCostUsd: "0.000000",
+    pricingStatus: "unpriced",
+    unpricedReason: reason,
+  });
+  return result.event;
+}
+
 function usage(overrides: Partial<UsageInput> = {}): UsageInput {
   return {
     projectId,
@@ -256,52 +270,46 @@ describe("recordUsage", () => {
     expect(vision.ok && vision.event.imageInputTokens).toBe(500_000);
   });
 
-  it("refuses audio tokens when the price has no audio rates", async () => {
-    expect(
-      await recordUsage(
-        db,
-        usage({
-          inputTokens: 1_000_000,
-          cachedInputTokens: 0,
-          audioInputTokens: 10,
-        }),
-      ),
-    ).toEqual({ ok: false, error: "no_audio_pricing" });
-    expect(await recordUsage(db, usage({ audioOutputTokens: 1 }))).toEqual({
-      ok: false,
-      error: "no_audio_pricing",
-    });
+  it("keeps audio usage unpriced when the price has no audio rates", async () => {
+    await expectUnpriced(
+      usage({
+        inputTokens: 1_000_000,
+        cachedInputTokens: 0,
+        audioInputTokens: 10,
+      }),
+      "no_audio_pricing",
+    );
+    await expectUnpriced(usage({ audioOutputTokens: 1 }), "no_audio_pricing");
   });
 
-  it("refuses web searches the matching price has no rate for", async () => {
+  it("keeps web searches unpriced when the matching price has no rate", async () => {
     // The fast row and the tiered model have no web search price.
     for (const input of [
       usage({ serviceTier: "fast", webSearchRequests: 1 }),
       usage({ model: tieredModel, webSearchRequests: 1 }),
     ]) {
-      expect(await recordUsage(db, input)).toEqual({
-        ok: false,
-        error: "no_web_search_pricing",
-      });
+      await expectUnpriced(input, "no_web_search_pricing");
     }
     // Without searches the same usage is recorded, at no search cost.
     const plain = await recordUsage(db, usage({ model: tieredModel }));
     expect(plain.ok && plain.event.webSearchCostUsd).toBe("0.000000");
   });
 
-  it("returns no_pricing before the model's first price", async () => {
-    expect(
-      await recordUsage(
-        db,
-        usage({ occurredAt: new Date("2025-06-01T00:00:00Z") }),
-      ),
-    ).toEqual({ ok: false, error: "no_pricing" });
+  it("keeps usage from before the model's first price, unpriced", async () => {
+    await expectUnpriced(
+      usage({ occurredAt: new Date("2025-06-01T00:00:00Z") }),
+      "no_pricing",
+    );
   });
 
-  it("returns no_pricing for an unknown model", async () => {
-    expect(
-      await recordUsage(db, usage({ model: `missing-${randomUUID()}` })),
-    ).toEqual({ ok: false, error: "no_pricing" });
+  it("keeps usage of an unknown model, unpriced, and replays it", async () => {
+    const input = usage({
+      model: `missing-${randomUUID()}`,
+      requestId: `req-${randomUUID()}`,
+    });
+    const stored = await expectUnpriced(input, "no_pricing");
+    const retry = await recordUsage(db, input);
+    expect(retry.ok && retry.replayed && retry.event.id).toBe(stored.id);
   });
 
   it("returns project_not_found for an unknown project", async () => {
@@ -379,18 +387,12 @@ describe("recordUsage with tiered pricing and cache writes", () => {
     expect(standard.ok && standard.event.costUsd).toBe("3.420000");
   });
 
-  it("refuses a tier without its own price, never billing it at standard", async () => {
-    expect(await recordUsage(db, usage({ serviceTier: "flex" }))).toEqual({
-      ok: false,
-      error: "no_tier_pricing",
-    });
+  it("keeps a tier without its own price unpriced, never billing it at standard", async () => {
+    await expectUnpriced(usage({ serviceTier: "flex" }), "no_tier_pricing");
   });
 
-  it("refuses batch usage for a model without a batch price", async () => {
-    expect(await recordUsage(db, usage({ serviceTier: "batch" }))).toEqual({
-      ok: false,
-      error: "no_batch_pricing",
-    });
+  it("keeps batch usage unpriced for a model without a batch price", async () => {
+    await expectUnpriced(usage({ serviceTier: "batch" }), "no_batch_pricing");
     // The same usage at standard prices is recorded.
     expect((await recordUsage(db, usage())).ok).toBe(true);
   });

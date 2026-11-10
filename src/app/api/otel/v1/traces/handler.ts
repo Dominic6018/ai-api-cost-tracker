@@ -119,11 +119,8 @@ export function createOtlpTracesHandler(deps: OtlpTracesHandlerDeps) {
         projectId: auth.projectId,
       });
       if (!result.ok) {
-        reject(
-          result.error === "no_pricing"
-            ? `no price for ${usage.usage.provider}/${usage.usage.model}`
-            : result.error,
-        );
+        // Usage without a price is stored as unpriced, not rejected.
+        reject(result.error);
       }
     }
 
