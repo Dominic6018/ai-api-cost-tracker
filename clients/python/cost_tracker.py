@@ -25,7 +25,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, AsyncIterable, AsyncIterator, Callable, Dict, Iterable, Iterator, Optional, Tuple, Union
 from urllib.parse import urljoin
 
 __all__ = [
@@ -40,6 +40,7 @@ __all__ = [
     "RecordResult",
     "Reservation",
     "RunBudget",
+    "StreamUsage",
     "Usage",
     "usage_from_anthropic",
     "usage_from_gemini",
@@ -449,6 +450,71 @@ def usage_from_gemini(response: Any) -> Optional[Usage]:
     )
 
 
+_ANTHROPIC_USAGE_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "cache_creation",
+    "server_tool_use",
+)
+
+
+def _anthropic_usage(usage: Any) -> Dict[str, Any]:
+    """An Anthropic usage block as a dict, from an SDK object or a dict."""
+    fields = {name: _get(usage, name) for name in _ANTHROPIC_USAGE_FIELDS}
+    return {name: value for name, value in fields.items() if value is not None}
+
+
+class StreamUsage:
+    """Collects usage from a streamed response's chunks as they pass. Each
+    provider reports a stream's usage once it's complete:
+
+    - OpenAI Chat Completions: a last chunk with ``usage``, only when the
+      request sets ``stream_options={"include_usage": True}``.
+    - OpenAI Responses: the ``response.completed`` (or ``.incomplete``) event.
+    - Anthropic Messages: ``message_start`` has the input counts and
+      ``message_delta`` the final output count.
+    - Gemini: each chunk's usage metadata; the last one has the totals.
+
+    ``usage(ended)`` is None until the final usage has been seen, so a
+    stream cut short is never reported with partial counts."""
+
+    def __init__(self) -> None:
+        self._final: Optional[Usage] = None
+        self._anthropic: Optional[Dict[str, Any]] = None
+        self._gemini: Any = None
+
+    def push(self, chunk: Any) -> None:
+        if chunk is None:
+            return
+        kind = _get(chunk, "type")
+        if _get(chunk, "object") == "chat.completion.chunk" and _get(chunk, "usage") is not None:
+            self._final = usage_from_openai_chat(chunk)
+        elif kind in ("response.completed", "response.incomplete") and _get(chunk, "response") is not None:
+            self._final = usage_from_openai_response(_get(chunk, "response"))
+        elif kind == "message_start" and _get(chunk, "message") is not None:
+            message = _get(chunk, "message")
+            self._anthropic = {
+                "type": "message",
+                "id": _get(message, "id"),
+                "model": _get(message, "model"),
+                "usage": _anthropic_usage(_get(message, "usage")),
+            }
+        elif kind == "message_delta" and _get(chunk, "usage") is not None and self._anthropic is not None:
+            # The delta's counts are cumulative; they replace the start's.
+            self._anthropic["usage"].update(_anthropic_usage(_get(chunk, "usage")))
+            self._final = usage_from_anthropic(self._anthropic)
+        elif _get(chunk, "usage_metadata", "usageMetadata") is not None:
+            self._gemini = chunk
+
+    def usage(self, ended: bool) -> Optional[Usage]:
+        """The stream's usage, if complete; Gemini's needs the stream ended."""
+        if self._final is not None:
+            return self._final
+        return usage_from_gemini(self._gemini) if ended and self._gemini is not None else None
+
+
 def usage_from_response(response: Any) -> Optional[Usage]:
     """Reads usage from a response of any supported API, or returns None when
     the response has none (e.g. a stream chunk without usage)."""
@@ -723,6 +789,80 @@ class CostTracker:
         if usage is None:
             self._on_error(CostTrackerError("No usage in response"), None)
             return response
+        self._report(
+            usage,
+            model=model,
+            provider=provider,
+            metadata=metadata,
+            customer_id=customer_id,
+            user_id=user_id,
+            feature=feature,
+            run_id=run_id,
+            tags=tags,
+            service_tier=service_tier,
+        )
+        return response
+
+    def track_stream(self, stream: Iterable[Any], **options: Any) -> Iterator[Any]:
+        """Passes a streamed response's chunks through unchanged and reports
+        its usage in the background once the stream has finished. Iterate what
+        it returns instead of the stream; it takes the same keyword options as
+        track(). A stream that ends without its usage, or is stopped early,
+        reports nothing and calls ``on_error`` with code "no_usage" or
+        "incomplete_stream". Stream errors reach you as usual."""
+        collected = StreamUsage()
+        ended = False
+        try:
+            for chunk in stream:
+                collected.push(chunk)
+                yield chunk
+            ended = True
+        finally:
+            self._finish_stream(collected, ended, options)
+
+    async def track_async_stream(self, stream: AsyncIterable[Any], **options: Any) -> AsyncIterator[Any]:
+        """track_stream() for an async stream, such as the async SDKs'."""
+        collected = StreamUsage()
+        ended = False
+        try:
+            async for chunk in stream:
+                collected.push(chunk)
+                yield chunk
+            ended = True
+        finally:
+            self._finish_stream(collected, ended, options)
+
+    def _finish_stream(self, collected: StreamUsage, ended: bool, options: Dict[str, Any]) -> None:
+        usage = collected.usage(ended)
+        if usage is not None:
+            self._report(usage, **options)
+        elif ended:
+            self._on_error(
+                CostTrackerError(
+                    "No usage in stream (OpenAI Chat Completions need stream_options include_usage)",
+                    None,
+                    "no_usage",
+                ),
+                None,
+            )
+        else:
+            self._on_error(CostTrackerError("Stream ended before its usage arrived", None, "incomplete_stream"), None)
+
+    def _report(
+        self,
+        usage: Usage,
+        *,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        customer_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        feature: Optional[str] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        service_tier: Optional[str] = None,
+    ) -> None:
+        """Applies track() options and sends in the background, within the bound."""
         if model:
             usage.model = model
         if provider:
@@ -759,9 +899,8 @@ class CostTracker:
                 CostTrackerError(f"{self._max_pending} reports already pending; usage dropped", None, "queue_full"),
                 usage,
             )
-            return response
+            return
         future.add_done_callback(self._forget)
-        return response
 
     def _forget(self, future: "Future[None]") -> None:
         with self._lock:

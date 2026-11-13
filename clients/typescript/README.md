@@ -187,4 +187,4 @@ The provider's response ID becomes `requestId`, so a report that's retried after
 
 - **Model names must match a price.** OpenAI responses name dated snapshots (`gpt-4.1-2025-04-14`). Pass `{ model: "gpt-4.1" }` to record the alias you requested, or add a price for the snapshot; a snapshot can be priced differently from its alias.
 - **OpenAI-compatible APIs**, such as Mistral's, are detected as OpenAI; pass `{ provider: "mistral" }`.
-- **Streams aren't read yet.** `track()` needs the final response object; for a stream, report its final usage with `record()`. A response without usage goes to `onError`.
+- **Streams:** iterate `tracker.trackStream(stream)` instead of the stream. Chunks pass through unchanged, and the usage is reported once the stream has finished: OpenAI Chat Completions (set `stream_options: { include_usage: true }`, or there's no usage to read), OpenAI Responses, Anthropic Messages and Gemini. A stream that ends without its usage, or that you stop early, reports nothing and calls `onError` with code `no_usage` or `incomplete_stream`, since partial counts would be wrong. A response without usage goes to `onError`.

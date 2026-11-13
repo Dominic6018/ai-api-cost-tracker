@@ -10,6 +10,7 @@ import {
   CostTrackerError,
   createCostTracker,
   retryDelayMs,
+  streamUsage,
   usageFromResponse,
   type Usage,
 } from "./cost-tracker";
@@ -1071,5 +1072,198 @@ describe("delivery", () => {
     await tracker.flush();
     expect(tracker.stats()).toMatchObject({ sent: 0, failed: 1 });
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Chunks as each SDK streams them, trimmed to the fields that matter. */
+const streams = {
+  openAIChat: [
+    {
+      id: "chatcmpl-1",
+      object: "chat.completion.chunk",
+      model: "gpt-4.1-2025-04-14",
+      choices: [{ delta: { content: "Hi" } }],
+      usage: null,
+    },
+    {
+      id: "chatcmpl-1",
+      object: "chat.completion.chunk",
+      model: "gpt-4.1-2025-04-14",
+      choices: [],
+      usage: {
+        prompt_tokens: 1200,
+        completion_tokens: 300,
+        prompt_tokens_details: { cached_tokens: 1024 },
+      },
+    },
+  ],
+  openAIResponses: [
+    { type: "response.output_text.delta", delta: "Hi" },
+    {
+      type: "response.completed",
+      response: {
+        id: "resp_1",
+        object: "response",
+        model: "gpt-5.4-mini",
+        usage: {
+          input_tokens: 2000,
+          output_tokens: 700,
+          input_tokens_details: { cached_tokens: 512 },
+        },
+      },
+    },
+  ],
+  anthropic: [
+    {
+      type: "message_start",
+      message: {
+        id: "msg_1",
+        type: "message",
+        model: "claude-sonnet-5-5",
+        usage: {
+          input_tokens: 50,
+          cache_read_input_tokens: 8000,
+          cache_creation_input_tokens: 2000,
+          output_tokens: 1,
+        },
+      },
+    },
+    { type: "content_block_delta", delta: { text: "Hi" } },
+    { type: "message_delta", usage: { output_tokens: 400 } },
+    { type: "message_stop" },
+  ],
+  gemini: [
+    {
+      responseId: "g1",
+      modelVersion: "gemini-2.5-pro",
+      usageMetadata: { promptTokenCount: 100 },
+    },
+    {
+      responseId: "g1",
+      modelVersion: "gemini-2.5-pro",
+      usageMetadata: {
+        promptTokenCount: 100,
+        candidatesTokenCount: 40,
+        thoughtsTokenCount: 10,
+      },
+    },
+  ],
+};
+
+async function* from<T>(chunks: T[], failAfter?: number) {
+  for (const [i, chunk] of chunks.entries()) {
+    if (i === failAfter) throw new Error("connection reset");
+    yield chunk;
+  }
+}
+
+describe("streamUsage", () => {
+  const collect = (chunks: unknown[], ended = true) => {
+    const collected = streamUsage();
+    for (const chunk of chunks) collected.push(chunk);
+    return collected.usage(ended);
+  };
+
+  it("reads each provider's final usage", () => {
+    expect(collect(streams.openAIChat)).toMatchObject({
+      provider: "openai",
+      inputTokens: 1200,
+      outputTokens: 300,
+      cachedInputTokens: 1024,
+      requestId: "chatcmpl-1",
+    });
+    expect(collect(streams.openAIResponses)).toMatchObject({
+      inputTokens: 2000,
+      outputTokens: 700,
+      requestId: "resp_1",
+    });
+    expect(collect(streams.anthropic)).toMatchObject({
+      provider: "anthropic",
+      inputTokens: 10_050,
+      outputTokens: 400,
+      cachedInputTokens: 8000,
+      cacheWriteInputTokens: 2000,
+      requestId: "msg_1",
+    });
+    expect(collect(streams.gemini)).toMatchObject({
+      provider: "google",
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+  });
+
+  it("has nothing for a stream cut short, or without usage", () => {
+    expect(collect(streams.anthropic.slice(0, 2))).toBeNull();
+    expect(collect(streams.gemini, false)).toBeNull();
+    expect(collect(streams.openAIChat.slice(0, 1))).toBeNull();
+  });
+});
+
+describe("trackStream", () => {
+  it("passes chunks through unchanged and reports once it ends", async () => {
+    const { tracker, fetch } = setup([stored()]);
+    const seen: unknown[] = [];
+    for await (const chunk of tracker
+      .with({ customerId: "cus_1" })
+      .trackStream(from(streams.anthropic), { feature: "chat" })) {
+      seen.push(chunk);
+    }
+    expect(seen).toEqual(streams.anthropic);
+    await tracker.flush();
+    const body = JSON.parse(
+      (fetch.mock.calls[0] as unknown as [string, RequestInit])[1]
+        .body as string,
+    );
+    expect(body).toMatchObject({
+      provider: "anthropic",
+      outputTokens: 400,
+      customerId: "cus_1",
+      feature: "chat",
+      requestId: "msg_1",
+    });
+    expect(tracker.stats().sent).toBe(1);
+  });
+
+  it("reports nothing, and says why, for a stream without usage", async () => {
+    const { tracker, fetch, onError } = setup([]);
+    for await (const chunk of tracker.trackStream(
+      from(streams.openAIChat.slice(0, 1)),
+    )) {
+      void chunk;
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "no_usage" }),
+      null,
+    );
+  });
+
+  it("reports nothing when the caller stops early", async () => {
+    const { tracker, fetch, onError } = setup([]);
+    for await (const chunk of tracker.trackStream(from(streams.anthropic))) {
+      void chunk;
+      break;
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "incomplete_stream" }),
+      null,
+    );
+  });
+
+  it("passes the stream's error to the caller", async () => {
+    const { tracker, onError } = setup([]);
+    const read = async () => {
+      for await (const chunk of tracker.trackStream(
+        from(streams.anthropic, 2),
+      )) {
+        void chunk;
+      }
+    };
+    await expect(read()).rejects.toThrow("connection reset");
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "incomplete_stream" }),
+      null,
+    );
   });
 });

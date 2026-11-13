@@ -43,6 +43,8 @@ CostTracker(base_url, api_key, on_error=lambda error, usage: log.warning("not re
 
 **Delivery:** each report is retried after network errors, 429s and 5xx when it has a request ID, waiting 0.25 s, then 1 s, jittered so many clients don't retry at once (at most 30 s). At most `max_pending` reports (default 1000) wait at once; beyond that, new usage is dropped and reported to `on_error` with code `queue_full`, so an unreachable tracker can't grow memory without bound. `tracker.stats()` returns a `DeliveryStats` with `sent`, `failed`, `dropped` and `pending` since the tracker was created, shared by scoped trackers. Unlike the TypeScript client, it doesn't read `Retry-After`.
 
+**Streams:** iterate `tracker.track_stream(stream)` (or `track_async_stream()` for async SDKs) instead of the stream. Chunks pass through unchanged, and the usage is reported once the stream has finished: OpenAI Chat Completions (set `stream_options={"include_usage": True}`, or there's no usage to read), OpenAI Responses, Anthropic Messages and Gemini. A stream that ends without its usage, or that you stop early, reports nothing and calls `on_error` with code `no_usage` or `incomplete_stream`, since partial counts would be wrong.
+
 To send usage yourself, `record()` posts one record and returns the stored cost. It raises `CostTrackerError` (with `status` and `code`) if the usage isn't stored:
 
 ```python
@@ -163,7 +165,7 @@ The provider's response ID becomes the request ID, so a report retried after a n
 
 - **Model names must match a price.** OpenAI responses name dated snapshots (`gpt-4.1-2025-04-14`). Pass `model="gpt-4.1"` to record the alias you requested, or add a price for the snapshot.
 - **OpenAI-compatible APIs**, such as Mistral's, are detected as OpenAI; pass `provider="mistral"`.
-- **Streams aren't read yet.** Report a stream's final usage with `record()`.
+- **Streams** are read by `track_stream()` and `track_async_stream()`, from their final usage chunk or event (see above).
 - **`occurred_at` must be timezone-aware** when you set it; it defaults to when the tracker receives the report.
 
 ## Tests
