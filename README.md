@@ -56,7 +56,7 @@ What it doesn't do yet (the plan is in [docs/PRODUCT_UPGRADE_PLAN.md](docs/PRODU
 
 - **Unpriced usage isn't estimated.** Usage with no stored price is kept as unpriced and left out of totals, budgets and exports until a price is added and `npm run reprice` runs; the tracker never guesses a cost.
 - **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Provider bills are compared with recorded costs (`npm run reconcile`), not imported as usage. The clients don't wrap streams to collect usage automatically; pass them the chunk that carries usage, or send it with `record()`.
-- **Budgets only hold for calls that ask first.** A reservation stops concurrent steps from overspending, but a provider call your app makes without reserving isn't stopped (see [Reserving budget](#reserving-budget)). The clients don't reserve yet; call the API.
+- **Budgets only hold for calls that ask first.** A reservation stops concurrent steps from overspending, but a provider call your app makes without reserving isn't stopped (see [Reserving budget](#reserving-budget)). The TypeScript and Python clients reserve with `reserveBudget()` / `reserve_budget()`.
 - **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. There's no customer billing, credits or revenue.
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's Ultrafast tier isn't tracked.
 - **Organizations are managed from the command line**, as accounts are. An account is in one organization, and prices are shared across the install.

@@ -50,6 +50,14 @@ with CostTracker(base_url, api_key, on_error=lambda error, usage: errors.append(
     denied = run.check_budget(1000)
     assert not denied.allowed and denied.reasons == ("monthly_budget",), denied
 
+    print("- reserve_budget() holds budget, replays, and release_budget() frees it")
+    hold_id = f"py-hold-{message['id']}"
+    held = tracker.reserve_budget("0.01", reservation_id=hold_id)
+    assert held.allowed and held.reservation is not None, held
+    assert held.reservation.status == "held" and held.reservation.amount_usd == "0.010000", held
+    assert tracker.reserve_budget("0.01", reservation_id=hold_id).replayed
+    assert tracker.release_budget(hold_id).status == "released"
+
     print("- the stored cost uses cache read and write rates")
     # Claude Sonnet 5.5 seed prices per 1M tokens: $2 input, $0.10 cache
     # reads, $2.50 cache writes, $10 output.

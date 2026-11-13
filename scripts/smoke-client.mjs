@@ -62,6 +62,27 @@ console.log("- checkBudget() sees the run's spend and the monthly budget");
   assert.deepEqual(denied.reasons, ["monthly_budget"]);
 }
 
+console.log(
+  "- reserveBudget() holds budget, replays, and releaseBudget() frees it",
+);
+{
+  const reservationId = `ts-hold-${message.id}`;
+  const held = await tracker.reserveBudget({
+    reservationId,
+    estimatedCostUsd: "0.01",
+  });
+  assert.equal(held.allowed, true);
+  assert.equal(held.reservation.status, "held");
+  assert.equal(held.reservation.amountUsd, "0.010000");
+  const again = await tracker.reserveBudget({
+    reservationId,
+    estimatedCostUsd: "0.01",
+  });
+  assert.equal(again.replayed, true);
+  const released = await tracker.releaseBudget(reservationId);
+  assert.equal(released.status, "released");
+}
+
 console.log("- the stored cost uses cache read and write rates");
 // Claude Sonnet 5.5 seed prices per 1M tokens: $2 input, $0.10 cache
 // reads, $2.50 cache writes, $10 output.

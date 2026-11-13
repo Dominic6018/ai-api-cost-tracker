@@ -10,11 +10,13 @@ from unittest import mock
 
 from cost_tracker import (
     BudgetCheck,
+    BudgetReservation,
     CostTracker,
     CostTrackerError,
     MonthBudget,
     OutcomeResult,
     RecordResult,
+    Reservation,
     RunBudget,
     Usage,
     usage_from_response,
@@ -669,3 +671,91 @@ class CheckBudgetTest(unittest.TestCase):
         self.assertEqual((caught.exception.status, caught.exception.code), (400, "invalid_payload"))
         with self.assertRaisesRegex(CostTrackerError, "Unexpected response"):
             tracker.check_budget()
+
+
+HOLD = {
+    "reservationId": "run_42-step_3",
+    "amountUsd": "0.250000",
+    "runId": "run_42",
+    "status": "held",
+    "expiresAt": "2026-11-14T12:10:00.000Z",
+}
+CAP = {"capUsd": None, "spentUsd": "1.000000", "heldUsd": "0.250000", "remainingUsd": None, "allowed": True}
+
+
+def reserved(hold=HOLD, allowed=True):
+    return 200, json.dumps(
+        {
+            "allowed": allowed,
+            "reasons": [] if allowed else ["monthly_budget"],
+            "estimatedCostUsd": "0.250000",
+            "month": {"period": "2026-11", **CAP},
+            "run": {"runId": "run_42", **CAP},
+            "reservation": hold,
+            "replayed": False,
+        }
+    ).encode()
+
+
+@mock.patch("cost_tracker.time.sleep", lambda seconds: None)
+class ReserveBudgetTest(unittest.TestCase):
+    def test_reserves_with_a_scoped_run_and_returns_the_hold(self):
+        tracker, transport, _ = make(reserved())
+        run = tracker.with_attribution(run_id="run_42", customer_id="cus_1")
+        result = run.reserve_budget(Decimal("0.25"), reservation_id="run_42-step_3", ttl_seconds=120)
+        url, body, _ = transport.calls[0]
+        self.assertEqual(url, "https://costs.example.com/api/budget/reserve")
+        self.assertEqual(
+            body,
+            {"reservationId": "run_42-step_3", "estimatedCostUsd": "0.25", "runId": "run_42", "ttlSeconds": 120},
+        )
+        self.assertIsInstance(result, BudgetReservation)
+        self.assertTrue(result.allowed)
+        self.assertEqual(result.check.month.held_usd, "0.250000")
+        self.assertEqual(
+            result.reservation,
+            Reservation("run_42-step_3", "0.250000", "run_42", "held", "2026-11-14T12:10:00.000Z"),
+        )
+        self.assertFalse(result.replayed)
+
+    def test_returns_a_denial_with_no_hold(self):
+        tracker, _, _ = make(reserved(hold=None, allowed=False))
+        result = tracker.reserve_budget(5, reservation_id="s")
+        self.assertFalse(result.allowed)
+        self.assertIsNone(result.reservation)
+        self.assertEqual(result.check.reasons, ("monthly_budget",))
+
+    def test_retries_since_the_id_makes_it_safe(self):
+        tracker, transport, _ = make(failed(503, "unavailable"), reserved())
+        self.assertTrue(tracker.reserve_budget("0.25", reservation_id="s").allowed)
+        self.assertEqual(len(transport.calls), 2)
+
+    def test_raises_a_conflict_and_rejects_booleans(self):
+        tracker, _, _ = make(failed(409, "reservation_conflict"))
+        with self.assertRaises(CostTrackerError) as caught:
+            tracker.reserve_budget("1", reservation_id="s")
+        self.assertEqual((caught.exception.status, caught.exception.code), (409, "reservation_conflict"))
+        with self.assertRaises(TypeError):
+            tracker.reserve_budget(True, reservation_id="s")
+
+    def test_releases_a_hold(self):
+        tracker, transport, _ = make(
+            (200, json.dumps({"reservation": {**HOLD, "status": "released"}}).encode()),
+            failed(404, "reservation_not_found"),
+        )
+        self.assertEqual(tracker.release_budget("run_42-step_3").status, "released")
+        url, body, _ = transport.calls[0]
+        self.assertEqual(url, "https://costs.example.com/api/budget/release")
+        self.assertEqual(body, {"reservationId": "run_42-step_3"})
+        with self.assertRaises(CostTrackerError) as caught:
+            tracker.release_budget("nope")
+        self.assertEqual(caught.exception.code, "reservation_not_found")
+
+    def test_settles_a_hold_through_record(self):
+        tracker, transport, _ = make(stored())
+        tracker.record(Usage("openai", "gpt-4.1", 1000, 500, reservation_id="run_42-step_3"))
+        self.assertEqual(transport.calls[0][1]["reservationId"], "run_42-step_3")
+
+    def test_returns_a_null_cost_for_unpriced_usage(self):
+        tracker, _, _ = make(stored(cost=None))
+        self.assertEqual(tracker.record(USAGE), RecordResult(None, False))

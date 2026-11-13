@@ -77,6 +77,8 @@ function usageWithDefaults(usage: Usage, defaults: Scope): Usage {
 
 /** One request's usage, as `POST /api/usage` takes it. */
 export interface Usage extends Attribution {
+  /** The `reserveBudget()` hold this usage settles. */
+  reservationId?: string;
   provider: Provider;
   model: string;
   /** All input tokens, including cached and cache-write tokens. */
@@ -146,6 +148,8 @@ export interface BudgetCap {
   /** Null when no cap is set, which never denies. */
   capUsd: string | null;
   spentUsd: string;
+  /** Unexpired reservations, which count like spend. */
+  heldUsd: string;
   /** Negative when over the cap; null without a cap. */
   remainingUsd: string | null;
   allowed: boolean;
@@ -173,9 +177,42 @@ export interface BudgetCheckOptions {
   runId?: string;
 }
 
+/** A hold on part of the budgets, from `reserveBudget()`. */
+export interface Reservation {
+  reservationId: string;
+  /** The amount held, as an exact decimal string. */
+  amountUsd: string;
+  runId: string | null;
+  /** "expired" once past `expiresAt`, when it stops counting. */
+  status: "held" | "released" | "settled" | "expired";
+  expiresAt: string;
+}
+
+/** The answer to `reserveBudget()`: the check, and the hold if allowed. */
+export interface BudgetReservation extends BudgetCheck {
+  /** Null when denied: nothing is held. */
+  reservation: Reservation | null;
+  /** True when this reservationId was already used. */
+  replayed: boolean;
+}
+
+export interface ReserveOptions {
+  /**
+   * Your ID for the hold, unique per project; retries reuse it. Send the
+   * step's usage with the same `reservationId` to settle it.
+   */
+  reservationId: string;
+  /** What the step might cost, in USD, as for `checkBudget()`. */
+  estimatedCostUsd: string | number;
+  /** The agent run; defaults to a scoped tracker's runId. */
+  runId?: string;
+  /** How long the hold lasts; the server's default is 600, at most 86400. */
+  ttlSeconds?: number;
+}
+
 export interface RecordResult {
-  /** The stored cost in USD, as an exact decimal string. */
-  costUsd: string;
+  /** The stored cost in USD, as an exact decimal string; null while unpriced. */
+  costUsd: string | null;
   /** True when this request ID was already recorded. */
   replayed: boolean;
 }
@@ -235,6 +272,16 @@ export interface CostTracker {
    * after network errors, 429s and 5xx, since a check changes nothing.
    */
   checkBudget(options?: BudgetCheckOptions): Promise<BudgetCheck>;
+  /**
+   * Holds `estimatedCostUsd` of the budgets for a step if it fits, so
+   * concurrent steps can't overspend together. Settle the hold by sending
+   * the step's usage with the same `reservationId`, or release it. A
+   * denial is a result with `allowed: false` and no reservation.
+   * Retried after network errors, 429s and 5xx: the id makes it safe.
+   */
+  reserveBudget(options: ReserveOptions): Promise<BudgetReservation>;
+  /** Ends a hold whose step didn't spend. Safe to repeat. */
+  releaseBudget(reservationId: string): Promise<Reservation>;
   /** Waits for every background report, e.g. before a function exits. */
   flush(): Promise<void>;
   /**
@@ -549,8 +596,12 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
   async function send(usage: Usage): Promise<RecordResult> {
     // Without a request ID a retry could store the usage twice.
     const json = await post("/api/usage", usage, Boolean(usage.requestId));
-    const event = json.event as { costUsd?: string } | undefined;
-    if (!event?.costUsd) {
+    const event = json.event as { costUsd?: string | null } | undefined;
+    // Usage without a price is stored with a null cost, to be priced later.
+    if (
+      !event ||
+      (typeof event.costUsd !== "string" && event.costUsd !== null)
+    ) {
       throw new CostTrackerError("Unexpected response", null, null);
     }
     return { costUsd: event.costUsd, replayed: Boolean(json.replayed) };
@@ -589,6 +640,42 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       throw new CostTrackerError("Unexpected response", null, null);
     }
     return json as unknown as BudgetCheck;
+  }
+
+  async function reserveBudget(
+    options: ReserveOptions,
+    defaults: Scope,
+  ): Promise<BudgetReservation> {
+    const runId = options.runId ?? defaults.runId;
+    const body: Record<string, unknown> = {
+      reservationId: options.reservationId,
+      estimatedCostUsd: options.estimatedCostUsd,
+      ...(runId !== undefined && { runId }),
+      ...(options.ttlSeconds !== undefined && {
+        ttlSeconds: options.ttlSeconds,
+      }),
+    };
+    // The reservation id makes a retry return the same hold.
+    const json = await post("/api/budget/reserve", body, true);
+    if (
+      typeof json.allowed !== "boolean" ||
+      !json.month ||
+      !("reservation" in json)
+    ) {
+      throw new CostTrackerError("Unexpected response", null, null);
+    }
+    return json as unknown as BudgetReservation;
+  }
+
+  async function releaseBudget(reservationId: string): Promise<Reservation> {
+    // Releasing twice leaves it released, so retrying is safe.
+    const body: Record<string, unknown> = { reservationId };
+    const json = await post("/api/budget/release", body, true);
+    const reservation = json.reservation as Reservation | undefined;
+    if (!reservation?.status) {
+      throw new CostTrackerError("Unexpected response", null, null);
+    }
+    return reservation;
   }
 
   async function track<T>(
@@ -638,6 +725,8 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       track: (responseOrPromise, trackOptions = {}) =>
         track(responseOrPromise, trackOptions, defaults),
       checkBudget: (options = {}) => checkBudget(options, defaults),
+      reserveBudget: (options) => reserveBudget(options, defaults),
+      releaseBudget,
       flush,
       with: ({ tags, ...attribution }) =>
         scoped({
