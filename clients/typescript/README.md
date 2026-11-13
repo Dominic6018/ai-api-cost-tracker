@@ -147,7 +147,28 @@ const allowed = await run.checkBudget({ estimatedCostUsd: "0.25" }).then(
 ); // fail open
 ```
 
-A check doesn't reserve the money: send each step's usage promptly so the next check sees it.
+A check doesn't reserve the money. To stop concurrent steps from overspending together, reserve instead ([details](../../README.md#reserving-budget)):
+
+```ts
+const hold = await run.reserveBudget({
+  reservationId: `${agentRun.id}-step-${n}`,
+  estimatedCostUsd: "0.25",
+});
+if (!hold.allowed) return stopRun();
+try {
+  const response = await callModel();
+  // Recording the usage with the same id settles the hold.
+  await run.record({
+    ...usageFromResponse(response)!,
+    reservationId: hold.reservation!.reservationId,
+  });
+} catch (error) {
+  await run.releaseBudget(hold.reservation!.reservationId);
+  throw error;
+}
+```
+
+`reserveBudget()` returns the check plus `reservation` (`null` when denied) and `replayed`; each cap also has `heldUsd`. Both calls are retried after network errors, 429s and 5xx, since the reservation id makes a retry return the same hold. Holds expire after `ttlSeconds` (600 by default) if neither settled nor released.
 
 ## How usage is read
 

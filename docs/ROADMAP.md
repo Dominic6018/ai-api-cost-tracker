@@ -128,7 +128,7 @@ Numbers people can trust, before anything is built on them. Details and evidence
 
 ## Milestone 12: Integration experience
 
-- [ ] Reserve and release budget from the TypeScript and Python clients
+- [x] Reserve and release budget from the TypeScript and Python clients (#145)
 - [ ] Reliable client delivery: a bounded queue with backoff, and counts of dropped usage
 - [ ] Usage from streamed responses, without changing what the app receives
 - [ ] Count a request once when a client and OpenTelemetry (or a gateway) both report it

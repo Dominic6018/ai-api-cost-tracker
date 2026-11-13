@@ -30,11 +30,13 @@ from urllib.parse import urljoin
 __all__ = [
     "BudgetCap",
     "BudgetCheck",
+    "BudgetReservation",
     "CostTracker",
     "CostTrackerError",
     "MonthBudget",
     "OutcomeResult",
     "RecordResult",
+    "Reservation",
     "RunBudget",
     "Usage",
     "usage_from_anthropic",
@@ -92,6 +94,8 @@ class Usage:
     image_input_tokens: int = 0
     cached_image_input_tokens: int = 0
     image_output_tokens: int = 0
+    #: The reserve_budget() hold this usage settles.
+    reservation_id: Optional[str] = None
 
     def to_payload(self) -> Dict[str, Any]:
         occurred_at = self.occurred_at
@@ -125,6 +129,7 @@ class Usage:
             "feature": self.feature,
             "runId": self.run_id,
             "tags": self.tags,
+            "reservationId": self.reservation_id,
         }
         return {key: value for key, value in payload.items() if value is not None}
 
@@ -153,11 +158,15 @@ class BudgetCap:
 class MonthBudget(BudgetCap):
     #: The UTC month, e.g. "2026-11".
     period: str
+    #: Unexpired reservations, which count like spend.
+    held_usd: str = "0.000000"
 
 
 @dataclass(frozen=True)
 class RunBudget(BudgetCap):
     run_id: str
+    #: Unexpired reservations, which count like spend.
+    held_usd: str = "0.000000"
 
 
 @dataclass(frozen=True)
@@ -180,6 +189,7 @@ def _cap_fields(data: Dict[str, Any]) -> Dict[str, Any]:
         "spent_usd": data["spentUsd"],
         "remaining_usd": data["remainingUsd"],
         "allowed": data["allowed"],
+        "held_usd": data.get("heldUsd", "0.000000"),
     }
 
 
@@ -203,9 +213,50 @@ def _budget_check(data: Dict[str, Any]) -> BudgetCheck:
 
 
 @dataclass(frozen=True)
+class Reservation:
+    """A hold on part of the budgets, from ``reserve_budget()``."""
+
+    reservation_id: str
+    #: The amount held, as an exact decimal string.
+    amount_usd: str
+    run_id: Optional[str]
+    #: "held", "released", "settled", or "expired" once past expires_at.
+    status: str
+    expires_at: str
+
+
+@dataclass(frozen=True)
+class BudgetReservation:
+    """The answer to ``reserve_budget()``: the check, and the hold if allowed."""
+
+    check: BudgetCheck
+    #: None when denied: nothing is held.
+    reservation: Optional[Reservation]
+    #: True when this reservation ID was already used.
+    replayed: bool
+
+    @property
+    def allowed(self) -> bool:
+        return self.check.allowed
+
+
+def _reservation(data: Any) -> Reservation:
+    try:
+        return Reservation(
+            reservation_id=data["reservationId"],
+            amount_usd=data["amountUsd"],
+            run_id=data.get("runId"),
+            status=data["status"],
+            expires_at=data["expiresAt"],
+        )
+    except (KeyError, TypeError, AttributeError) as error:
+        raise CostTrackerError("Unexpected response") from error
+
+
+@dataclass(frozen=True)
 class RecordResult:
-    #: The stored cost in USD, as an exact decimal string.
-    cost_usd: str
+    #: The stored cost in USD, as an exact decimal string; None while unpriced.
+    cost_usd: Optional[str]
     #: True when this request ID was already recorded.
     replayed: bool
 
@@ -567,6 +618,47 @@ class CostTracker:
         if run is not None:
             payload["runId"] = run
         return _budget_check(self._post("/api/budget/check", payload, True))
+
+    def reserve_budget(
+        self,
+        estimated_cost_usd: Union[str, int, float, Decimal],
+        *,
+        reservation_id: str,
+        run_id: Optional[str] = None,
+        ttl_seconds: Optional[int] = None,
+    ) -> BudgetReservation:
+        """Holds ``estimated_cost_usd`` of the budgets for a step if it fits,
+        so concurrent steps can't overspend together. Settle the hold by
+        sending the step's usage with the same ``reservation_id``, or call
+        release_budget(). A denial has ``allowed=False`` and no reservation.
+        Retried after network errors, 429s and 5xx: the ID makes it safe."""
+        if isinstance(estimated_cost_usd, bool):
+            raise TypeError("estimated_cost_usd must be a number or a decimal string")
+        payload: Dict[str, Any] = {
+            "reservationId": reservation_id,
+            "estimatedCostUsd": (
+                format(estimated_cost_usd, "f") if isinstance(estimated_cost_usd, Decimal) else estimated_cost_usd
+            ),
+        }
+        run = run_id if run_id is not None else self._defaults.get("runId")
+        if run is not None:
+            payload["runId"] = run
+        if ttl_seconds is not None:
+            payload["ttlSeconds"] = ttl_seconds
+        data = self._post("/api/budget/reserve", payload, True)
+        if "reservation" not in data:
+            raise CostTrackerError("Unexpected response")
+        hold = data["reservation"]
+        return BudgetReservation(
+            check=_budget_check(data),
+            reservation=_reservation(hold) if hold is not None else None,
+            replayed=bool(data.get("replayed")),
+        )
+
+    def release_budget(self, reservation_id: str) -> Reservation:
+        """Ends a hold whose step didn't spend. Safe to repeat."""
+        data = self._post("/api/budget/release", {"reservationId": reservation_id}, True)
+        return _reservation(data.get("reservation"))
 
     def track(
         self,

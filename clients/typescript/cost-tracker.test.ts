@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { calculateCostUsd } from "@/lib/cost";
 import { budgetCheckPayloadSchema } from "@/lib/budget-check";
+import {
+  releasePayloadSchema,
+  reservePayloadSchema,
+} from "@/lib/budget-reservations";
 import { usagePayloadSchema } from "@/lib/usage";
 import {
   CostTrackerError,
@@ -849,5 +853,145 @@ describe("serviceTier", () => {
     expect(
       usagePayloadSchema.safeParse({ ...usage, serviceTier: "batch" }).success,
     ).toBe(true);
+  });
+});
+
+describe("reserveBudget and releaseBudget", () => {
+  const hold = {
+    reservationId: "run_42-step_3",
+    amountUsd: "0.250000",
+    runId: "run_42",
+    status: "held",
+    expiresAt: "2026-11-14T12:10:00.000Z",
+  };
+  const cap = {
+    capUsd: null,
+    spentUsd: "1.000000",
+    heldUsd: "0.250000",
+    remainingUsd: null,
+    allowed: true,
+  };
+  const answer = {
+    allowed: true,
+    reasons: [],
+    estimatedCostUsd: "0.250000",
+    month: { period: "2026-11", ...cap },
+    run: { runId: "run_42", ...cap },
+    reservation: hold,
+    replayed: false,
+  };
+  const bodyOf = (fetch: ReturnType<typeof setup>["fetch"], n = 0) => {
+    const [url, init] = fetch.mock.calls[n] as unknown as [string, RequestInit];
+    return { url, body: JSON.parse(init.body as string) };
+  };
+
+  it("reserves with a scoped tracker's run, and returns the hold", async () => {
+    const { tracker, fetch } = setup([Response.json(answer)]);
+    const run = tracker.with({ runId: "run_42", customerId: "cus_1" });
+    expect(
+      await run.reserveBudget({
+        reservationId: "run_42-step_3",
+        estimatedCostUsd: "0.25",
+        ttlSeconds: 120,
+      }),
+    ).toEqual(answer);
+    const { url, body } = bodyOf(fetch);
+    expect(url).toBe("https://costs.example.com/api/budget/reserve");
+    expect(body).toEqual({
+      reservationId: "run_42-step_3",
+      estimatedCostUsd: "0.25",
+      runId: "run_42",
+      ttlSeconds: 120,
+    });
+    expect(reservePayloadSchema.safeParse(body).success).toBe(true);
+  });
+
+  it("returns a denial with no hold", async () => {
+    const denied = {
+      ...answer,
+      allowed: false,
+      reasons: ["monthly_budget"],
+      reservation: null,
+    };
+    const { tracker } = setup([Response.json(denied)]);
+    const result = await tracker.reserveBudget({
+      reservationId: "s",
+      estimatedCostUsd: 5,
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.reservation).toBeNull();
+  });
+
+  it("retries a reservation, since its id makes that safe", async () => {
+    const { tracker, fetch } = setup([
+      failed(503, "unavailable"),
+      Response.json(answer),
+    ]);
+    vi.useFakeTimers();
+    try {
+      const result = tracker.reserveBudget({
+        reservationId: "s",
+        estimatedCostUsd: "0.25",
+      });
+      await vi.runAllTimersAsync();
+      expect((await result).reservation).toEqual(hold);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("throws a conflict, or for an unexpected response", async () => {
+    const { tracker } = setup([
+      failed(409, "reservation_conflict"),
+      Response.json({ allowed: true, month: {} }),
+    ]);
+    await expect(
+      tracker.reserveBudget({ reservationId: "s", estimatedCostUsd: "1" }),
+    ).rejects.toMatchObject({ status: 409, code: "reservation_conflict" });
+    await expect(
+      tracker.reserveBudget({ reservationId: "s", estimatedCostUsd: "1" }),
+    ).rejects.toThrow("Unexpected response");
+  });
+
+  it("releases a hold by its id", async () => {
+    const released = { ...hold, status: "released" };
+    const { tracker, fetch } = setup([
+      Response.json({ reservation: released }),
+      failed(404, "reservation_not_found"),
+    ]);
+    expect(await tracker.releaseBudget("run_42-step_3")).toEqual(released);
+    const { url, body } = bodyOf(fetch);
+    expect(url).toBe("https://costs.example.com/api/budget/release");
+    expect(body).toEqual({ reservationId: "run_42-step_3" });
+    expect(releasePayloadSchema.safeParse(body).success).toBe(true);
+    await expect(tracker.releaseBudget("nope")).rejects.toMatchObject({
+      status: 404,
+      code: "reservation_not_found",
+    });
+  });
+
+  it("settles a hold through record()", async () => {
+    const { tracker, fetch } = setup([stored()]);
+    await tracker.record({ ...usage, reservationId: "run_42-step_3" });
+    expect(bodyOf(fetch).body.reservationId).toBe("run_42-step_3");
+  });
+});
+
+describe("unpriced usage", () => {
+  it("returns a null cost instead of failing", async () => {
+    const { tracker } = setup([
+      Response.json(
+        {
+          event: { costUsd: null, pricingStatus: "unpriced" },
+          replayed: false,
+        },
+        { status: 201 },
+      ),
+    ]);
+    expect(await tracker.record(usage)).toEqual({
+      costUsd: null,
+      replayed: false,
+    });
   });
 });

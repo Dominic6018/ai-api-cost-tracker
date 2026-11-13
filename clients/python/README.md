@@ -129,7 +129,23 @@ except CostTrackerError:
     allowed = True  # fail open
 ```
 
-A check doesn't reserve the money: send each step's usage promptly so the next check sees it. `check_budget()` runs on the calling thread.
+A check doesn't reserve the money. To stop concurrent steps from overspending together, reserve instead ([details](../../README.md#reserving-budget)):
+
+```python
+hold = run.reserve_budget("0.25", reservation_id=f"{run_id}-step-{n}")
+if not hold.allowed:
+    stop_run()
+try:
+    response = call_model()
+    usage = usage_from_response(response)
+    usage.reservation_id = hold.reservation.reservation_id  # settles the hold
+    run.record(usage)
+except Exception:
+    run.release_budget(hold.reservation.reservation_id)
+    raise
+```
+
+`reserve_budget()` returns a `BudgetReservation` with the `check`, the `reservation` (`None` when denied) and `replayed`; each cap also has `held_usd`. Both calls are retried after network errors, 429s and 5xx, since the reservation ID makes a retry return the same hold. Holds expire after `ttl_seconds` (600 by default) if neither settled nor released. `check_budget()`, `reserve_budget()` and `release_budget()` run on the calling thread.
 
 ## How usage is read
 
