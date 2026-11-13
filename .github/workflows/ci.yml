@@ -594,6 +594,27 @@ jobs:
           grep -E 'all models.*\$0\.046000.*\$0\.006000.*-\$0\.040000.*CHECK' openai-reconcile.log
           if npm run --silent reconcile -- --provider openai --from "$TODAY" 2> reconcile-err.log; then exit 1; fi
           grep -q OPENAI_ADMIN_KEY reconcile-err.log
+
+          # The quickstarts and the sample app run as documented, after the
+          # reconciliation above so its daily totals aren't affected.
+          COST_TRACKER_API_KEY="$API_KEY_2" node examples/quickstart/quickstart.mjs | tee quickstart.log
+          grep -qxF 'Stored gpt-4.1: $0.002740' quickstart.log
+          COST_TRACKER_API_KEY="$API_KEY_2" python3 examples/quickstart/quickstart.py | tee quickstart.log
+          grep -qxF 'Stored claude-sonnet-5-5: $0.004250' quickstart.log
+          COST_TRACKER_API_KEY="$API_KEY_2" COST_TRACKER_READ_KEY="$READ_KEY" node examples/support-agent/app.mjs | tee sample.log
+          grep -qF 'T-202  triage failed' sample.log
+          grep -qxF 'Background reports: 3 sent, 0 failed, 0 dropped' sample.log
+          grep -qxF 'Stored 6 requests for 3 resolved tickets:' sample.log
+          grep -qxF '  cus_acme     $0.013980' sample.log
+          grep -qxF '  cus_globex   $0.004340' sample.log
+          grep -qxF '  Total        $0.018320' sample.log
+          SAMPLE=$(sed -n 's/^Run //p' sample.log)
+          # Holds were settled or released, and three tickets were resolved
+          test "$(psql "$DATABASE_URL" -tAc "SELECT string_agg(status, ',' ORDER BY reservation_key) FROM budget_reservations WHERE reservation_key LIKE '$SAMPLE-%'")" = "settled,settled,settled,released"
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM outcomes WHERE outcome_id LIKE '$SAMPLE-%' AND name = 'ticket_resolved'")" = 3
+          # Without a read key it stops after reporting
+          COST_TRACKER_API_KEY="$API_KEY_2" node examples/support-agent/app.mjs | tee sample.log
+          grep -qF 'Set COST_TRACKER_READ_KEY' sample.log
       - name: Demo data loads, refuses production, and removes cleanly
         run: |
           npm run db:demo | tee demo.log
