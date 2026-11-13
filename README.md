@@ -48,7 +48,7 @@ docker compose run --rm migrate npm run db:demo       # optional: four demo proj
 echo 'choose a long password' | docker compose run --rm -T migrate npm run --silent user -- create --email you@example.com
 ```
 
-Open http://localhost:3000 and sign in. To record real usage, create an API key ([Recording usage](#recording-usage)); remove the demo with `docker compose run --rm migrate npm run db:demo -- --remove`. For HTTPS, secrets and backups in production, see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+Open http://localhost:3000 and sign in. To record your first request and run the sample app, follow **[docs/QUICKSTART.md](docs/QUICKSTART.md)**; for real usage, create an API key ([Recording usage](#recording-usage)); remove the demo with `docker compose run --rm migrate npm run db:demo -- --remove`. For HTTPS, secrets and backups in production, see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
 ## Limitations
 
@@ -321,7 +321,7 @@ The sign-in page then shows **Sign in with …** above the password form; withou
 
 Each request is authenticated with a per-project API key. The key decides which project the usage belongs to.
 
-The [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients read usage from OpenAI, Anthropic and Gemini responses and report it for you, e.g. `tracker.track(openai.responses.create(...))`. Apps instrumented with OpenTelemetry can send their traces instead; see [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md). Anything else calls the API below.
+The [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients read usage from OpenAI, Anthropic and Gemini responses and report it for you, e.g. `tracker.track(openai.responses.create(...))`. Apps instrumented with OpenTelemetry can send their traces instead; see [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md). Anything else calls the API below. The [quickstart](docs/QUICKSTART.md) has runnable scripts and a [sample support agent](examples/support-agent/README.md) that need no provider keys.
 
 ### API keys
 
