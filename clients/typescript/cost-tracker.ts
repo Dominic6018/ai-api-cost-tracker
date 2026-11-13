@@ -228,7 +228,26 @@ export interface CostTrackerOptions {
   timeoutMs?: number;
   /** Retries after a network error, 429 or 5xx; defaults to 2. */
   retries?: number;
+  /**
+   * Background reports from `track()` waiting to be sent, at most;
+   * beyond this, new usage is dropped and reported to `onError` with code
+   * "queue_full", so a slow or unreachable tracker can't grow memory
+   * without bound. Defaults to 1000.
+   */
+  maxPending?: number;
   fetch?: typeof fetch;
+}
+
+/** How background reporting has gone since the tracker was created. */
+export interface DeliveryStats {
+  /** Reports the server accepted. */
+  sent: number;
+  /** Reports that failed after their retries; each went to `onError`. */
+  failed: number;
+  /** Usage not sent because too many reports were pending. */
+  dropped: number;
+  /** Reports still in flight. */
+  pending: number;
 }
 
 export interface TrackOptions extends Attribution {
@@ -284,6 +303,8 @@ export interface CostTracker {
   releaseBudget(reservationId: string): Promise<Reservation>;
   /** Waits for every background report, e.g. before a function exits. */
   flush(): Promise<void>;
+  /** Counts of background reports, shared by scoped trackers. */
+  stats(): DeliveryStats;
   /**
    * A tracker that adds this attribution to everything it records, e.g.
    * `tracker.with({ customerId })` once per request, and these tags to
@@ -524,6 +545,31 @@ export function usageFromResponse(response: unknown): Usage | null {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The longest wait between attempts, whatever Retry-After asks for. */
+const MAX_RETRY_DELAY_MS = 30_000;
+
+/**
+ * The wait before retry `attempt` (1, 2, ...): 250 ms, then 1 s, 4 s...,
+ * jittered to 50-100% so clients that failed together don't retry
+ * together, and at least what a 429's Retry-After asked for.
+ */
+export function retryDelayMs(
+  attempt: number,
+  retryAfterSeconds: number | null,
+  random: () => number = Math.random,
+): number {
+  const base = 250 * 4 ** (attempt - 1);
+  const jittered = base * (0.5 + random() * 0.5);
+  const asked = retryAfterSeconds !== null ? retryAfterSeconds * 1000 : 0;
+  return Math.min(Math.max(jittered, asked), MAX_RETRY_DELAY_MS);
+}
+
+/** Retry-After in seconds, when it's a plain number of seconds. */
+function retryAfter(response: Response): number | null {
+  const value = Number(response.headers.get("retry-after"));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 export function createCostTracker(options: CostTrackerOptions): CostTracker {
   const url = (path: string) => new URL(path, options.baseUrl).toString();
   const fetchImpl = options.fetch ?? globalThis.fetch;
@@ -534,6 +580,8 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
     ((error: unknown) =>
       console.warn("[cost-tracker] usage not recorded:", error));
   const pending = new Set<Promise<void>>();
+  const maxPending = options.maxPending ?? 1000;
+  const counts = { sent: 0, failed: 0, dropped: 0 };
 
   /**
    * POSTs a JSON body and returns the parsed response. Network errors, 429s
@@ -554,8 +602,10 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
     });
     const attempts = retryable ? retries + 1 : 1;
     let lastError: unknown;
+    let waitAtLeast: number | null = null;
     for (let attempt = 0; attempt < attempts; attempt++) {
-      if (attempt > 0) await sleep(250 * 4 ** (attempt - 1));
+      if (attempt > 0) await sleep(retryDelayMs(attempt, waitAtLeast));
+      waitAtLeast = null;
       let response: Response;
       try {
         response = await fetchImpl(url(path), {
@@ -583,6 +633,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
         error.code ?? null,
       );
       if (response.status !== 429 && response.status < 500) break;
+      if (response.status === 429) waitAtLeast = retryAfter(response);
     }
     throw lastError instanceof CostTrackerError
       ? lastError
@@ -703,9 +754,26 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       },
       defaults,
     );
+    if (pending.size >= maxPending) {
+      counts.dropped++;
+      onError(
+        new CostTrackerError(
+          `${maxPending} reports already pending; usage dropped`,
+          null,
+          "queue_full",
+        ),
+        tracked,
+      );
+      return response;
+    }
     const report = send(tracked).then(
-      () => {},
-      (error: unknown) => onError(error, tracked),
+      () => {
+        counts.sent++;
+      },
+      (error: unknown) => {
+        counts.failed++;
+        onError(error, tracked);
+      },
     );
     pending.add(report);
     void report.finally(() => pending.delete(report));
@@ -728,6 +796,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       reserveBudget: (options) => reserveBudget(options, defaults),
       releaseBudget,
       flush,
+      stats: () => ({ ...counts, pending: pending.size }),
       with: ({ tags, ...attribution }) =>
         scoped({
           ...withDefaults(attribution, defaults),

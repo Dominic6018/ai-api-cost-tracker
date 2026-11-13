@@ -49,6 +49,8 @@ createCostTracker({
 });
 ```
 
+**Delivery:** each report is retried after network errors, 429s and 5xx when it has a request ID, waiting 250 ms, then 1 s, jittered so many clients don't retry at once, and at least as long as a 429's `Retry-After` (at most 30 s). At most `maxPending` reports (default 1000) wait at once; beyond that, new usage is dropped and reported to `onError` with code `queue_full`, so an unreachable tracker can't grow memory without bound. `tracker.stats()` returns `{ sent, failed, dropped, pending }` since the tracker was created, shared by scoped trackers; watch `dropped` and `failed` to know whether usage is missing.
+
 To send usage yourself, `record()` posts one record and returns the stored cost. It throws a `CostTrackerError` (with `status` and `code`) if the usage isn't stored:
 
 ```ts

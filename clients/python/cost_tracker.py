@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import random
 import threading
 import time
 import urllib.error
@@ -33,6 +34,7 @@ __all__ = [
     "BudgetReservation",
     "CostTracker",
     "CostTrackerError",
+    "DeliveryStats",
     "MonthBudget",
     "OutcomeResult",
     "RecordResult",
@@ -251,6 +253,35 @@ def _reservation(data: Any) -> Reservation:
         )
     except (KeyError, TypeError, AttributeError) as error:
         raise CostTrackerError("Unexpected response") from error
+
+
+@dataclass(frozen=True)
+class DeliveryStats:
+    """How background reporting has gone since the tracker was created."""
+
+    #: Reports the server accepted.
+    sent: int
+    #: Reports that failed after their retries; each went to on_error.
+    failed: int
+    #: Usage not sent because too many reports were pending.
+    dropped: int
+    #: Reports still waiting or in flight.
+    pending: int
+
+
+class _Counts:
+    """Delivery counts, shared by a tracker and its scoped copies."""
+
+    def __init__(self) -> None:
+        self.sent = 0
+        self.failed = 0
+        self.dropped = 0
+
+
+def _retry_delay(attempt: int, rand: Callable[[], float] = random.random) -> float:
+    """Seconds before retry ``attempt`` (1, 2, ...): 0.25, then 1, 4...,
+    jittered to 50-100% so clients that failed together don't retry together."""
+    return min(0.25 * 4 ** (attempt - 1) * (0.5 + rand() * 0.5), 30.0)
 
 
 @dataclass(frozen=True)
@@ -475,6 +506,7 @@ class CostTracker:
         timeout: float = 10.0,
         retries: int = 2,
         transport: Optional[Transport] = None,
+        max_pending: int = 1000,
     ) -> None:
         self._base_url = base_url
         self._api_key = api_key
@@ -484,6 +516,9 @@ class CostTracker:
         self._transport = transport or _urllib_transport
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cost-tracker")
         self._pending: "set[Future[None]]" = set()
+        #: Background reports allowed at once; beyond this, usage is dropped.
+        self._max_pending = max_pending
+        self._counts = _Counts()
         self._lock = threading.Lock()
         #: Attribution added by with_attribution(), as API field names.
         self._defaults: Dict[str, str] = {}
@@ -525,7 +560,7 @@ class CostTracker:
         last_error: CostTrackerError = CostTrackerError("not sent")
         for attempt in range(attempts):
             if attempt > 0:
-                time.sleep(0.25 * 4 ** (attempt - 1))
+                time.sleep(_retry_delay(attempt))
             try:
                 status, raw = self._transport(urljoin(self._base_url, path), body, headers, self._timeout)
             except OSError as error:  # network errors and timeouts
@@ -704,17 +739,43 @@ class CostTracker:
             try:
                 self.record(usage)
             except Exception as error:  # never let reporting break the app
+                with self._lock:
+                    self._counts.failed += 1
                 self._on_error(error, usage)
+            else:
+                with self._lock:
+                    self._counts.sent += 1
 
-        future = self._executor.submit(report)
         with self._lock:
-            self._pending.add(future)
+            full = len(self._pending) >= self._max_pending
+            if full:
+                self._counts.dropped += 1
+            else:
+                future = self._executor.submit(report)
+                self._pending.add(future)
+        if full:
+            # A slow or unreachable tracker can't grow memory without bound.
+            self._on_error(
+                CostTrackerError(f"{self._max_pending} reports already pending; usage dropped", None, "queue_full"),
+                usage,
+            )
+            return response
         future.add_done_callback(self._forget)
         return response
 
     def _forget(self, future: "Future[None]") -> None:
         with self._lock:
             self._pending.discard(future)
+
+    def stats(self) -> DeliveryStats:
+        """Counts of background reports, shared by scoped trackers."""
+        with self._lock:
+            return DeliveryStats(
+                sent=self._counts.sent,
+                failed=self._counts.failed,
+                dropped=self._counts.dropped,
+                pending=len(self._pending),
+            )
 
     def flush(self, timeout: Optional[float] = None) -> None:
         """Waits for every background report, e.g. before a process exits."""
