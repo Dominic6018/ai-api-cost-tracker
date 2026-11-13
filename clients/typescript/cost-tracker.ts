@@ -284,6 +284,17 @@ export interface CostTracker {
     options?: TrackOptions,
   ): Promise<T>;
   /**
+   * Passes a streamed response's chunks through unchanged and reports its
+   * usage in the background once the stream has finished. Iterate what it
+   * returns instead of the stream. A stream that ends without its usage,
+   * or is stopped early, reports nothing and calls `onError` with code
+   * "no_usage" or "incomplete_stream". Stream errors reach you as usual.
+   */
+  trackStream<T>(
+    stream: AsyncIterable<T>,
+    options?: TrackOptions,
+  ): AsyncIterable<T>;
+  /**
    * Asks whether the project may spend `estimatedCostUsd` now, under its
    * monthly budget and, given a run ID, its run budget. A denial is a
    * result with `allowed: false`, not an error; failures throw
@@ -543,6 +554,56 @@ export function usageFromResponse(response: unknown): Usage | null {
   return null;
 }
 
+/**
+ * Collects usage from a streamed response's chunks, as they pass. Each
+ * provider reports a stream's usage once it's complete:
+ *
+ * - OpenAI Chat Completions: a last chunk with `usage`, only when the
+ *   request sets `stream_options: { include_usage: true }`.
+ * - OpenAI Responses: the `response.completed` (or `.incomplete`) event.
+ * - Anthropic Messages: `message_start` has the input counts and
+ *   `message_delta` the final output count.
+ * - Gemini: each chunk's `usageMetadata`; the last one has the totals.
+ *
+ * `usage(ended)` is null until the final usage has been seen, so a stream
+ * cut short is never reported with partial counts.
+ */
+export function streamUsage() {
+  let final: Usage | null = null;
+  let anthropic: AnyResponse | null = null;
+  let gemini: AnyResponse | null = null;
+  return {
+    push(chunk: unknown): void {
+      if (!chunk || typeof chunk !== "object") return;
+      const c = chunk as AnyResponse & {
+        response?: AnyResponse;
+        message?: AnyResponse;
+      };
+      if (c.object === "chat.completion.chunk" && c.usage) {
+        final = usageFromOpenAIChat(c);
+      } else if (
+        (c.type === "response.completed" || c.type === "response.incomplete") &&
+        c.response
+      ) {
+        final = usageFromOpenAIResponse(c.response);
+      } else if (c.type === "message_start" && c.message) {
+        anthropic = { ...c.message, usage: { ...c.message.usage } };
+      } else if (c.type === "message_delta" && c.usage && anthropic) {
+        // The delta's counts are cumulative; they replace the start's.
+        anthropic = { ...anthropic, usage: { ...anthropic.usage, ...c.usage } };
+        final = usageFromAnthropic(anthropic);
+      } else if (c.usageMetadata) {
+        gemini = c;
+      }
+    },
+    /** The stream's usage, if complete; Gemini's needs the stream ended. */
+    usage(ended: boolean): Usage | null {
+      if (final) return final;
+      return ended && gemini ? usageFromGemini(gemini) : null;
+    },
+  };
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The longest wait between attempts, whatever Retry-After asks for. */
@@ -740,6 +801,53 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       onError(new CostTrackerError("No usage in response", null, null), null);
       return response;
     }
+    report(usage, trackOptions, defaults);
+    return response;
+  }
+
+  async function* trackStream<T>(
+    stream: AsyncIterable<T>,
+    trackOptions: TrackOptions,
+    defaults: Scope,
+  ): AsyncGenerator<T> {
+    const collected = streamUsage();
+    let ended = false;
+    try {
+      for await (const chunk of stream) {
+        collected.push(chunk);
+        yield chunk;
+      }
+      ended = true;
+    } finally {
+      // Runs when the stream ends, fails, or the caller stops early.
+      const usage = collected.usage(ended);
+      if (usage) {
+        report(usage, trackOptions, defaults);
+      } else {
+        onError(
+          ended
+            ? new CostTrackerError(
+                "No usage in stream (OpenAI Chat Completions need stream_options.include_usage)",
+                null,
+                "no_usage",
+              )
+            : new CostTrackerError(
+                "Stream ended before its usage arrived",
+                null,
+                "incomplete_stream",
+              ),
+          null,
+        );
+      }
+    }
+  }
+
+  /** Applies track options and sends in the background, within the bound. */
+  function report(
+    usage: Usage,
+    trackOptions: TrackOptions,
+    defaults: Scope,
+  ): void {
     const { model, provider, metadata, tags, serviceTier, ...attribution } =
       trackOptions;
     const tracked = usageWithDefaults(
@@ -764,9 +872,9 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
         ),
         tracked,
       );
-      return response;
+      return;
     }
-    const report = send(tracked).then(
+    const sending = send(tracked).then(
       () => {
         counts.sent++;
       },
@@ -775,9 +883,8 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
         onError(error, tracked);
       },
     );
-    pending.add(report);
-    void report.finally(() => pending.delete(report));
-    return response;
+    pending.add(sending);
+    void sending.finally(() => pending.delete(sending));
   }
 
   async function flush(): Promise<void> {
@@ -792,6 +899,8 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
       recordOutcome: (outcome) => sendOutcome(withDefaults(outcome, defaults)),
       track: (responseOrPromise, trackOptions = {}) =>
         track(responseOrPromise, trackOptions, defaults),
+      trackStream: (stream, trackOptions = {}) =>
+        trackStream(stream, trackOptions, defaults),
       checkBudget: (options = {}) => checkBudget(options, defaults),
       reserveBudget: (options) => reserveBudget(options, defaults),
       releaseBudget,

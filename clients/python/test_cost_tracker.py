@@ -1,5 +1,6 @@
 """Tests for cost_tracker.py. Run: python -m unittest discover -s clients/python"""
 
+import asyncio
 import json
 import threading
 import unittest
@@ -19,6 +20,7 @@ from cost_tracker import (
     RecordResult,
     Reservation,
     RunBudget,
+    StreamUsage,
     Usage,
     usage_from_response,
 )
@@ -803,3 +805,152 @@ class DeliveryTest(unittest.TestCase):
         tracker.flush(5)
         self.assertEqual(tracker.stats().failed, 1)
         self.assertEqual(len(errors), 1)
+
+
+STREAMS = {
+    "openai_chat": [
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "model": "gpt-4.1", "choices": [], "usage": None},
+        {
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "model": "gpt-4.1",
+            "choices": [],
+            "usage": {"prompt_tokens": 1200, "completion_tokens": 300, "prompt_tokens_details": {"cached_tokens": 1024}},
+        },
+    ],
+    "openai_responses": [
+        {"type": "response.output_text.delta", "delta": "Hi"},
+        {
+            "type": "response.completed",
+            "response": {
+                "id": "resp_1",
+                "object": "response",
+                "model": "gpt-5.4-mini",
+                "usage": {"input_tokens": 2000, "output_tokens": 700, "input_tokens_details": {"cached_tokens": 512}},
+            },
+        },
+    ],
+    "anthropic": [
+        {
+            "type": "message_start",
+            "message": {
+                "id": "msg_1",
+                "type": "message",
+                "model": "claude-sonnet-5-5",
+                "usage": {
+                    "input_tokens": 50,
+                    "cache_read_input_tokens": 8000,
+                    "cache_creation_input_tokens": 2000,
+                    "output_tokens": 1,
+                },
+            },
+        },
+        {"type": "content_block_delta", "delta": {"text": "Hi"}},
+        {"type": "message_delta", "usage": {"output_tokens": 400}},
+        {"type": "message_stop"},
+    ],
+    "gemini": [
+        {"responseId": "g1", "modelVersion": "gemini-2.5-pro", "usageMetadata": {"promptTokenCount": 100}},
+        {
+            "responseId": "g1",
+            "modelVersion": "gemini-2.5-pro",
+            "usageMetadata": {"promptTokenCount": 100, "candidatesTokenCount": 40, "thoughtsTokenCount": 10},
+        },
+    ],
+}
+
+
+def _collect(chunks, ended=True):
+    collected = StreamUsage()
+    for chunk in chunks:
+        collected.push(chunk)
+    return collected.usage(ended)
+
+
+class StreamUsageTest(unittest.TestCase):
+    def test_reads_each_providers_final_usage(self):
+        chat = _collect(STREAMS["openai_chat"])
+        self.assertEqual((chat.input_tokens, chat.output_tokens, chat.cached_input_tokens), (1200, 300, 1024))
+        responses = _collect(STREAMS["openai_responses"])
+        self.assertEqual((responses.input_tokens, responses.output_tokens, responses.request_id), (2000, 700, "resp_1"))
+        anthropic = _collect(STREAMS["anthropic"])
+        self.assertEqual(
+            (anthropic.input_tokens, anthropic.output_tokens, anthropic.cached_input_tokens, anthropic.request_id),
+            (10050, 400, 8000, "msg_1"),
+        )
+        gemini = _collect(STREAMS["gemini"])
+        self.assertEqual((gemini.input_tokens, gemini.output_tokens), (100, 50))
+
+    def test_reads_sdk_objects(self):
+        start = Obj(
+            type="message_start",
+            message=Obj(
+                id="msg_2",
+                model="claude-sonnet-5-5",
+                usage=Obj(input_tokens=10, output_tokens=1, cache_read_input_tokens=None),
+            ),
+        )
+        delta = Obj(type="message_delta", usage=Obj(output_tokens=7))
+        usage = _collect([start, delta])
+        self.assertEqual((usage.input_tokens, usage.output_tokens, usage.request_id), (10, 7, "msg_2"))
+
+    def test_has_nothing_for_a_stream_cut_short(self):
+        self.assertIsNone(_collect(STREAMS["anthropic"][:2]))
+        self.assertIsNone(_collect(STREAMS["gemini"], ended=False))
+        self.assertIsNone(_collect(STREAMS["openai_chat"][:1]))
+
+
+@mock.patch("cost_tracker.time.sleep", lambda seconds: None)
+class TrackStreamTest(unittest.TestCase):
+    def test_passes_chunks_through_and_reports_once_it_ends(self):
+        tracker, transport, errors = make(stored())
+        scoped = tracker.with_attribution(customer_id="cus_1")
+        seen = list(scoped.track_stream(iter(STREAMS["anthropic"]), feature="chat"))
+        self.assertEqual(seen, STREAMS["anthropic"])
+        tracker.flush(5)
+        body = transport.calls[0][1]
+        self.assertEqual(
+            (body["provider"], body["outputTokens"], body["customerId"], body["feature"]),
+            ("anthropic", 400, "cus_1", "chat"),
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(tracker.stats().sent, 1)
+
+    def test_reports_nothing_for_a_stream_without_usage(self):
+        tracker, transport, errors = make()
+        list(tracker.track_stream(iter(STREAMS["openai_chat"][:1])))
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(errors[0][0].code, "no_usage")
+
+    def test_reports_nothing_when_stopped_early(self):
+        tracker, transport, errors = make()
+        stream = tracker.track_stream(iter(STREAMS["anthropic"]))
+        next(stream)
+        stream.close()
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(errors[0][0].code, "incomplete_stream")
+
+    def test_passes_the_streams_error_to_the_caller(self):
+        tracker, _, errors = make()
+
+        def failing():
+            yield STREAMS["anthropic"][0]
+            raise ConnectionError("connection reset")
+
+        with self.assertRaises(ConnectionError):
+            list(tracker.track_stream(failing()))
+        self.assertEqual(errors[0][0].code, "incomplete_stream")
+
+    def test_reads_an_async_stream(self):
+        tracker, transport, _ = make(stored())
+
+        async def chunks():
+            for chunk in STREAMS["gemini"]:
+                yield chunk
+
+        async def read():
+            return [chunk async for chunk in tracker.track_async_stream(chunks())]
+
+        self.assertEqual(asyncio.run(read()), STREAMS["gemini"])
+        tracker.flush(5)
+        self.assertEqual(transport.calls[0][1]["provider"], "google")
