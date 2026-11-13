@@ -9,6 +9,7 @@ import { usagePayloadSchema } from "@/lib/usage";
 import {
   CostTrackerError,
   createCostTracker,
+  retryDelayMs,
   usageFromResponse,
   type Usage,
 } from "./cost-tracker";
@@ -993,5 +994,82 @@ describe("unpriced usage", () => {
       costUsd: null,
       replayed: false,
     });
+  });
+});
+
+describe("delivery", () => {
+  it("jitters retry delays and honors Retry-After, within a cap", () => {
+    expect(retryDelayMs(1, null, () => 0)).toBe(125);
+    expect(retryDelayMs(1, null, () => 1)).toBe(250);
+    expect(retryDelayMs(2, null, () => 1)).toBe(1000);
+    expect(retryDelayMs(1, 3, () => 0)).toBe(3000);
+    expect(retryDelayMs(1, 600, () => 0)).toBe(30_000);
+    expect(retryDelayMs(9, null, () => 1)).toBe(30_000);
+  });
+
+  it("waits as long as a 429 asks before retrying", async () => {
+    const { tracker, fetch } = setup([
+      Response.json(
+        { error: { code: "rate_limited", message: "slow down" } },
+        { status: 429, headers: { "retry-after": "2" } },
+      ),
+      stored(),
+    ]);
+    vi.useFakeTimers();
+    try {
+      const result = tracker.record(usage);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await result;
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops usage past maxPending, counting it, and never throws", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fetch = vi.fn(async () => {
+      await gate;
+      return stored();
+    });
+    const onError = vi.fn();
+    const tracker = createCostTracker({
+      baseUrl: "https://costs.example.com",
+      apiKey: "act_test",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      onError,
+      maxPending: 2,
+    });
+    const response = { ...anthropic, id: "msg_1" };
+    for (let i = 0; i < 3; i++) await tracker.track(response);
+    expect(tracker.stats()).toEqual({
+      sent: 0,
+      failed: 0,
+      dropped: 1,
+      pending: 2,
+    });
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "queue_full" }),
+      expect.objectContaining({ provider: "anthropic" }),
+    );
+    release();
+    await tracker.flush();
+    expect(tracker.with({ customerId: "c" }).stats()).toEqual({
+      sent: 2,
+      failed: 0,
+      dropped: 1,
+      pending: 0,
+    });
+  });
+
+  it("counts reports that failed after their retries", async () => {
+    const { tracker, onError } = setup([failed(400, "invalid_payload")]);
+    await tracker.track(anthropic);
+    await tracker.flush();
+    expect(tracker.stats()).toMatchObject({ sent: 0, failed: 1 });
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });

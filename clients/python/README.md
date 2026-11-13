@@ -41,6 +41,8 @@ Responses can be SDK objects (OpenAI, Anthropic, google-genai) or the JSON dicts
 CostTracker(base_url, api_key, on_error=lambda error, usage: log.warning("not recorded: %s", error))
 ```
 
+**Delivery:** each report is retried after network errors, 429s and 5xx when it has a request ID, waiting 0.25 s, then 1 s, jittered so many clients don't retry at once (at most 30 s). At most `max_pending` reports (default 1000) wait at once; beyond that, new usage is dropped and reported to `on_error` with code `queue_full`, so an unreachable tracker can't grow memory without bound. `tracker.stats()` returns a `DeliveryStats` with `sent`, `failed`, `dropped` and `pending` since the tracker was created, shared by scoped trackers. Unlike the TypeScript client, it doesn't read `Retry-After`.
+
 To send usage yourself, `record()` posts one record and returns the stored cost. It raises `CostTrackerError` (with `status` and `code`) if the usage isn't stored:
 
 ```python

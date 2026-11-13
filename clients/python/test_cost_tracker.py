@@ -13,6 +13,7 @@ from cost_tracker import (
     BudgetReservation,
     CostTracker,
     CostTrackerError,
+    DeliveryStats,
     MonthBudget,
     OutcomeResult,
     RecordResult,
@@ -21,6 +22,8 @@ from cost_tracker import (
     Usage,
     usage_from_response,
 )
+
+from cost_tracker import _retry_delay  # noqa: E402
 
 # Response bodies trimmed to the fields that matter, in each API's shape.
 OPENAI_CHAT = {
@@ -759,3 +762,44 @@ class ReserveBudgetTest(unittest.TestCase):
     def test_returns_a_null_cost_for_unpriced_usage(self):
         tracker, _, _ = make(stored(cost=None))
         self.assertEqual(tracker.record(USAGE), RecordResult(None, False))
+
+
+class DeliveryTest(unittest.TestCase):
+    def test_jitters_retry_delays_within_a_cap(self):
+        self.assertEqual(_retry_delay(1, lambda: 0), 0.125)
+        self.assertEqual(_retry_delay(1, lambda: 1), 0.25)
+        self.assertEqual(_retry_delay(2, lambda: 1), 1.0)
+        self.assertEqual(_retry_delay(9, lambda: 1), 30.0)
+
+    def test_drops_usage_past_max_pending_and_counts_it(self):
+        gate = threading.Event()
+
+        def slow_transport(url, body, headers, timeout):
+            gate.wait(5)
+            return stored()
+
+        errors = []
+        tracker = CostTracker(
+            "https://costs.example.com",
+            "act_test",
+            transport=slow_transport,
+            on_error=lambda error, usage: errors.append((error, usage)),
+            max_pending=2,
+        )
+        for _ in range(3):
+            self.assertIs(tracker.track(ANTHROPIC), ANTHROPIC)
+        self.assertEqual(tracker.stats(), DeliveryStats(sent=0, failed=0, dropped=1, pending=2))
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0][0].code, "queue_full")
+        gate.set()
+        tracker.flush(5)
+        scoped = tracker.with_attribution(customer_id="c")
+        self.assertEqual(scoped.stats(), DeliveryStats(sent=2, failed=0, dropped=1, pending=0))
+        tracker.close()
+
+    def test_counts_reports_that_failed(self):
+        tracker, _, errors = make(failed(400, "invalid_payload"))
+        tracker.track(ANTHROPIC)
+        tracker.flush(5)
+        self.assertEqual(tracker.stats().failed, 1)
+        self.assertEqual(len(errors), 1)
