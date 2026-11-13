@@ -131,7 +131,7 @@ Numbers people can trust, before anything is built on them. Details and evidence
 - [x] Reserve and release budget from the TypeScript and Python clients (#145)
 - [x] Reliable client delivery: a bounded queue with backoff, and counts of dropped usage (#147)
 - [x] Usage from streamed responses, without changing what the app receives (#149)
-- [ ] Count a request once when a client and OpenTelemetry (or a gateway) both report it
+- [x] Count a request once when a client and OpenTelemetry (or a gateway) both report it (#151)
 - [ ] Quickstarts that run end to end, and a sample app
 
 ## Milestone 13: Billing, credits and profitability

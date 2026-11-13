@@ -109,6 +109,9 @@ function tokens(
   return undefined;
 }
 
+/** The usage API's limit on requestId. */
+const MAX_REQUEST_ID_LENGTH = 200;
+
 function text(attrs: Map<string, AttributeValue>, ...names: string[]) {
   for (const name of names) {
     const value = attrs.get(name);
@@ -246,6 +249,9 @@ export function genAiUsageFromOtlp(body: unknown): OtlpParseResult {
           "gen_ai.system",
         );
         const traceId = typeof span.traceId === "string" ? span.traceId : "";
+        // The provider's response ID is what the clients send as requestId,
+        // so a request reported both ways is stored once.
+        const responseId = text(attrs, "gen_ai.response.id");
         spans.push({
           spanId,
           payload: {
@@ -257,8 +263,12 @@ export function genAiUsageFromOtlp(body: unknown): OtlpParseResult {
             outputTokens: output ?? 0,
             cachedInputTokens: cacheRead,
             cacheWriteInputTokens: cacheWrite,
-            // Collectors retry exports, so the span identifies the record.
-            requestId: `otel:${traceId}:${spanId}`,
+            // Collectors retry exports, so the span identifies the record
+            // when there's no response ID to use.
+            requestId:
+              responseId && responseId.length <= MAX_REQUEST_ID_LENGTH
+                ? responseId
+                : `otel:${traceId}:${spanId}`,
             ...attribution(attrs, resource),
             ...tags(attrs, resource),
             occurredAt:

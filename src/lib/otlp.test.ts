@@ -84,6 +84,35 @@ describe("genAiUsageFromOtlp", () => {
     });
   });
 
+  it("uses the provider's response ID, so clients and spans match", () => {
+    const withId = span(
+      "aaa19b7ec3c1b174",
+      ["gen_ai.provider.name", "anthropic"],
+      ["gen_ai.request.model", "claude-sonnet-5-5"],
+      ["gen_ai.response.id", "msg_01XFDUDYJgAACzvnptvVoYEL"],
+      ["gen_ai.usage.input_tokens", 10],
+      ["gen_ai.usage.output_tokens", 5],
+    );
+    const tooLong = span(
+      "bbb19b7ec3c1b174",
+      ["gen_ai.provider.name", "anthropic"],
+      ["gen_ai.request.model", "claude-sonnet-5-5"],
+      ["gen_ai.response.id", "x".repeat(201)],
+      ["gen_ai.usage.input_tokens", 10],
+      ["gen_ai.usage.output_tokens", 5],
+    );
+    const result = genAiUsageFromOtlp(exportOf(withId, tooLong));
+    if (!result.ok) throw new Error("expected spans");
+    expect(result.spans.map((s) => s.payload.requestId)).toEqual([
+      "msg_01XFDUDYJgAACzvnptvVoYEL",
+      "otel:5b8efff798038103d269b633813fc60c:bbb19b7ec3c1b174",
+    ]);
+    // The trace and span stay in the metadata either way.
+    expect(result.spans[0].payload.metadata).toMatchObject({
+      spanId: "aaa19b7ec3c1b174",
+    });
+  });
+
   it("produces payloads the usage API accepts", () => {
     const result = genAiUsageFromOtlp(exportOf(chat));
     if (!result.ok) throw new Error("expected ok");

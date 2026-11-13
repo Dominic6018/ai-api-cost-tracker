@@ -58,7 +58,7 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=authorization=Bearer%20act_your_key
 | Cached input  | `gen_ai.usage.cache_read.input_tokens`                                                                                                                                            |
 | Cache writes  | `gen_ai.usage.cache_creation.input_tokens`                                                                                                                                        |
 | Time          | The span's end time                                                                                                                                                               |
-| Request ID    | `otel:<traceId>:<spanId>`, so a Collector retrying an export doesn't store a span twice                                                                                           |
+| Request ID    | `gen_ai.response.id` when the span has one, else `otel:<traceId>:<spanId>`; either way a Collector retrying an export doesn't store a span twice                                  |
 | Customer      | `cost_tracker.customer_id`                                                                                                                                                        |
 | User          | `cost_tracker.user_id`, else the standard `user.id`, else the deprecated `enduser.id`                                                                                             |
 | Feature       | `cost_tracker.feature`                                                                                                                                                            |
@@ -71,6 +71,12 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=authorization=Bearer%20act_your_key
 - **Only model calls are counted.** Spans whose `gen_ai.operation.name` is `invoke_agent`, `create_agent`, `invoke_workflow`, `execute_tool` or `retrieval` are skipped, because their usage sums up the model calls inside them.
 - **Cache traffic is part of input**, as the conventions specify. If an instrumentation reports cache reads and writes outside `input_tokens` (more cache tokens than input), they're added back.
 - **The requested model is priced**, because responses often name dated snapshots (`gpt-4.1-2025-04-14`) that have no price of their own.
+
+## Reported twice
+
+If the same call is reported by one of the clients and by an OpenTelemetry span, it's stored once. The clients send the provider's response ID (`chatcmpl-...`, `msg_...`, Gemini's `responseId`) as the request ID, and so does a span with `gen_ai.response.id`, which most GenAI instrumentations set. The second report replays the first. Whichever arrives first is kept: if the second one differs, for example because it names the dated model rather than the alias, it's a `request_id_conflict` and isn't stored, so the cost is never counted twice. Conflicts show on [`/ingestion`](../README.md#ingestion-health). A span without `gen_ai.response.id` can't be matched, so instrument a call one way or the other, not both.
+
+A gateway such as LiteLLM that reports through the API should send the provider's response ID as `requestId` for the same effect.
 
 ## Responses
 
