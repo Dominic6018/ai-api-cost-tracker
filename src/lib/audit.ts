@@ -36,6 +36,9 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "billing.customer_created": "Added billing customer",
   "billing.adjusted": "Adjusted billing",
   "billing.reversed": "Reversed billing entry",
+  "billing.plan_created": "Added billing plan",
+  "billing.subscribed": "Changed billing plan",
+  "billing.unsubscribed": "Ended billing plan",
 };
 
 const PROJECT_FIELDS = [

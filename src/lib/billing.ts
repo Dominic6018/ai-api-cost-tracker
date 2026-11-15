@@ -116,3 +116,115 @@ export function ledgerEntryAudit(entry: {
     organizationId: entry.organizationId,
   };
 }
+
+/**
+ * A non-negative USD amount such as a plan's fee, in micro-dollars: up to
+ * six decimals, zero allowed.
+ */
+export function parsePlanAmount(text: string, label: string): Parsed<bigint> {
+  const match = /^(\d+)(?:\.(\d{1,6}))?$/.exec(text.trim());
+  if (!match) {
+    return {
+      ok: false,
+      error: `${label} isn't a USD amount with up to 6 decimals: "${text}"`,
+    };
+  }
+  const [, whole, fraction = ""] = match;
+  const micros = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, "0"));
+  if (micros > MAX_ENTRY_MICROS) {
+    return { ok: false, error: `${label} is over $99,999,999.999999.` };
+  }
+  return { ok: true, value: micros };
+}
+
+/**
+ * How usage is charged, as a multiple of its AI API cost: "1.25" charges
+ * cost plus 25%, "1" at cost, "0" not at all. Up to four decimals, kept
+ * as the exact decimal string the database stores.
+ */
+export function parseUsageMultiplier(text: string): Parsed<string> {
+  const match = /^(\d{1,6})(?:\.(\d{1,4}))?$/.exec(text.trim());
+  if (!match) {
+    return {
+      ok: false,
+      error: `The usage multiplier is a number up to 999999.9999 with up to 4 decimals: "${text}"`,
+    };
+  }
+  const [, whole, fraction = ""] = match;
+  return { ok: true, value: `${BigInt(whole)}.${fraction.padEnd(4, "0")}` };
+}
+
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function parsePlanSlug(value: string): Parsed<string> {
+  const slug = value.trim();
+  if (!SLUG.test(slug) || slug.length > 64) {
+    return {
+      ok: false,
+      error: `A plan slug is lowercase letters and digits joined by "-", up to 64 characters: "${value}"`,
+    };
+  }
+  return { ok: true, value: slug };
+}
+
+export const parsePlanName = (value: string) =>
+  text(value, "The plan name", MAX_CUSTOMER_NAME_LENGTH);
+
+/** A billing month, "2026-12", as the date it starts: "2026-12-01". */
+export function parseBillingMonth(value: string): Parsed<string> {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value.trim());
+  if (!match) {
+    return { ok: false, error: `A month is written YYYY-MM: "${value}"` };
+  }
+  return { ok: true, value: `${match[1]}-${match[2]}-01` };
+}
+
+/** The first day of the UTC month `now` is in, e.g. "2026-11-01". */
+export function monthStart(now: Date): string {
+  return `${now.toISOString().slice(0, 7)}-01`;
+}
+
+/** "2026-12-01" as "2026-12". */
+export const monthLabel = (startsOn: string) => startsOn.slice(0, 7);
+
+export function planCreatedEntry(plan: {
+  slug: string;
+  name: string;
+  monthlyFeeUsd: string;
+  includedUsageUsd: string;
+  usageMultiplier: string;
+  organizationId: string;
+}): AuditEntry {
+  return {
+    action: "billing.plan_created",
+    target: plan.slug,
+    details: {
+      name: plan.name,
+      monthlyFeeUsd: plan.monthlyFeeUsd,
+      includedUsageUsd: plan.includedUsageUsd,
+      usageMultiplier: plan.usageMultiplier,
+    },
+    organizationId: plan.organizationId,
+  };
+}
+
+/** A plan change: subscribing (with a plan) or unsubscribing (without). */
+export function subscriptionEntry(change: {
+  customerExternalId: string;
+  planSlug: string | null;
+  from: string;
+  /** Scheduled subscriptions this one replaced, from `from` on. */
+  replaced: number;
+  organizationId: string;
+}): AuditEntry {
+  return {
+    action: change.planSlug ? "billing.subscribed" : "billing.unsubscribed",
+    target: change.customerExternalId,
+    details: {
+      ...(change.planSlug && { plan: change.planSlug }),
+      from: monthLabel(change.from),
+      replaced: change.replaced,
+    },
+    organizationId: change.organizationId,
+  };
+}

@@ -661,6 +661,27 @@ jobs:
           if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE billing_ledger_entries SET amount_usd = 1 WHERE id = '$ENTRY'"; then exit 1; fi
           if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM billing_ledger_entries WHERE id = '$ENTRY'"; then exit 1; fi
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action LIKE 'billing.%' AND target = '$C'")" = 4
+          # Plans: exact terms, changes by month, never in the past
+          THIS=$(date -u +%Y-%m); FIRST="$THIS-01"
+          NEXT=$(date -u -d "$FIRST +1 month" +%Y-%m)
+          LAST=$(date -u -d "$FIRST -1 month" +%Y-%m)
+          P="ci-$GITHUB_RUN_ID"
+          npm run --silent billing -- plan-add --plan "$P" --name "CI plan" --fee 49 --included 20.5 --multiplier 1.25 | tee plan.log
+          grep -qF 'usage at 1.2500 x AI API cost' plan.log
+          npm run --silent billing -- plan-add --plan "$P-team" --name "CI team" --fee 199.999999 --included 0 --multiplier 1
+          if npm run --silent billing -- plan-add --plan "$P" --name "Again" --fee 1 --included 0 --multiplier 1; then exit 1; fi
+          if npm run --silent billing -- plan-add --plan "$P-x" --name "Too precise" --fee 1 --included 0 --multiplier 1.23456; then exit 1; fi
+          npm run --silent billing -- subscribe --customer "$C" --plan "$P"
+          npm run --silent billing -- subscribe --customer "$C" --plan "$P-team" --from "$NEXT"
+          if npm run --silent billing -- subscribe --customer "$C" --plan "$P" --from "$LAST" 2> past.log; then exit 1; fi
+          grep -qF 'Plans change from the current month' past.log
+          if npm run --silent billing -- subscribe --customer "$C" --plan "$P-team" --from "$NEXT"; then exit 1; fi
+          npm run --silent billing -- customers | grep -qF "$C  CI customer  balance -\$2.500000  3 entries  plan $P"
+          npm run --silent billing -- plans | grep -qF "$P  CI plan  fee \$49.000000  included \$20.500000  multiplier 1.2500  1 customer(s) this month"
+          npm run --silent billing -- ledger --customer "$C" | tee ledger.log
+          grep -qxF "plan $P-team from $NEXT" ledger.log
+          grep -qxF "plan $P from $THIS until $NEXT" ledger.log
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action IN ('billing.plan_created', 'billing.subscribed') AND (target = '$C' OR target LIKE '$P%')")" = 4
       - name: Budget alerts reach a signed webhook once per threshold
         run: |
           # A local receiver that checks each request's HMAC signature.
