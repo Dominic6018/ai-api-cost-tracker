@@ -3,6 +3,13 @@ import {
   customerCreatedEntry,
   formatEntryUsd,
   ledgerEntryAudit,
+  monthLabel,
+  monthStart,
+  parseBillingMonth,
+  parsePlanAmount,
+  parsePlanSlug,
+  parseUsageMultiplier,
+  subscriptionEntry,
   parseCustomerExternalId,
   parseEntryAmount,
   parseEntryDescription,
@@ -108,6 +115,70 @@ describe("audit entries", () => {
         description: "Charged twice",
         reversesEntryId: "e1",
       },
+      organizationId: "org",
+    });
+  });
+});
+
+describe("plan fields", () => {
+  it("reads fees and allowances exactly, zero allowed", () => {
+    expect(parsePlanAmount("49", "The fee")).toEqual({
+      ok: true,
+      value: 49_000_000n,
+    });
+    expect(parsePlanAmount("0", "The fee")).toEqual({ ok: true, value: 0n });
+    for (const text of ["-1", "0.0000001", "100000000", "$5", ""]) {
+      expect(parsePlanAmount(text, "The fee").ok, text).toBe(false);
+    }
+  });
+
+  it("keeps the usage multiplier as an exact decimal", () => {
+    expect(parseUsageMultiplier("1.25")).toEqual({ ok: true, value: "1.2500" });
+    expect(parseUsageMultiplier("0")).toEqual({ ok: true, value: "0.0000" });
+    expect(parseUsageMultiplier("007")).toEqual({ ok: true, value: "7.0000" });
+    for (const text of ["1.23456", "-1", "1e2", "1000000", ""]) {
+      expect(parseUsageMultiplier(text).ok, text).toBe(false);
+    }
+  });
+
+  it("accepts slugs like project slugs", () => {
+    expect(parsePlanSlug("pro-2026")).toEqual({ ok: true, value: "pro-2026" });
+    for (const text of ["Pro", "pro_plan", "-pro", "pro-", "a".repeat(65)]) {
+      expect(parsePlanSlug(text).ok, text).toBe(false);
+    }
+  });
+});
+
+describe("billing months", () => {
+  it("reads YYYY-MM as the first of the month", () => {
+    expect(parseBillingMonth("2026-12")).toEqual({
+      ok: true,
+      value: "2026-12-01",
+    });
+    for (const text of ["2026-13", "2026-1", "2026-12-01", "Dec 2026"]) {
+      expect(parseBillingMonth(text).ok, text).toBe(false);
+    }
+  });
+
+  it("finds the current UTC month", () => {
+    expect(monthStart(new Date("2026-11-30T23:59:59Z"))).toBe("2026-11-01");
+    expect(monthStart(new Date("2026-12-01T00:00:00Z"))).toBe("2026-12-01");
+    expect(monthLabel("2026-12-01")).toBe("2026-12");
+  });
+
+  it("audits plan changes with the month", () => {
+    expect(
+      subscriptionEntry({
+        customerExternalId: "cus_42",
+        planSlug: null,
+        from: "2027-01-01",
+        replaced: 1,
+        organizationId: "org",
+      }),
+    ).toEqual({
+      action: "billing.unsubscribed",
+      target: "cus_42",
+      details: { from: "2027-01", replaced: 1 },
       organizationId: "org",
     });
   });

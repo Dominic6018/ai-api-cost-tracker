@@ -12,8 +12,27 @@ Nothing moves between them on its own. A charge to a customer is never derived f
 - **Customers** per organization, keyed by the `customerId` their usage and outcomes are attributed to, with a name.
 - **Ledger entries** for a customer: an **adjustment** (a charge, positive, or a credit, negative) or a **reversal**, which cancels one earlier entry.
 - **Balances**: the sum of a customer's entries. Positive means the customer owes you; negative means you owe them.
+- **Plans** and which customer is on which plan in each month (below).
 
-Plans, included allowances and charges for metered usage are next on the [roadmap](ROADMAP.md); they'll post to this ledger. There's no invoicing or payment collection.
+Charges for metered usage are next on the [roadmap](ROADMAP.md): each month, they'll post a customer's fee and usage beyond the allowance to this ledger, on the terms of the plan they were on. Until then, plans record terms and post nothing. There's no invoicing or payment collection.
+
+## Plans
+
+A plan has three terms, set when it's created:
+
+| Term                 | Meaning                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Monthly fee          | What the customer pays each month on the plan                                                                |
+| Included usage (USD) | Usage charges up to this each month are covered by the fee                                                   |
+| Usage multiplier     | Usage is charged at its AI API cost times this: `1.25` is cost plus 25%, `1` at cost, `0` not charged at all |
+
+For example, a plan with a $49 fee, $20 included and a multiplier of 1.25, for a customer whose usage cost $30 in a month: usage charges are $30 × 1.25 = $37.50, of which $20 is included, so the month comes to $49 + $17.50 = $66.50.
+
+- **Plans don't change.** To change a price, add a new plan and move customers to it, so each month is always billed on the terms it had. Fees and allowances have up to six decimals and the multiplier up to four, stored exactly.
+- **By calendar month (UTC).** A customer is on at most one plan in a month. Subscribing from a month replaces whatever was scheduled from that month on; unsubscribing ends the plan before that month. The month can be the current one or later, never earlier, so months that may have been billed never change.
+- **One change at a time.** Changes for a customer are serialized, so periods never overlap, even when two are made at once.
+- **Separate organizations.** A plan belongs to one organization, and the database refuses a subscription whose customer or plan is in another.
+- Plans, subscriptions and unsubscriptions are in the audit log. A change that changes nothing is refused rather than logged.
 
 ## Guarantees
 
@@ -21,7 +40,7 @@ Plans, included allowances and charges for metered usage are next on the [roadma
 - **Append-only.** The database refuses to update, delete or truncate ledger entries, whoever asks. To correct an entry, reverse it and add the right one; both stay in the history. An entry can be reversed once, a reversal can't be reversed, and of two reversals at the same moment only one is stored. A customer with entries can't be deleted.
 - **Safe retries.** An adjustment with an entry key (`--key`, unique per organization, such as your invoice line ID) is stored once: repeating it returns the stored entry, and using the key for a different customer, amount or reason is refused.
 - **Separate organizations.** Customers, entries and balances belong to one organization, and the database refuses an entry whose customer is in another. Customer IDs can repeat across organizations.
-- **Audited.** Adding a customer, an adjustment and a reversal each write an [audit log](../README.md#dashboard) entry in the same transaction, naming who did it. Entries also keep their author. Replays and refused requests change nothing and aren't logged.
+- **Audited.** Adding a customer, an adjustment, a reversal and plan changes each write an [audit log](../README.md#dashboard) entry in the same transaction, naming who did it. Entries also keep their author. Replays and refused requests change nothing and aren't logged.
 
 ## Command line
 
@@ -31,8 +50,15 @@ npm run billing -- adjust --customer cus_42 --amount 250 --reason "Onboarding, N
 npm run billing -- adjust --customer cus_42 --amount=-25 --reason "Goodwill credit"
 npm run billing -- reverse --entry <entry id> --reason "Charged twice"
 npm run billing -- ledger --customer cus_42      # balance and the latest 100 entries
-npm run billing -- customers                     # every customer's balance
+npm run billing -- customers                     # every customer's balance and plan this month
+
+npm run billing -- plan-add --plan pro --name "Pro" --fee 49 --included 20 --multiplier 1.25
+npm run billing -- plans                         # terms, and customers on each this month
+npm run billing -- subscribe --customer cus_42 --plan pro --from 2026-12
+npm run billing -- unsubscribe --customer cus_42 --from 2027-06
 ```
+
+`--from` defaults to the current UTC month. `ledger` also lists the customer's plan history.
 
 Each command takes `--org <slug>` and uses the default organization without it. Write a negative amount as `--amount=-25`: a value starting with `-` needs the `=`. With Docker, run them as `docker compose run --rm migrate npm run --silent billing -- ...`.
 
@@ -43,3 +69,5 @@ Each command takes `--org <slug>` and uses the default organization without it. 
 | `That entry has already been reversed.`         | Each entry can be reversed once                                         |
 | `No billing customer "..."`                     | Add the customer first with `customer-add`, in the right `--org`        |
 | `Not a USD amount with up to 6 decimals: "..."` | Use digits with up to six decimals, without `$` or thousands separators |
+| `Plans change from the current month ...`       | `--from` is before this UTC month; billed months can't change           |
+| `... is already on <plan> from <month>.`        | Nothing to change; the customer is already on that plan then            |

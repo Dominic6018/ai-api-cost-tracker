@@ -562,6 +562,9 @@ export const AUDIT_ACTIONS = [
   "billing.customer_created",
   "billing.adjusted",
   "billing.reversed",
+  "billing.plan_created",
+  "billing.subscribed",
+  "billing.unsubscribed",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -599,7 +602,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed')`,
     ),
   ],
 );
@@ -823,6 +826,100 @@ export const billingCustomers = pgTable(
   ],
 );
 
+/**
+ * What a customer pays each month: a fee, usage allowance included in it,
+ * and the rate for usage, as a multiple of its AI API cost. Plans don't
+ * change once created, so a month is always billed on the terms it had.
+ */
+export const billingPlans = pgTable(
+  "billing_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    monthlyFeeUsd: numeric("monthly_fee_usd", {
+      precision: 14,
+      scale: 6,
+    }).notNull(),
+    // Usage charges up to this each month are covered by the fee.
+    includedUsageUsd: numeric("included_usage_usd", {
+      precision: 14,
+      scale: 6,
+    }).notNull(),
+    // Usage is charged at its AI API cost times this, e.g. 1.25.
+    usageMultiplier: numeric("usage_multiplier", {
+      precision: 10,
+      scale: 4,
+    }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("billing_plans_organization_slug_idx").on(
+      t.organizationId,
+      t.slug,
+    ),
+    // The target of the subscriptions' (plan, organization) foreign key.
+    uniqueIndex("billing_plans_id_organization_idx").on(t.id, t.organizationId),
+    check(
+      "billing_plans_name_valid",
+      sql`char_length(${t.name}) between 1 and 200`,
+    ),
+    check(
+      "billing_plans_amounts_valid",
+      sql`${t.monthlyFeeUsd} >= 0 and ${t.includedUsageUsd} >= 0 and ${t.usageMultiplier} >= 0`,
+    ),
+  ],
+);
+
+/**
+ * Which plan a customer is on, by UTC calendar month: from `starts_on`
+ * (the first of a month) until `ends_on` (the first of a later month,
+ * exclusive), or open-ended. A customer's periods never overlap.
+ */
+export const billingSubscriptions = pgTable(
+  "billing_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull(),
+    planId: uuid("plan_id").notNull(),
+    startsOn: date("starts_on").notNull(),
+    endsOn: date("ends_on"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // Customer and plan are both in the subscription's organization.
+    foreignKey({
+      name: "billing_subscriptions_customer_fk",
+      columns: [t.customerId, t.organizationId],
+      foreignColumns: [billingCustomers.id, billingCustomers.organizationId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "billing_subscriptions_plan_fk",
+      columns: [t.planId, t.organizationId],
+      foreignColumns: [billingPlans.id, billingPlans.organizationId],
+    }),
+    // At most one open-ended subscription per customer.
+    uniqueIndex("billing_subscriptions_open_idx")
+      .on(t.customerId)
+      .where(sql`${t.endsOn} is null`),
+    index("billing_subscriptions_customer_idx").on(t.customerId, t.startsOn),
+    check(
+      "billing_subscriptions_months_valid",
+      sql`extract(day from ${t.startsOn}) = 1 and (${t.endsOn} is null or (extract(day from ${t.endsOn}) = 1 and ${t.endsOn} > ${t.startsOn}))`,
+    ),
+  ],
+);
+
 export const BILLING_ENTRY_KINDS = ["adjustment", "reversal"] as const;
 export type BillingEntryKind = (typeof BILLING_ENTRY_KINDS)[number];
 
@@ -908,6 +1005,8 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
 export type BillingCustomer = typeof billingCustomers.$inferSelect;
 export type BillingLedgerEntry = typeof billingLedgerEntries.$inferSelect;
+export type BillingPlan = typeof billingPlans.$inferSelect;
+export type BillingSubscription = typeof billingSubscriptions.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;
