@@ -33,6 +33,9 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "organization.created": "Created organization",
   "account.organization_changed": "Moved account",
   "usage.repriced": "Priced usage",
+  "billing.customer_created": "Added billing customer",
+  "billing.adjusted": "Adjusted billing",
+  "billing.reversed": "Reversed billing entry",
 };
 
 const PROJECT_FIELDS = [

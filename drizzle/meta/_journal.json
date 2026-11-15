@@ -239,6 +239,13 @@
       "when": 1794340420548,
       "tag": "0033_ingestion_counts",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794783746601,
+      "tag": "0034_billing_ledger",
+      "breakpoints": true
     }
   ]
 }
