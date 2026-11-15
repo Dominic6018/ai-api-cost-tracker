@@ -27,12 +27,12 @@ CREATE TABLE "billing_ledger_entries" (
 );
 --> statement-breakpoint
 ALTER TABLE "audit_log" DROP CONSTRAINT "audit_log_action_valid";--> statement-breakpoint
+CREATE UNIQUE INDEX "billing_customers_id_organization_idx" ON "billing_customers" USING btree ("id","organization_id");--> statement-breakpoint
 ALTER TABLE "billing_customers" ADD CONSTRAINT "billing_customers_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "billing_ledger_entries" ADD CONSTRAINT "billing_ledger_entries_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "billing_ledger_entries" ADD CONSTRAINT "billing_ledger_entries_customer_fk" FOREIGN KEY ("customer_id","organization_id") REFERENCES "public"."billing_customers"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "billing_ledger_entries" ADD CONSTRAINT "billing_ledger_entries_reverses_fk" FOREIGN KEY ("reverses_entry_id") REFERENCES "public"."billing_ledger_entries"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "billing_customers_organization_external_idx" ON "billing_customers" USING btree ("organization_id","external_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "billing_customers_id_organization_idx" ON "billing_customers" USING btree ("id","organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "billing_ledger_entries_key_idx" ON "billing_ledger_entries" USING btree ("organization_id","entry_key") WHERE "billing_ledger_entries"."entry_key" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "billing_ledger_entries_reverses_idx" ON "billing_ledger_entries" USING btree ("reverses_entry_id") WHERE "billing_ledger_entries"."reverses_entry_id" is not null;--> statement-breakpoint
 CREATE INDEX "billing_ledger_entries_customer_idx" ON "billing_ledger_entries" USING btree ("customer_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
