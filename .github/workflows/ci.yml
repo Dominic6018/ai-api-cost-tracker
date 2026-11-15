@@ -634,6 +634,33 @@ jobs:
 
           npm run db:demo -- --remove
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id LIKE 'demo-%'")" = 0
+      - name: The billing ledger works from the command line
+        run: |
+          C="cus-ci-$GITHUB_RUN_ID"
+          npm run --silent billing -- customer-add --customer "$C" --name "CI customer"
+          if npm run --silent billing -- customer-add --customer "$C" --name "Again"; then
+            echo "a duplicate customer was accepted"; exit 1
+          fi
+          npm run --silent billing -- adjust --customer "$C" --amount 12.345678 --reason "Setup fee" --key "ci-$GITHUB_RUN_ID" | tee adjust.log
+          grep -q '^Recorded \$12.345678' adjust.log
+          ENTRY=$(grep -oE '[0-9a-f-]{36}$' adjust.log)
+          # A retry with the key returns the stored entry; a different amount is refused
+          npm run --silent billing -- adjust --customer "$C" --amount 12.345678 --reason "Setup fee" --key "ci-$GITHUB_RUN_ID" | tee adjust.log
+          grep -q "^Already recorded .*$ENTRY$" adjust.log
+          if npm run --silent billing -- adjust --customer "$C" --amount 1 --reason "Setup fee" --key "ci-$GITHUB_RUN_ID"; then exit 1; fi
+          # More than six decimals is refused, not rounded
+          if npm run --silent billing -- adjust --customer "$C" --amount 0.0000001 --reason "Too precise"; then exit 1; fi
+          npm run --silent billing -- adjust --customer "$C" --amount=-2.5 --reason "Goodwill credit"
+          npm run --silent billing -- reverse --entry "$ENTRY" --reason "Charged by mistake" | grep -q -- '-\$12.345678'
+          if npm run --silent billing -- reverse --entry "$ENTRY" --reason "Again"; then exit 1; fi
+          npm run --silent billing -- ledger --customer "$C" | tee ledger.log
+          grep -q "^$C  CI customer  balance -\$2.500000$" ledger.log
+          test "$(grep -c "reversal\|adjustment" ledger.log)" = 3
+          npm run --silent billing -- customers | grep -qF "$C  CI customer  balance -\$2.500000  3 entries"
+          # The database refuses to change the ledger
+          if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE billing_ledger_entries SET amount_usd = 1 WHERE id = '$ENTRY'"; then exit 1; fi
+          if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM billing_ledger_entries WHERE id = '$ENTRY'"; then exit 1; fi
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action LIKE 'billing.%' AND target = '$C'")" = 4
       - name: Budget alerts reach a signed webhook once per threshold
         run: |
           # A local receiver that checks each request's HMAC signature.

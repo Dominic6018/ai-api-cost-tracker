@@ -20,7 +20,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 
 <sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
 
-> **Status:** Milestones 0–9 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting, the TypeScript and Python clients, OpenTelemetry intake, reconciliation with Anthropic, OpenAI and Google Cloud bills, cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports, a reporting API, budget notifications and checks, and audited price management. Milestone 10 added roles, an audit log, organizations and single sign-on. Customer billing is not built. See [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
+> **Status:** Milestones 0–9 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting, the TypeScript and Python clients, OpenTelemetry intake, reconciliation with Anthropic, OpenAI and Google Cloud bills, cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports, a reporting API, budget notifications and checks, and audited price management. Milestone 10 added roles, an audit log, organizations and single sign-on. Milestone 12 rounded out the clients, and Milestone 13 has started a [billing ledger](docs/BILLING.md) for what customers are billed; plans, metered charges, credits and invoicing are not built. See [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
 
 ## Features
 
@@ -57,7 +57,7 @@ What it doesn't do yet (the plan is in [docs/PRODUCT_UPGRADE_PLAN.md](docs/PRODU
 - **Unpriced usage isn't estimated.** Usage with no stored price is kept as unpriced and left out of totals, budgets and exports until a price is added and `npm run reprice` runs; the tracker never guesses a cost.
 - **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Provider bills are compared with recorded costs (`npm run reconcile`), not imported as usage. The clients read usage from OpenAI, Anthropic and Gemini streams with `trackStream()` / `track_stream()`.
 - **Budgets only hold for calls that ask first.** A reservation stops concurrent steps from overspending, but a provider call your app makes without reserving isn't stopped (see [Reserving budget](#reserving-budget)). The TypeScript and Python clients reserve with `reserveBudget()` / `reserve_budget()`.
-- **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. There's no customer billing, credits or revenue.
+- **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. Customer charges and credits are posted to the [billing ledger](docs/BILLING.md) by hand from the command line; there are no plans, metered charges, invoices or revenue yet.
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's Ultrafast tier isn't tracked.
 - **Organizations are managed from the command line**, as accounts are. An account is in one organization, and prices are shared across the install.
 - **Days are UTC days** for "today", "this month" and the charts.
@@ -123,6 +123,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
 | `npm run org`              | Create and list organizations (see Dashboard)                         |
+| `npm run billing`          | Billing customers, adjustments and reversals (see docs/BILLING.md)    |
 | `npm run reprice`          | Price usage that was stored without a price (see Recording usage)     |
 | `npm run reconcile`        | Compare recorded costs with a provider's bill (see below)             |
 | `npm run budget-alerts`    | Send budget notifications to a webhook, Slack or email (see below)    |
@@ -157,6 +158,7 @@ src/
     budget-notifications.ts  Sends each budget notification once, retrying failures
     budget-check.ts  Caps, spend and holds for the budget check, in one query
     budget-reservations.ts  Atomic reservations, settlement and release
+    billing.ts    Billing customers, append-only ledger entries, reversals and balances
     scripts/      `npm run api-key`, `user`, `db:demo`, `reconcile` and `budget-alerts` commands
     seed/         Sample project and dated model prices (`npm run db:seed`)
     demo/         Deterministic demo data generator and loader (`npm run db:demo`)
@@ -186,10 +188,12 @@ src/
     price-end-form.ts End-price form validation, requiring a source and check date
     usage-filters.ts Usage filter parsing, date bounds and cursors
     projects.ts   Project form validation
+    billing.ts    Billing amounts and fields: exact parsing and audit entries
 drizzle/          Generated SQL migrations
 Dockerfile        Multi-stage image: tools (migrations, CLI) and a non-root standalone runtime
 docs/DEPLOYMENT.md  Deployment guide
 docs/OPENTELEMETRY.md  OpenTelemetry intake and Collector setup
+docs/BILLING.md   The billing ledger, kept apart from provider cost
 scripts/          End-to-end smoke tests and screenshots run in CI
 clients/typescript/  Dependency-free client that reports usage from provider responses
 clients/python/      The same for Python, standard library only
@@ -204,6 +208,7 @@ docs/ROADMAP.md   Development roadmap
 - **usage_events**: individual requests with token counts (including cached and cache-write input tokens, and how many of the writes used the longer lifetime: Anthropic's 1-hour or OpenAI's 12-hour writes), the service tier (`standard`, `batch`, `flex` or `fast`), web searches (`web_search_requests`) and their cost (`web_search_cost_usd`, part of `cost_usd`), audio tokens (`audio_input_tokens`, `cached_audio_input_tokens` and `audio_output_tokens`) and image tokens (`image_input_tokens`, `cached_image_input_tokens` and `image_output_tokens`), parts of the input, cached and output counts, computed `cost_usd`, and an optional provider `request_id` for de-duplication.
 - **rate_limits**: fixed-window attempt counters for sign-in and API keys. Keys are SHA-256 hashes, so attempted emails and client IPs aren't stored. Ended windows are deleted as new attempts arrive.
 - **audit_log**: who changed projects, prices, accounts and API keys, written in the same transaction as the change. Never holds passwords, hashes, keys or session tokens.
+- **billing_customers** and **billing_ledger_entries**: who an organization bills, keyed by the usage `customerId`, and what they're billed, apart from provider cost. Entries are append-only: a trigger refuses updates and deletes, and corrections are reversing entries. See [docs/BILLING.md](docs/BILLING.md).
 - **budget_notifications**: budget notifications sent, unique per project, month, threshold and destination, with the spend and budget the message reported.
 - **spend_signal_notifications**: forecast-over-budget and spending-spike notifications sent, unique per project, kind, period (the month for a forecast, the UTC day for a spike) and destination, with the amount reported and what it was compared with.
 
@@ -263,7 +268,7 @@ Each account has a role, and every role can read the whole dashboard. Add `--rol
 | `member` | Manage   | Read                               |
 | `viewer` | Read     | Read                               |
 
-Admins can see who changed what at `/audit`: projects created and updated (with the fields that changed), prices added and ended, accounts created, role changes, password resets, sessions revoked, and API keys created and revoked. Changes made with `npm run user` or `npm run api-key` show as "command line". Each entry is saved in the same transaction as its change, and keeps the account's email if the account is later deleted. There's no way to edit or delete entries from the app, and they're kept indefinitely.
+Admins can see who changed what at `/audit`: projects created and updated (with the fields that changed), prices added and ended, accounts created, role changes, password resets, sessions revoked, API keys created and revoked, and billing customers, adjustments and reversals. Changes made with `npm run user` or `npm run api-key` show as "command line". Each entry is saved in the same transaction as its change, and keeps the account's email if the account is later deleted. There's no way to edit or delete entries from the app, and they're kept indefinitely.
 
 Organizations keep teams apart: each sees only its own projects, usage, exports and audit log. Everything starts in one default organization. To add another:
 

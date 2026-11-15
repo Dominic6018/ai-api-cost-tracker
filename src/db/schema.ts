@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -558,6 +559,9 @@ export const AUDIT_ACTIONS = [
   "organization.created",
   "account.organization_changed",
   "usage.repriced",
+  "billing.customer_created",
+  "billing.adjusted",
+  "billing.reversed",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -595,7 +599,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed')`,
     ),
   ],
 );
@@ -780,6 +784,119 @@ export const spendSignalNotifications = pgTable(
   ],
 );
 
+/**
+ * Who an organization bills: one row per customer, keyed by the same
+ * `customerId` its usage and outcomes are attributed to.
+ */
+export const billingCustomers = pgTable(
+  "billing_customers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // The customerId in usage events and outcomes.
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("billing_customers_organization_external_idx").on(
+      t.organizationId,
+      t.externalId,
+    ),
+    // The target of the ledger's (customer, organization) foreign key.
+    uniqueIndex("billing_customers_id_organization_idx").on(
+      t.id,
+      t.organizationId,
+    ),
+    check(
+      "billing_customers_external_id_valid",
+      sql`char_length(${t.externalId}) between 1 and 200`,
+    ),
+    check(
+      "billing_customers_name_valid",
+      sql`char_length(${t.name}) between 1 and 200`,
+    ),
+  ],
+);
+
+export const BILLING_ENTRY_KINDS = ["adjustment", "reversal"] as const;
+export type BillingEntryKind = (typeof BILLING_ENTRY_KINDS)[number];
+
+/**
+ * What customers are billed, separate from provider cost. Append-only: a
+ * trigger refuses updates and deletes, so a correction is a new entry
+ * that reverses the old one. Positive amounts are owed by the customer,
+ * negative ones are owed to them.
+ */
+export const billingLedgerEntries = pgTable(
+  "billing_ledger_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull(),
+    kind: text("kind").$type<BillingEntryKind>().notNull(),
+    amountUsd: numeric("amount_usd", { precision: 14, scale: 6 }).notNull(),
+    description: text("description").notNull(),
+    // The caller's id for the entry, so a retry doesn't add it twice.
+    entryKey: text("entry_key"),
+    // The entry a reversal cancels.
+    reversesEntryId: uuid("reverses_entry_id"),
+    // The account's email at the time, or "command line".
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // The customer must be in the entry's organization.
+    foreignKey({
+      name: "billing_ledger_entries_customer_fk",
+      columns: [t.customerId, t.organizationId],
+      foreignColumns: [billingCustomers.id, billingCustomers.organizationId],
+    }),
+    foreignKey({
+      name: "billing_ledger_entries_reverses_fk",
+      columns: [t.reversesEntryId],
+      foreignColumns: [t.id],
+    }),
+    uniqueIndex("billing_ledger_entries_key_idx")
+      .on(t.organizationId, t.entryKey)
+      .where(sql`${t.entryKey} is not null`),
+    // An entry is reversed at most once.
+    uniqueIndex("billing_ledger_entries_reverses_idx")
+      .on(t.reversesEntryId)
+      .where(sql`${t.reversesEntryId} is not null`),
+    index("billing_ledger_entries_customer_idx").on(
+      t.customerId,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
+    check(
+      "billing_ledger_entries_kind_valid",
+      sql`${t.kind} in ('adjustment', 'reversal')`,
+    ),
+    check("billing_ledger_entries_amount_valid", sql`${t.amountUsd} <> 0`),
+    check(
+      "billing_ledger_entries_description_valid",
+      sql`char_length(${t.description}) between 1 and 500`,
+    ),
+    check(
+      "billing_ledger_entries_entry_key_valid",
+      sql`${t.entryKey} is null or char_length(${t.entryKey}) between 1 and 200`,
+    ),
+    check(
+      "billing_ledger_entries_reversal_valid",
+      sql`(${t.kind} = 'reversal') = (${t.reversesEntryId} is not null)`,
+    ),
+  ],
+);
+
 export const API_KEY_SCOPES = ["ingest", "read"] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
@@ -789,6 +906,8 @@ export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type BudgetReservation = typeof budgetReservations.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
+export type BillingCustomer = typeof billingCustomers.$inferSelect;
+export type BillingLedgerEntry = typeof billingLedgerEntries.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;
