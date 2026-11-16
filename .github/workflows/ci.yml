@@ -701,6 +701,24 @@ jobs:
           npm run --silent billing -- charge --month "$LAST" --customer "$C2" | grep -q "already charged$"
           npm run --silent billing -- customers | grep -qF "$C2  CI charged  balance \$66.000000  2 entries"
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action = 'billing.charged' AND target = '$C2'")" = 1
+          # Credit: granted once per key, applied to what's owed, refunded once
+          EXPIRES=$(date -u -d "+1 year" +%Y-%m-%d)
+          npm run --silent billing -- grant-credit --customer "$C2" --amount 50 --reason "Prepaid" --expires "$EXPIRES" --key "ci-credit-$GITHUB_RUN_ID" | tee grant.log
+          grep -q '^Granted \$50.000000 of credit' grant.log
+          npm run --silent billing -- grant-credit --customer "$C2" --amount 50 --reason "Prepaid" --expires "$EXPIRES" --key "ci-credit-$GITHUB_RUN_ID" | grep -q '^Already granted'
+          if npm run --silent billing -- grant-credit --customer "$C2" --amount 1 --reason "Prepaid" --key "ci-credit-$GITHUB_RUN_ID"; then exit 1; fi
+          npm run --silent billing -- apply-credits --customer "$C2" | grep -qxF "$C2  credit applied \$50.000000"
+          npm run --silent billing -- apply-credits --customer "$C2" | grep -qxF "$C2  credit applied \$0.000000"
+          npm run --silent billing -- customers | grep -qF "$C2  CI charged  balance \$16.000000  3 entries"
+          npm run --silent billing -- grant-credit --customer "$C2" --amount 10 --reason "Goodwill" | tee grant.log
+          GRANT=$(grep -oE '[0-9a-f-]{36}$' grant.log)
+          npm run --silent billing -- credits --customer "$C2" | grep -qxF "$C2  usable credit \$10.000000"
+          npm run --silent billing -- refund-credit --grant "$GRANT" --reason "Cancelled" | grep -qF 'Refunded $10.000000 of unused credit'
+          if npm run --silent billing -- refund-credit --grant "$GRANT" --reason "Again"; then exit 1; fi
+          # Credit can't be overspent or changed in the database
+          if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO billing_credit_uses (organization_id, customer_id, grant_id, kind, amount_usd, created_by) SELECT organization_id, customer_id, id, 'refunded', 0.000001, 'ci' FROM billing_credit_grants WHERE id = '$GRANT'"; then exit 1; fi
+          if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE billing_credit_grants SET amount_usd = 1000 WHERE id = '$GRANT'"; then exit 1; fi
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action IN ('billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded') AND target = '$C2'")" = 4
       - name: Budget alerts reach a signed webhook once per threshold
         run: |
           # A local receiver that checks each request's HMAC signature.

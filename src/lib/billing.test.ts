@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   customerCreatedEntry,
   formatEntryUsd,
+  allocateCredit,
   ledgerEntryAudit,
+  parseCreditExpiry,
   monthLabel,
   monthStart,
   monthlyCharges,
@@ -245,5 +247,67 @@ describe("nextMonth", () => {
     expect(nextMonth("2026-11-01")).toBe("2026-12-01");
     expect(nextMonth("2026-12-01")).toBe("2027-01-01");
     expect(nextMonth("2027-09-01")).toBe("2027-10-01");
+  });
+});
+
+describe("credit", () => {
+  const at = (iso: string) => new Date(iso);
+  const NOW = at("2026-11-16T12:00:00Z");
+  const grant = (
+    id: string,
+    remainingMicros: bigint,
+    expiresAt: string | null,
+    createdAt = "2026-01-01T00:00:00Z",
+  ) => ({
+    id,
+    remainingMicros,
+    expiresAt: expiresAt ? at(expiresAt) : null,
+    createdAt: at(createdAt),
+  });
+
+  it("uses the soonest-expiring credit first, then the oldest", () => {
+    const grants = [
+      grant("never", 50_000_000n, null),
+      grant("late", 10_000_000n, "2027-06-01T00:00:00Z"),
+      grant("soon", 5_000_000n, "2026-12-01T00:00:00Z"),
+      grant("never-older", 1_000_000n, null, "2025-01-01T00:00:00Z"),
+    ];
+    expect(allocateCredit(grants, 16_500_000n, NOW)).toEqual([
+      { id: "soon", amountMicros: 5_000_000n },
+      { id: "late", amountMicros: 10_000_000n },
+      { id: "never-older", amountMicros: 1_000_000n },
+      { id: "never", amountMicros: 500_000n },
+    ]);
+  });
+
+  it("skips expired and used-up credit, and never takes more than owed", () => {
+    const grants = [
+      grant("expired", 5_000_000n, "2026-11-16T12:00:00Z"),
+      grant("empty", 0n, null),
+      grant("open", 3_000_000n, null),
+    ];
+    expect(allocateCredit(grants, 1n, NOW)).toEqual([
+      { id: "open", amountMicros: 1n },
+    ]);
+    expect(allocateCredit(grants, 10_000_000n, NOW)).toEqual([
+      { id: "open", amountMicros: 3_000_000n },
+    ]);
+    expect(allocateCredit(grants, 0n, NOW)).toEqual([]);
+    expect(allocateCredit(grants, -5n, NOW)).toEqual([]);
+  });
+
+  it("reads an expiry date as the end of that UTC day", () => {
+    expect(parseCreditExpiry("2027-01-31")).toEqual({
+      ok: true,
+      value: at("2027-02-01T00:00:00Z"),
+    });
+    for (const text of [
+      "2027-02-30",
+      "2027-13-01",
+      "31/01/2027",
+      "2027-1-31",
+    ]) {
+      expect(parseCreditExpiry(text).ok, text).toBe(false);
+    }
   });
 });

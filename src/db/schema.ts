@@ -566,6 +566,9 @@ export const AUDIT_ACTIONS = [
   "billing.subscribed",
   "billing.unsubscribed",
   "billing.charged",
+  "billing.credit_granted",
+  "billing.credits_applied",
+  "billing.credit_refunded",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -603,7 +606,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded')`,
     ),
   ],
 );
@@ -926,6 +929,7 @@ export const BILLING_ENTRY_KINDS = [
   "reversal",
   "plan_fee",
   "usage_charge",
+  "credit_applied",
 ] as const;
 export type BillingEntryKind = (typeof BILLING_ENTRY_KINDS)[number];
 
@@ -991,13 +995,18 @@ export const billingLedgerEntries = pgTable(
     ),
     check(
       "billing_ledger_entries_kind_valid",
-      sql`${t.kind} in ('adjustment', 'reversal', 'plan_fee', 'usage_charge')`,
+      sql`${t.kind} in ('adjustment', 'reversal', 'plan_fee', 'usage_charge', 'credit_applied')`,
     ),
     check(
       "billing_ledger_entries_charge_valid",
       sql`(${t.kind} in ('plan_fee', 'usage_charge')) = (${t.period} is not null and ${t.planId} is not null) and (${t.period} is null or extract(day from ${t.period}) = 1) and (${t.kind} not in ('plan_fee', 'usage_charge') or ${t.amountUsd} > 0) and (${t.kind} = 'usage_charge') = (${t.usageCostUsd} is not null) and (${t.usageCostUsd} is null or ${t.usageCostUsd} >= 0)`,
     ),
     check("billing_ledger_entries_amount_valid", sql`${t.amountUsd} <> 0`),
+    // Credits reduce what's owed.
+    check(
+      "billing_ledger_entries_credit_valid",
+      sql`${t.kind} <> 'credit_applied' or ${t.amountUsd} < 0`,
+    ),
     check(
       "billing_ledger_entries_description_valid",
       sql`char_length(${t.description}) between 1 and 500`,
@@ -1009,6 +1018,110 @@ export const billingLedgerEntries = pgTable(
     check(
       "billing_ledger_entries_reversal_valid",
       sql`(${t.kind} = 'reversal') = (${t.reversesEntryId} is not null)`,
+    ),
+  ],
+);
+
+/**
+ * Prepaid credit for a customer, used against what they owe until it runs
+ * out or expires. Append-only, like the ledger: what's left is the amount
+ * less its uses.
+ */
+export const billingCreditGrants = pgTable(
+  "billing_credit_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull(),
+    amountUsd: numeric("amount_usd", { precision: 14, scale: 6 }).notNull(),
+    // Unused credit can't be used from this moment; null never expires.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    description: text("description").notNull(),
+    // The caller's id for the grant, so a retry doesn't grant twice.
+    grantKey: text("grant_key"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "billing_credit_grants_customer_fk",
+      columns: [t.customerId, t.organizationId],
+      foreignColumns: [billingCustomers.id, billingCustomers.organizationId],
+    }),
+    // The target of the uses' (grant, customer, organization) foreign key.
+    uniqueIndex("billing_credit_grants_owner_idx").on(
+      t.id,
+      t.customerId,
+      t.organizationId,
+    ),
+    uniqueIndex("billing_credit_grants_key_idx")
+      .on(t.organizationId, t.grantKey)
+      .where(sql`${t.grantKey} is not null`),
+    index("billing_credit_grants_customer_idx").on(t.customerId),
+    check("billing_credit_grants_amount_valid", sql`${t.amountUsd} > 0`),
+    check(
+      "billing_credit_grants_description_valid",
+      sql`char_length(${t.description}) between 1 and 500`,
+    ),
+    check(
+      "billing_credit_grants_expiry_valid",
+      sql`${t.expiresAt} is null or ${t.expiresAt} > ${t.createdAt}`,
+    ),
+  ],
+);
+
+export const CREDIT_USE_KINDS = ["applied", "refunded"] as const;
+export type CreditUseKind = (typeof CREDIT_USE_KINDS)[number];
+
+/**
+ * Credit taken from a grant: applied to what the customer owes (with the
+ * ledger entry that records it), or refunded, which withdraws unused
+ * credit. A trigger refuses a use beyond what's left of the grant, or of a
+ * grant that has expired. Append-only.
+ */
+export const billingCreditUses = pgTable(
+  "billing_credit_uses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull(),
+    grantId: uuid("grant_id").notNull(),
+    kind: text("kind").$type<CreditUseKind>().notNull(),
+    amountUsd: numeric("amount_usd", { precision: 14, scale: 6 }).notNull(),
+    ledgerEntryId: uuid("ledger_entry_id").references(
+      () => billingLedgerEntries.id,
+    ),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // The grant is the customer's, in the use's organization.
+    foreignKey({
+      name: "billing_credit_uses_grant_fk",
+      columns: [t.grantId, t.customerId, t.organizationId],
+      foreignColumns: [
+        billingCreditGrants.id,
+        billingCreditGrants.customerId,
+        billingCreditGrants.organizationId,
+      ],
+    }),
+    index("billing_credit_uses_grant_idx").on(t.grantId),
+    check(
+      "billing_credit_uses_kind_valid",
+      sql`${t.kind} in ('applied', 'refunded')`,
+    ),
+    check("billing_credit_uses_amount_valid", sql`${t.amountUsd} > 0`),
+    check(
+      "billing_credit_uses_entry_valid",
+      sql`(${t.kind} = 'applied') = (${t.ledgerEntryId} is not null)`,
     ),
   ],
 );
@@ -1026,6 +1139,8 @@ export type BillingCustomer = typeof billingCustomers.$inferSelect;
 export type BillingLedgerEntry = typeof billingLedgerEntries.$inferSelect;
 export type BillingPlan = typeof billingPlans.$inferSelect;
 export type BillingSubscription = typeof billingSubscriptions.$inferSelect;
+export type BillingCreditGrant = typeof billingCreditGrants.$inferSelect;
+export type BillingCreditUse = typeof billingCreditUses.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;

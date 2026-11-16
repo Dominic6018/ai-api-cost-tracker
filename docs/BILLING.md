@@ -10,9 +10,11 @@ Nothing moves between them on its own. A charge to a customer is never derived f
 ## What's there now
 
 - **Customers** per organization, keyed by the `customerId` their usage and outcomes are attributed to, with a name.
-- **Ledger entries** for a customer: an **adjustment** (a charge, positive, or a credit, negative), a **reversal**, which cancels one earlier entry, or a month's **plan fee** and **usage charge**.
+- **Ledger entries** for a customer: an **adjustment** (a charge, positive, or a credit, negative), a **reversal**, which cancels one earlier entry, a month's **plan fee** and **usage charge**, or **credit applied** from prepaid credit.
 - **Balances**: the sum of a customer's entries. Positive means the customer owes you; negative means you owe them.
 - **Plans** and which customer is on which plan in each month, and **monthly charges** posted from them (below).
+
+- **Prepaid credit** that pays what's owed until it runs out or expires (below).
 
 There's no invoicing or payment collection: the ledger says what each customer owes, and you bill them from it.
 
@@ -48,13 +50,24 @@ The usage charge is rounded half up to the micro-dollar once; nothing else is ro
 - **Once per month.** Once a month has a fee or usage entry for a customer, charging it again returns those entries and posts nothing, and the database refuses a second fee or usage charge for the same month, even from two runs at once. Usage recorded for a month after it was charged isn't charged automatically: add an adjustment. To redo a month, reverse its entries and post the corrections as adjustments.
 - Each customer is charged in its own transaction, with a `billing.charged` audit entry giving the amounts and the cost they came from.
 
+## Prepaid credit
+
+Credit is money a customer has paid in advance, or that you give them. It's kept apart from the ledger until it's used:
+
+- **Grant** credit with an amount, a reason and, optionally, the last day it can be used (`--expires 2027-01-31`, usable until the end of that UTC day). With `--key`, granting again returns the stored grant, and the key for a different grant is refused. A grant doesn't change the balance.
+- **Apply** credit to what the customer owes: one **credit applied** ledger entry for the amount used, never more than the balance or than the credit left. Credit that expires soonest is used first, then the oldest. `charge` applies credit after posting each customer's month; `apply-credits` does it any time. With nothing owed, nothing is applied, so running it again changes nothing.
+- **Expire**: unused credit can't be used after its expiry. It isn't removed, and `credits` shows it as expired.
+- **Refund** what's left of a grant, for example when prepaid credit is paid back: the rest of the grant is withdrawn, once. Credit already applied stays applied, and expired credit can't be refunded.
+
+The database refuses to use more of a grant than is left, to use expired credit, or to use another customer's credit, even from two runs at once. Grants and their uses are append-only, like the ledger, and applied credit can't be reversed: grant new credit instead. Every grant, application and refund is in the audit log.
+
 ## Guarantees
 
 - **Exact amounts.** Entries are stored as decimals with six places (micro-dollars), summed exactly, and shown unrounded. An amount with more than six decimals is refused, not rounded. The largest entry is $99,999,999.999999, and zero isn't an entry.
 - **Append-only.** The database refuses to update, delete or truncate ledger entries, whoever asks. To correct an entry, reverse it and add the right one; both stay in the history. An entry can be reversed once, a reversal can't be reversed, and of two reversals at the same moment only one is stored. A customer with entries can't be deleted.
 - **Safe retries.** An adjustment with an entry key (`--key`, unique per organization, such as your invoice line ID) is stored once: repeating it returns the stored entry, and using the key for a different customer, amount or reason is refused.
 - **Separate organizations.** Customers, entries and balances belong to one organization, and the database refuses an entry whose customer is in another. Customer IDs can repeat across organizations.
-- **Audited.** Adding a customer, an adjustment, a reversal, plan changes and monthly charges each write an [audit log](../README.md#dashboard) entry in the same transaction, naming who did it. Entries also keep their author. Replays and refused requests change nothing and aren't logged.
+- **Audited.** Adding a customer, an adjustment, a reversal, plan changes, monthly charges and credit each write an [audit log](../README.md#dashboard) entry in the same transaction, naming who did it. Entries also keep their author. Replays and refused requests change nothing and aren't logged.
 
 ## Command line
 
@@ -75,6 +88,11 @@ npm run billing -- unsubscribe --customer cus_42 --from 2027-06
 ```bash
 npm run billing -- charge                        # last month, every customer on a plan
 npm run billing -- charge --month 2026-10 --customer cus_42
+
+npm run billing -- grant-credit --customer cus_42 --amount 100 --reason "Prepaid, invoice 1042" --expires 2027-12-31 --key inv-1042
+npm run billing -- credits --customer cus_42     # each grant: used, left, expiry
+npm run billing -- apply-credits                 # every customer who owes something
+npm run billing -- refund-credit --grant <grant id> --reason "Refunded by bank transfer"
 ```
 
 `--from` defaults to the current UTC month and `--month` to last month. `ledger` also lists the customer's plan history. Run `charge` early each month, for example from cron, after any late usage has arrived.
@@ -92,4 +110,6 @@ Each command takes `--org <slug>` and uses the default organization without it. 
 | `... is already on <plan> from <month>.`        | Nothing to change; the customer is already on that plan then            |
 | `not charged: N request(s) have no price yet`   | Add the missing price, run `npm run reprice`, then charge again         |
 | `already charged`                               | The month was charged before; nothing new was posted                    |
+| `Applied credit can't be reversed ...`          | Grant new credit to correct applied credit                              |
+| `That credit has all been used or refunded.`    | Nothing is left of the grant to refund                                  |
 | `... hasn't finished`                           | Only months that are over can be charged                                |

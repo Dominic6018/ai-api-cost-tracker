@@ -203,7 +203,10 @@ export function addAdjustment(
 
 export type ReversalResult =
   | { ok: true; entry: BillingLedgerEntry }
-  | { ok: false; error: "not_found" | "is_reversal" | "already_reversed" };
+  | {
+      ok: false;
+      error: "not_found" | "is_reversal" | "is_credit" | "already_reversed";
+    };
 
 /**
  * Cancels an entry with a new one for the opposite amount; the original
@@ -247,6 +250,14 @@ export function reverseLedgerEntry(
     if (original.entry.kind === "reversal") {
       return {
         result: { ok: false, error: "is_reversal" } as const,
+        entry: null,
+      };
+    }
+    // Reversing applied credit would bring back what was owed while the
+    // credit stayed used; grant new credit instead.
+    if (original.entry.kind === "credit_applied") {
+      return {
+        result: { ok: false, error: "is_credit" } as const,
         entry: null,
       };
     }
