@@ -5,6 +5,8 @@ import {
   ledgerEntryAudit,
   monthLabel,
   monthStart,
+  monthlyCharges,
+  nextMonth,
   parseBillingMonth,
   parsePlanAmount,
   parsePlanSlug,
@@ -181,5 +183,67 @@ describe("billing months", () => {
       details: { from: "2027-01", replaced: 1 },
       organizationId: "org",
     });
+  });
+});
+
+describe("monthlyCharges", () => {
+  const plan = {
+    monthlyFeeUsd: "49.000000",
+    includedUsageUsd: "20.000000",
+    usageMultiplier: "1.2500",
+  };
+
+  it("charges usage beyond the allowance at the multiplier", () => {
+    // $30 cost x 1.25 = $37.50, less $20 included = $17.50.
+    expect(monthlyCharges(plan, 30_000_000n)).toEqual({
+      feeMicros: 49_000_000n,
+      usageChargeMicros: 37_500_000n,
+      includedMicros: 20_000_000n,
+      billableUsageMicros: 17_500_000n,
+    });
+  });
+
+  it("charges nothing for usage within the allowance", () => {
+    expect(monthlyCharges(plan, 16_000_000n).billableUsageMicros).toBe(0n);
+    expect(monthlyCharges(plan, 0n).billableUsageMicros).toBe(0n);
+    // Exactly the allowance: $16 x 1.25 = $20.
+    expect(monthlyCharges(plan, 16_000_000n).usageChargeMicros).toBe(
+      20_000_000n,
+    );
+  });
+
+  it("rounds the usage charge half up to the micro-dollar, once", () => {
+    const thirds = {
+      ...plan,
+      includedUsageUsd: "0",
+      usageMultiplier: "1.3333",
+    };
+    // 1 micro x 1.3333 = 1.3333 -> 1; 3 micros x 1.3333 = 3.9999 -> 4.
+    expect(monthlyCharges(thirds, 1n).usageChargeMicros).toBe(1n);
+    expect(monthlyCharges(thirds, 3n).usageChargeMicros).toBe(4n);
+    const half = { ...plan, includedUsageUsd: "0", usageMultiplier: "0.5" };
+    expect(monthlyCharges(half, 1n).usageChargeMicros).toBe(1n);
+    expect(monthlyCharges(half, 2n).usageChargeMicros).toBe(1n);
+  });
+
+  it("charges usage at cost, or not at all", () => {
+    const atCost = { ...plan, includedUsageUsd: "0", usageMultiplier: "1" };
+    expect(monthlyCharges(atCost, 123_456_789n).billableUsageMicros).toBe(
+      123_456_789n,
+    );
+    const free = { ...plan, usageMultiplier: "0.0000" };
+    expect(monthlyCharges(free, 999_000_000n).billableUsageMicros).toBe(0n);
+  });
+
+  it("refuses a negative cost", () => {
+    expect(() => monthlyCharges(plan, -1n)).toThrow(RangeError);
+  });
+});
+
+describe("nextMonth", () => {
+  it("rolls over the year", () => {
+    expect(nextMonth("2026-11-01")).toBe("2026-12-01");
+    expect(nextMonth("2026-12-01")).toBe("2027-01-01");
+    expect(nextMonth("2027-09-01")).toBe("2027-10-01");
   });
 });

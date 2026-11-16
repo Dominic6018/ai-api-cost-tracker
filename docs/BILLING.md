@@ -10,11 +10,11 @@ Nothing moves between them on its own. A charge to a customer is never derived f
 ## What's there now
 
 - **Customers** per organization, keyed by the `customerId` their usage and outcomes are attributed to, with a name.
-- **Ledger entries** for a customer: an **adjustment** (a charge, positive, or a credit, negative) or a **reversal**, which cancels one earlier entry.
+- **Ledger entries** for a customer: an **adjustment** (a charge, positive, or a credit, negative), a **reversal**, which cancels one earlier entry, or a month's **plan fee** and **usage charge**.
 - **Balances**: the sum of a customer's entries. Positive means the customer owes you; negative means you owe them.
-- **Plans** and which customer is on which plan in each month (below).
+- **Plans** and which customer is on which plan in each month, and **monthly charges** posted from them (below).
 
-Charges for metered usage are next on the [roadmap](ROADMAP.md): each month, they'll post a customer's fee and usage beyond the allowance to this ledger, on the terms of the plan they were on. Until then, plans record terms and post nothing. There's no invoicing or payment collection.
+There's no invoicing or payment collection: the ledger says what each customer owes, and you bill them from it.
 
 ## Plans
 
@@ -34,13 +34,27 @@ For example, a plan with a $49 fee, $20 included and a multiplier of 1.25, for a
 - **Separate organizations.** A plan belongs to one organization, and the database refuses a subscription whose customer or plan is in another.
 - Plans, subscriptions and unsubscriptions are in the audit log. A change that changes nothing is refused rather than logged.
 
+## Monthly charges
+
+`npm run billing -- charge` posts a finished month's charges for each customer on a plan that month:
+
+- a **plan fee**: the plan's monthly fee, and
+- a **usage charge**: the AI API cost of the customer's usage that month × the plan's multiplier, less the included usage. The cost is the recorded cost of every request attributed to the customer's ID (`customerId`) in any of the organization's projects, from the first to the last moment of the UTC month.
+
+The usage charge is rounded half up to the micro-dollar once; nothing else is rounded. A charge of zero (a free plan, or usage within the allowance) isn't posted. Each entry records the month, the plan, and for usage the AI API cost it was based on, so the bill can be explained later.
+
+- **Finished months only.** The current month and later ones are refused.
+- **Never on a short cost.** If any of the customer's usage that month has no price yet, the customer isn't charged: add the price and run `npm run reprice`, then charge again. The command exits non-zero when this happens, so a scheduled run is noticed.
+- **Once per month.** Once a month has a fee or usage entry for a customer, charging it again returns those entries and posts nothing, and the database refuses a second fee or usage charge for the same month, even from two runs at once. Usage recorded for a month after it was charged isn't charged automatically: add an adjustment. To redo a month, reverse its entries and post the corrections as adjustments.
+- Each customer is charged in its own transaction, with a `billing.charged` audit entry giving the amounts and the cost they came from.
+
 ## Guarantees
 
 - **Exact amounts.** Entries are stored as decimals with six places (micro-dollars), summed exactly, and shown unrounded. An amount with more than six decimals is refused, not rounded. The largest entry is $99,999,999.999999, and zero isn't an entry.
 - **Append-only.** The database refuses to update, delete or truncate ledger entries, whoever asks. To correct an entry, reverse it and add the right one; both stay in the history. An entry can be reversed once, a reversal can't be reversed, and of two reversals at the same moment only one is stored. A customer with entries can't be deleted.
 - **Safe retries.** An adjustment with an entry key (`--key`, unique per organization, such as your invoice line ID) is stored once: repeating it returns the stored entry, and using the key for a different customer, amount or reason is refused.
 - **Separate organizations.** Customers, entries and balances belong to one organization, and the database refuses an entry whose customer is in another. Customer IDs can repeat across organizations.
-- **Audited.** Adding a customer, an adjustment, a reversal and plan changes each write an [audit log](../README.md#dashboard) entry in the same transaction, naming who did it. Entries also keep their author. Replays and refused requests change nothing and aren't logged.
+- **Audited.** Adding a customer, an adjustment, a reversal, plan changes and monthly charges each write an [audit log](../README.md#dashboard) entry in the same transaction, naming who did it. Entries also keep their author. Replays and refused requests change nothing and aren't logged.
 
 ## Command line
 
@@ -58,7 +72,12 @@ npm run billing -- subscribe --customer cus_42 --plan pro --from 2026-12
 npm run billing -- unsubscribe --customer cus_42 --from 2027-06
 ```
 
-`--from` defaults to the current UTC month. `ledger` also lists the customer's plan history.
+```bash
+npm run billing -- charge                        # last month, every customer on a plan
+npm run billing -- charge --month 2026-10 --customer cus_42
+```
+
+`--from` defaults to the current UTC month and `--month` to last month. `ledger` also lists the customer's plan history. Run `charge` early each month, for example from cron, after any late usage has arrived.
 
 Each command takes `--org <slug>` and uses the default organization without it. Write a negative amount as `--amount=-25`: a value starting with `-` needs the `=`. With Docker, run them as `docker compose run --rm migrate npm run --silent billing -- ...`.
 
@@ -71,3 +90,6 @@ Each command takes `--org <slug>` and uses the default organization without it. 
 | `Not a USD amount with up to 6 decimals: "..."` | Use digits with up to six decimals, without `$` or thousands separators |
 | `Plans change from the current month ...`       | `--from` is before this UTC month; billed months can't change           |
 | `... is already on <plan> from <month>.`        | Nothing to change; the customer is already on that plan then            |
+| `not charged: N request(s) have no price yet`   | Add the missing price, run `npm run reprice`, then charge again         |
+| `already charged`                               | The month was charged before; nothing new was posted                    |
+| `... hasn't finished`                           | Only months that are over can be charged                                |

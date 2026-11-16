@@ -6,6 +6,7 @@
 import type { AuditEntry } from "./audit";
 import { MAX_ATTRIBUTION_LENGTH } from "./attribution";
 import { microsToDecimal } from "./budget";
+import type { BillingEntryKind } from "@/db/schema";
 
 /** The largest amount numeric(14, 6) holds: $99,999,999.999999. */
 export const MAX_ENTRY_MICROS = 99_999_999_999_999n;
@@ -97,7 +98,7 @@ export function customerCreatedEntry(customer: {
 
 export function ledgerEntryAudit(entry: {
   id: string;
-  kind: "adjustment" | "reversal";
+  kind: BillingEntryKind;
   amountUsd: string;
   description: string;
   reversesEntryId: string | null;
@@ -226,5 +227,78 @@ export function subscriptionEntry(change: {
       replaced: change.replaced,
     },
     organizationId: change.organizationId,
+  };
+}
+
+/** The first day of the month after the one starting `startsOn`. */
+export function nextMonth(startsOn: string): string {
+  const [year, month] = startsOn.split("-").map(Number);
+  return month === 12
+    ? `${year + 1}-01-01`
+    : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+}
+
+/** A stored multiplier ("1.2500") in ten-thousandths (12500n). */
+function multiplierParts(multiplier: string): bigint {
+  const match = /^(\d+)(?:\.(\d{1,4}))?$/.exec(multiplier);
+  if (!match) throw new TypeError(`Not a stored multiplier: "${multiplier}"`);
+  return BigInt(match[1]) * 10_000n + BigInt((match[2] ?? "").padEnd(4, "0"));
+}
+
+export interface MonthlyCharges {
+  feeMicros: bigint;
+  /** The month's usage at the plan's rate: cost times the multiplier. */
+  usageChargeMicros: bigint;
+  includedMicros: bigint;
+  /** What's charged for usage: the usage charge beyond the allowance. */
+  billableUsageMicros: bigint;
+}
+
+/**
+ * A month's charges on a plan, from the AI API cost of the customer's
+ * usage. Exact: the usage charge is rounded half up to the micro-dollar
+ * once, and nothing else is rounded.
+ */
+export function monthlyCharges(
+  plan: {
+    monthlyFeeUsd: string;
+    includedUsageUsd: string;
+    usageMultiplier: string;
+  },
+  costMicros: bigint,
+): MonthlyCharges {
+  if (costMicros < 0n) throw new RangeError("A cost can't be negative.");
+  const usageChargeMicros =
+    (costMicros * multiplierParts(plan.usageMultiplier) + 5_000n) / 10_000n;
+  const includedMicros = parseSignedDecimal(plan.includedUsageUsd);
+  const beyond = usageChargeMicros - includedMicros;
+  return {
+    feeMicros: parseSignedDecimal(plan.monthlyFeeUsd),
+    usageChargeMicros,
+    includedMicros,
+    billableUsageMicros: beyond > 0n ? beyond : 0n,
+  };
+}
+
+export function chargedEntry(charge: {
+  customerExternalId: string;
+  period: string;
+  planSlug: string;
+  feeUsd: string | null;
+  usageUsd: string | null;
+  usageCostUsd: string;
+  organizationId: string;
+}): AuditEntry {
+  return {
+    action: "billing.charged",
+    target: charge.customerExternalId,
+    details: {
+      month: monthLabel(charge.period),
+      plan: charge.planSlug,
+      feeUsd: charge.feeUsd,
+      usageUsd: charge.usageUsd,
+      usageCostUsd: charge.usageCostUsd,
+    },
+    organizationId: charge.organizationId,
   };
 }

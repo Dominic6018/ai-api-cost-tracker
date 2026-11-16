@@ -565,6 +565,7 @@ export const AUDIT_ACTIONS = [
   "billing.plan_created",
   "billing.subscribed",
   "billing.unsubscribed",
+  "billing.charged",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -602,7 +603,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged')`,
     ),
   ],
 );
@@ -920,7 +921,12 @@ export const billingSubscriptions = pgTable(
   ],
 );
 
-export const BILLING_ENTRY_KINDS = ["adjustment", "reversal"] as const;
+export const BILLING_ENTRY_KINDS = [
+  "adjustment",
+  "reversal",
+  "plan_fee",
+  "usage_charge",
+] as const;
 export type BillingEntryKind = (typeof BILLING_ENTRY_KINDS)[number];
 
 /**
@@ -944,6 +950,11 @@ export const billingLedgerEntries = pgTable(
     entryKey: text("entry_key"),
     // The entry a reversal cancels.
     reversesEntryId: uuid("reverses_entry_id"),
+    // For a plan's monthly charges: the month billed (its first day), the
+    // plan it was billed on and, for usage, the AI API cost it was based on.
+    period: date("period"),
+    planId: uuid("plan_id").references(() => billingPlans.id),
+    usageCostUsd: numeric("usage_cost_usd", { precision: 14, scale: 6 }),
     // The account's email at the time, or "command line".
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -965,6 +976,10 @@ export const billingLedgerEntries = pgTable(
     uniqueIndex("billing_ledger_entries_key_idx")
       .on(t.organizationId, t.entryKey)
       .where(sql`${t.entryKey} is not null`),
+    // A month's fee and usage are each charged at most once.
+    uniqueIndex("billing_ledger_entries_period_idx")
+      .on(t.customerId, t.kind, t.period)
+      .where(sql`${t.period} is not null`),
     // An entry is reversed at most once.
     uniqueIndex("billing_ledger_entries_reverses_idx")
       .on(t.reversesEntryId)
@@ -976,7 +991,11 @@ export const billingLedgerEntries = pgTable(
     ),
     check(
       "billing_ledger_entries_kind_valid",
-      sql`${t.kind} in ('adjustment', 'reversal')`,
+      sql`${t.kind} in ('adjustment', 'reversal', 'plan_fee', 'usage_charge')`,
+    ),
+    check(
+      "billing_ledger_entries_charge_valid",
+      sql`(${t.kind} in ('plan_fee', 'usage_charge')) = (${t.period} is not null and ${t.planId} is not null) and (${t.period} is null or extract(day from ${t.period}) = 1) and (${t.kind} not in ('plan_fee', 'usage_charge') or ${t.amountUsd} > 0) and (${t.kind} = 'usage_charge') = (${t.usageCostUsd} is not null) and (${t.usageCostUsd} is null or ${t.usageCostUsd} >= 0)`,
     ),
     check("billing_ledger_entries_amount_valid", sql`${t.amountUsd} <> 0`),
     check(

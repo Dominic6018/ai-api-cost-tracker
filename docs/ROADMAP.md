@@ -141,7 +141,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
 - A billing ledger separate from provider cost:
   - [x] Customers and an append-only ledger with adjustments, reversals and balances (#155)
   - [x] Plans with a recurring fee and an included allowance, assigned to customers (#157)
-  - [ ] Charges for metered usage, posted to the ledger per billing period
+  - [x] Charges for metered usage, posted to the ledger per billing period (#159)
 - [ ] Credits and entitlements: grant, consume, expire, refund
 - [ ] Optional per-customer billing through Stripe, in test mode by default (needs a Stripe test account)
 - [ ] Revenue and a "revenue minus AI API cost" view per customer, never labelled profit
