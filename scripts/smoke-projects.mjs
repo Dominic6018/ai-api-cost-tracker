@@ -425,6 +425,32 @@ step("spend over time filters by range and project");
     assert.equal(total(fallback.html), expected, "unknown project means all");
 }
 
+step("why spend changed adds up and states its method");
+{
+  for (const compare of ["30d", "7d", "month", "not-a-comparison"]) {
+    const result = await page(`/changes?compare=${compare}`);
+    assert.equal(result.status, 200, `GET /changes?compare=${compare}`);
+    const text = result.html.replace(/<!-- -->/g, "");
+    assert.ok(text.includes("Why spend changed"));
+    assert.ok(text.includes("change-summary"), "the summary is shown");
+  }
+  const text = (await page("/changes?compare=7d")).html.replace(
+    /<!-- -->/g,
+    "",
+  );
+  if (!text.includes("No priced usage in either period")) {
+    for (const label of [
+      "Volume",
+      "Model mix",
+      "Tokens per request",
+      "Cost per token",
+      "Method:",
+    ]) {
+      assert.ok(text.includes(label), `the page shows "${label}"`);
+    }
+  }
+}
+
 step("revenue against AI API cost, never called profit");
 {
   const result = await page("/revenue");
@@ -714,6 +740,7 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     "/prices",
     "/ingestion",
     "/revenue",
+    "/changes",
   ]) {
     const result = await page(path);
     assert.equal(result.status, 200, `GET ${path}`);

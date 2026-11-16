@@ -77,6 +77,9 @@ export default async function OverviewPage() {
           <Link href="/breakdown" className="underline">
             Cost breakdown
           </Link>
+          <Link href="/changes" className="underline">
+            Why spend changed
+          </Link>
           <Link href="/ingestion" className="underline">
             Ingestion
           </Link>

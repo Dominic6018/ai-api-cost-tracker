@@ -141,6 +141,7 @@ src/
     overview/     Spend totals for today, this month and the last 30 days
     spend/        Daily spend chart and provider/model breakdown
     usage/        Usage events table with filters and pagination
+    changes/      Why spend changed between two periods
     projects/     Projects list, create and edit pages (server actions)
   db/
     schema.ts     Drizzle schema (projects, model_pricing, usage_events)
@@ -285,6 +286,19 @@ npm run org -- list                                              # with account 
 ```
 
 Prices are shared by the whole install, so only the install's owners, the admins of the default organization, can change them. Admins of other organizations can read prices but not who added them. Scheduled budget notifications cover every organization and go to the install's one set of destinations. Project slugs are unique within an organization, so two organizations can each have a `web-app`; when they do, `npm run api-key -- create` needs `--org <slug>` to know which. Changes made from the command line to an account or API key are logged in that account's or project's organization.
+
+### Why spend changed
+
+`/changes` compares two periods of whole UTC days, the last 30 or 7 days against the period before or the last two finished months, for all projects or one, and splits the change in spend into:
+
+| Effect             | What it measures                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------ |
+| Volume             | More or fewer requests, at the earlier mix of models and cost per request                              |
+| Model mix          | Requests moving between models, including models that started or stopped being used                    |
+| Tokens per request | Longer or shorter requests on the same model, at its earlier cost per token                            |
+| Cost per token     | The rest on the same model: the cache rate, the input/output split and price changes, together for now |
+
+Each driver is swapped from the earlier period to the later one in that order, holding the others (a chained substitution), so the effects add up to the change exactly, overall and per model; a different order would give somewhat different amounts, and the page says so. Each step is rounded once to the micro-dollar. Only priced requests count, and unpriced ones in either period are flagged.
 
 ### Revenue
 
