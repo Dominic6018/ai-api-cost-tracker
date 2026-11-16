@@ -37,6 +37,7 @@ import {
   listSubscriptions,
   plansByCustomer,
 } from "../billing-plans";
+import { chargeMonth, customersOnPlans } from "../billing-charges";
 import { findOrganization } from "../organizations";
 
 const USAGE = `Usage:
@@ -49,6 +50,7 @@ const USAGE = `Usage:
   npm run billing -- plans
   npm run billing -- subscribe --customer <id> --plan <slug> [--from YYYY-MM]
   npm run billing -- unsubscribe --customer <id> [--from YYYY-MM]
+  npm run billing -- charge [--month YYYY-MM] [--customer <id>]
 
 Each takes --org <slug>; the default organization otherwise.
 
@@ -63,7 +65,12 @@ A plan has a monthly fee, the usage included in it (in USD of usage
 charges), and the rate for usage as a multiple of its AI API cost
 (--multiplier 1.25 is cost plus 25%). Plans can't be changed; add a new
 one. A customer's plan changes by UTC month, from the current month (the
-default for --from) or a later one, replacing what was scheduled.`;
+default for --from) or a later one, replacing what was scheduled.
+
+charge posts a finished month's plan fee and usage beyond the allowance
+for every customer on a plan that month (or one --customer); --month
+defaults to last month. A month is charged once, and not while any of its
+usage is unpriced: price it first with npm run reprice.`;
 
 function valid<T>(parsed: Parsed<T>): T {
   if (!parsed.ok) throw new Error(parsed.error);
@@ -87,6 +94,7 @@ async function main() {
       included: { type: "string" },
       multiplier: { type: "string" },
       from: { type: "string" },
+      month: { type: "string" },
     },
   });
   const [command] = positionals;
@@ -100,6 +108,7 @@ async function main() {
     plans: [],
     subscribe: ["customer", "plan"],
     unsubscribe: ["customer"],
+    charge: [],
   };
   if (
     !command ||
@@ -136,6 +145,13 @@ async function main() {
       ? valid(parseUsageMultiplier(values.multiplier))
       : undefined;
   const thisMonth = monthStart(new Date());
+  const month =
+    values.month !== undefined
+      ? valid(parseBillingMonth(values.month))
+      : // Last month: the first of this month, a day earlier.
+        monthStart(
+          new Date(new Date(`${thisMonth}T00:00:00Z`).getTime() - 86_400_000),
+        );
   const from =
     values.from !== undefined
       ? valid(parseBillingMonth(values.from))
@@ -225,6 +241,44 @@ async function main() {
       for (const row of await listBillingPlans(db, scope, thisMonth)) {
         console.log(
           `${row.plan.slug}  ${row.plan.name}  fee ${usd(row.plan.monthlyFeeUsd)}  included ${usd(row.plan.includedUsageUsd)}  multiplier ${row.plan.usageMultiplier}  ${row.customers} customer(s) this month`,
+        );
+      }
+    } else if (command === "charge") {
+      const targets =
+        customerId !== undefined
+          ? [await customer()]
+          : await customersOnPlans(db, scope, month);
+      let blocked = 0;
+      for (const target of targets) {
+        const result = await chargeMonth(db, actor, target, month);
+        const prefix = `${target.externalId}  ${monthLabel(month)}`;
+        if (!result.ok) {
+          if (result.error === "open_month") {
+            throw new Error(
+              `${monthLabel(month)} hasn't finished; months are charged once they're over.`,
+            );
+          }
+          if (result.error === "unpriced_usage") {
+            blocked += 1;
+            console.log(
+              `${prefix}  not charged: ${result.unpriced} request(s) have no price yet; add the price and run npm run reprice`,
+            );
+          } else {
+            console.log(`${prefix}  no plan; nothing to charge`);
+          }
+          continue;
+        }
+        const { charges } = result;
+        console.log(
+          `${prefix}  ${result.planSlug}: fee ${formatEntryUsd(charges.feeMicros)}, usage ${formatEntryUsd(charges.billableUsageMicros)} (AI API cost ${formatEntryUsd(result.usage.costMicros)}, ${result.usage.requests} request(s))  ${result.posted ? "posted" : result.entries.length > 0 ? "already charged" : "nothing to post"}`,
+        );
+      }
+      if (targets.length === 0) {
+        console.log(`No customers on a plan in ${monthLabel(month)}.`);
+      }
+      if (blocked > 0) {
+        throw new Error(
+          `${blocked} customer(s) not charged because of unpriced usage.`,
         );
       }
     } else if (command === "subscribe" || command === "unsubscribe") {
