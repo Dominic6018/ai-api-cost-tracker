@@ -431,10 +431,13 @@ step("revenue against AI API cost, never called profit");
   assert.equal(result.status, 200);
   const text = result.html.replace(/<!-- -->/g, "");
   assert.ok(text.includes("Revenue minus AI API cost"), "the column is named");
-  // "Profit" appears once, in the sentence saying the figure isn't profit.
-  assert.equal(
-    (text.match(/profit/gi) ?? []).length,
-    1,
+  // "Profit" appears only to say the figure isn't profit (the page's
+  // text is in the HTML twice: the markup and the render data).
+  const saysNotProfit = /isn(?:'|&#x27;|&apos;)t profit/gi;
+  assert.match(text, saysNotProfit, "the page says it isn't profit");
+  assert.doesNotMatch(
+    text.replace(saysNotProfit, ""),
+    /profit/i,
     "nothing is labelled profit",
   );
   const month = new Date().toISOString().slice(0, 7);
