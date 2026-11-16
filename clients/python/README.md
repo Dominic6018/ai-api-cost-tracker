@@ -120,11 +120,11 @@ Ask before an agent step whether the run or the month has room left ([details](.
 run = tracker.with_attribution(customer_id=customer_id, run_id=run_id)
 check = run.check_budget("0.25")  # a decimal string, int, float or Decimal
 if not check.allowed:
-    # check.reasons: ("run_budget",) and/or ("monthly_budget",)
+    # check.reasons: "run_budget", "monthly_budget" and/or "customer_limit"
     stop_run(check.run.remaining_usd if check.run else None)
 ```
 
-A scoped tracker's `run_id` is used unless you pass one. The result is a `BudgetCheck` with `allowed`, `reasons`, and `month` and `run` caps (`cap_usd`, `spent_usd`, `remaining_usd` as exact decimal strings; `run` is `None` without a run ID). A denial isn't an error. Network errors, 429s and 5xx are retried, since a check changes nothing; after that it raises `CostTrackerError`, so choose whether to fail open or closed:
+A scoped tracker's `run_id` and `customer_id` are used unless you pass them. The result is a `BudgetCheck` with `allowed`, `reasons`, and `month`, `run` and `customer` caps (`cap_usd`, `spent_usd`, `remaining_usd` as exact decimal strings; `run` is `None` without a run ID, `customer` without a customer ID). `customer` checks the monthly usage limit of the customer's [billing plan](../../docs/BILLING.md#usage-limits), across the organization's projects. A denial isn't an error. Network errors, 429s and 5xx are retried, since a check changes nothing; after that it raises `CostTrackerError`, so choose whether to fail open or closed:
 
 ```python
 try:

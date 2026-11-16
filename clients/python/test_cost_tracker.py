@@ -11,6 +11,7 @@ from unittest import mock
 
 from cost_tracker import (
     BudgetCheck,
+    CustomerBudget,
     BudgetReservation,
     CostTracker,
     CostTrackerError,
@@ -638,10 +639,42 @@ class CheckBudgetTest(unittest.TestCase):
         run.check_budget(0.25)
         run.check_budget(run_id="run_other")
         tracker.check_budget()
-        # Only the run matters to a check; other attribution isn't sent.
-        self.assertEqual(transport.calls[0][1], {"estimatedCostUsd": 0.25, "runId": "run_42"})
-        self.assertEqual(transport.calls[1][1], {"runId": "run_other"})
+        # The run and the customer (for their plan's limit) are sent; other
+        # attribution isn't.
+        self.assertEqual(
+            transport.calls[0][1], {"estimatedCostUsd": 0.25, "runId": "run_42", "customerId": "cus_1"}
+        )
+        self.assertEqual(transport.calls[1][1], {"runId": "run_other", "customerId": "cus_1"})
         self.assertEqual(transport.calls[2][1], {})
+
+    def test_reads_the_customers_plan_limit(self):
+        answer = {
+            **ANSWER,
+            "allowed": False,
+            "reasons": ["customer_limit"],
+            "customer": {
+                "customerId": "cus_42",
+                "plan": "pro",
+                "capUsd": "10.000000",
+                "spentUsd": "8.000000",
+                "heldUsd": "1.500000",
+                "remainingUsd": "0.500000",
+                "allowed": False,
+            },
+        }
+        tracker, transport, _ = make(checked(answer))
+        check = tracker.check_budget("1", customer_id="cus_42")
+        self.assertEqual(transport.calls[0][1], {"estimatedCostUsd": "1", "customerId": "cus_42"})
+        self.assertEqual(check.reasons, ("customer_limit",))
+        self.assertEqual(
+            check.customer,
+            CustomerBudget(
+                "10.000000", "8.000000", "0.500000", False, customer_id="cus_42", plan="pro", held_usd="1.500000"
+            ),
+        )
+        # Without a customer there's no customer cap.
+        tracker, _, _ = make(checked())
+        self.assertIsNone(tracker.check_budget().customer)
 
     def test_sends_decimals_in_fixed_point_and_rejects_booleans(self):
         tracker, transport, _ = make(checked())
@@ -712,7 +745,13 @@ class ReserveBudgetTest(unittest.TestCase):
         self.assertEqual(url, "https://costs.example.com/api/budget/reserve")
         self.assertEqual(
             body,
-            {"reservationId": "run_42-step_3", "estimatedCostUsd": "0.25", "runId": "run_42", "ttlSeconds": 120},
+            {
+                "reservationId": "run_42-step_3",
+                "estimatedCostUsd": "0.25",
+                "runId": "run_42",
+                "customerId": "cus_1",
+                "ttlSeconds": 120,
+            },
         )
         self.assertIsInstance(result, BudgetReservation)
         self.assertTrue(result.allowed)

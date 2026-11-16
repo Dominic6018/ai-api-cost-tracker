@@ -30,6 +30,7 @@ export function reservationJson(reservation: BudgetReservation, now: Date) {
     reservationId: reservation.reservationKey,
     amountUsd: reservation.amountUsd,
     runId: reservation.runId,
+    customerId: reservation.customerId,
     // A hold past its expiry no longer counts; report it as expired.
     status: lapsed ? ("expired" as const) : reservation.status,
     expiresAt: reservation.expiresAt.toISOString(),

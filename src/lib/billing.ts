@@ -194,6 +194,7 @@ export function planCreatedEntry(plan: {
   monthlyFeeUsd: string;
   includedUsageUsd: string;
   usageMultiplier: string;
+  monthlyUsageLimitUsd: string | null;
   organizationId: string;
 }): AuditEntry {
   return {
@@ -204,6 +205,7 @@ export function planCreatedEntry(plan: {
       monthlyFeeUsd: plan.monthlyFeeUsd,
       includedUsageUsd: plan.includedUsageUsd,
       usageMultiplier: plan.usageMultiplier,
+      monthlyUsageLimitUsd: plan.monthlyUsageLimitUsd,
     },
     organizationId: plan.organizationId,
   };

@@ -1,0 +1,4 @@
+ALTER TABLE "billing_plans" ADD COLUMN "monthly_usage_limit_usd" numeric(14, 6);--> statement-breakpoint
+ALTER TABLE "budget_reservations" ADD COLUMN "customer_id" text;--> statement-breakpoint
+CREATE INDEX "budget_reservations_customer_held_idx" ON "budget_reservations" USING btree ("customer_id","expires_at") WHERE "budget_reservations"."status" = 'held' and "budget_reservations"."customer_id" is not null;--> statement-breakpoint
+ALTER TABLE "billing_plans" ADD CONSTRAINT "billing_plans_usage_limit_valid" CHECK ("billing_plans"."monthly_usage_limit_usd" is null or "billing_plans"."monthly_usage_limit_usd" >= 0);

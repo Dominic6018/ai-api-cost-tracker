@@ -20,7 +20,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 
 <sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
 
-> **Status:** Milestones 0–9 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting, the TypeScript and Python clients, OpenTelemetry intake, reconciliation with Anthropic, OpenAI and Google Cloud bills, cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports, a reporting API, budget notifications and checks, and audited price management. Milestone 10 added roles, an audit log, organizations and single sign-on. Milestone 12 rounded out the clients, and Milestone 13 has a [billing ledger](docs/BILLING.md) with plans, monthly usage charges and prepaid credit; entitlements, invoicing and revenue reports are not built. See [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
+> **Status:** Milestones 0–9 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting, the TypeScript and Python clients, OpenTelemetry intake, reconciliation with Anthropic, OpenAI and Google Cloud bills, cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports, a reporting API, budget notifications and checks, and audited price management. Milestone 10 added roles, an audit log, organizations and single sign-on. Milestone 12 rounded out the clients, and Milestone 13 has a [billing ledger](docs/BILLING.md) with plans, monthly usage charges, prepaid credit and plan usage limits; invoicing and revenue reports are not built. See [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
 
 ## Features
 
@@ -470,7 +470,7 @@ curl -X POST https://costs.example.com/api/budget/check \
   -d '{"estimatedCostUsd": "0.25", "runId": "run_42"}'
 ```
 
-Both fields are optional. `estimatedCostUsd` is what the next step might cost, as a string or a number with up to 6 decimals (default 0). `runId` names the agent run, as in usage. The answer is always `200`:
+Every field is optional. `estimatedCostUsd` is what the next step might cost, as a string or a number with up to 6 decimals (default 0). `runId` names the agent run, and `customerId` the customer, as in usage. The answer is always `200`:
 
 ```json
 {
@@ -495,11 +495,12 @@ Both fields are optional. `estimatedCostUsd` is what the next step might cost, a
 ```
 
 - **Two caps:** the **monthly budget** against this UTC month's spend, counted as on the dashboard, and the project's **run budget** (set on the project form) against everything recorded with that `runId`. A cap without a value never denies; its `capUsd` and `remainingUsd` are `null`, and spend is still reported. `run` is `null` without a `runId`.
+- **The customer's plan:** with a `customerId`, `customer` checks the monthly usage limit of their [billing plan](docs/BILLING.md#usage-limits) against their spend and holds this UTC month in every project of the organization, with `plan` naming it. A customer with no plan, or a plan without a limit, is never denied by it. `customer` is `null` without a `customerId`.
 - **The rule:** a cap denies when nothing is left (spend at or over it, matching the dashboard's "over" at exactly 100%), or when the estimate is more than what's left. An estimate may use up exactly what's left. Comparisons are exact, in micro-dollars, and `remainingUsd` is negative when over.
-- **Denials are answers, not errors:** `reasons` lists `monthly_budget` and/or `run_budget`. Errors are `400` for an invalid body, `401`/`429` for keys as for usage, `403` for a read key, and `404` if the key's project was deleted. Responses are never cached.
+- **Denials are answers, not errors:** `reasons` lists `monthly_budget`, `run_budget` and/or `customer_limit`. Errors are `400` for an invalid body, `401`/`429` for keys as for usage, `403` for a read key, and `404` if the key's project was deleted. Responses are never cached.
 - **A check reserves nothing.** It sees recorded usage and unexpired [reservations](#reserving-budget) (reported as `heldUsd`), so steps checked at the same moment can each be allowed. To stop that, reserve instead.
 - **Failing open or closed is your choice.** If the tracker can't be reached, decide in your app whether to proceed.
-- **From the clients:** `tracker.checkBudget({ estimatedCostUsd, runId })` in [TypeScript](clients/typescript/README.md#budget-check) and `tracker.check_budget(estimated_cost_usd, run_id=...)` in [Python](clients/python/README.md#budget-check). A scoped tracker's run ID is used by default.
+- **From the clients:** `tracker.checkBudget({ estimatedCostUsd, runId, customerId })` in [TypeScript](clients/typescript/README.md#budget-check) and `tracker.check_budget(estimated_cost_usd, run_id=..., customer_id=...)` in [Python](clients/python/README.md#budget-check). A scoped tracker's run and customer IDs are used by default.
 
 ### Reserving budget
 

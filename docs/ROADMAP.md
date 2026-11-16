@@ -144,7 +144,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
   - [x] Charges for metered usage, posted to the ledger per billing period (#159)
 - Credits and entitlements:
   - [x] Prepaid credit: grant, apply to what's owed, expire, refund (#161)
-  - [ ] Entitlements: what a plan allows, checked before spending
+  - [x] Entitlements: what a plan allows, checked before spending (#163)
 - [ ] Optional per-customer billing through Stripe, in test mode by default (needs a Stripe test account)
 - [ ] Revenue and a "revenue minus AI API cost" view per customer, never labelled profit
 

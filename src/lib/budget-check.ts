@@ -1,6 +1,7 @@
 /**
  * The budget check an app calls before spending: may it spend about this
- * much now, given the project's monthly budget and its per-run budget?
+ * much now, given the project's monthly budget, its per-run budget and,
+ * for a named customer, the monthly usage limit of the customer's plan?
  */
 
 import { z } from "zod";
@@ -41,6 +42,7 @@ export const budgetCheckPayloadSchema = z
   .object({
     estimatedCostUsd: estimate.optional(),
     runId: z.string().trim().min(1).max(MAX_ATTRIBUTION_LENGTH).optional(),
+    customerId: z.string().trim().min(1).max(MAX_ATTRIBUTION_LENGTH).optional(),
   })
   .strict();
 
@@ -48,6 +50,8 @@ export interface BudgetCheckRequest {
   /** Micro-dollars; 0 when no estimate was given. */
   estimateMicros: bigint;
   runId?: string;
+  /** The customer the spending is for, to check their plan's limit. */
+  customerId?: string;
 }
 
 export type ParseBudgetCheckResult =
@@ -65,6 +69,7 @@ export function parseBudgetCheckPayload(body: unknown): ParseBudgetCheckResult {
     request: {
       estimateMicros: result.data.estimatedCostUsd ?? 0n,
       ...(result.data.runId && { runId: result.data.runId }),
+      ...(result.data.customerId && { customerId: result.data.customerId }),
     },
   };
 }
@@ -113,7 +118,18 @@ export function checkCap(
   };
 }
 
-export type DenyReason = "monthly_budget" | "run_budget";
+export type DenyReason = "monthly_budget" | "run_budget" | "customer_limit";
+
+/** A named customer's month, against their plan's usage limit. */
+export interface CustomerInputs {
+  /** The plan the customer is on this month; null without one. */
+  planSlug: string | null;
+  /** Null without a plan, or when the plan sets no limit. */
+  limitUsd: string | null;
+  /** This UTC month, across the organization's projects. */
+  spentUsd: string;
+  heldUsd: string;
+}
 
 export interface BudgetCheckInputs {
   /** Exact decimal strings, as Postgres returns them. */
@@ -125,6 +141,8 @@ export interface BudgetCheckInputs {
   /** Unexpired reservations: all of the project's, and the run's. */
   monthHeldUsd?: string;
   runHeldUsd?: string | null;
+  /** Null when the request named no customer. */
+  customer?: CustomerInputs | null;
 }
 
 export interface BudgetCheckResult {
@@ -136,6 +154,11 @@ export interface BudgetCheckResult {
   month: CapCheck & { period: string };
   /** The named run against the run budget; null without a runId. */
   run: (CapCheck & { runId: string }) | null;
+  /**
+   * The named customer against their plan's monthly usage limit; null
+   * without a customerId. Never denies without a plan or a limit.
+   */
+  customer: (CapCheck & { customerId: string; plan: string | null }) | null;
 }
 
 /** The answer for a request, given the project's caps and spend. */
@@ -160,14 +183,32 @@ export function decideBudgetCheck(
           toMicros(inputs.runHeldUsd ?? "0"),
         )
       : null;
+  const customer =
+    request.customerId !== undefined && inputs.customer
+      ? checkCap(
+          toMicros(inputs.customer.spentUsd),
+          cap(inputs.customer.limitUsd),
+          request.estimateMicros,
+          toMicros(inputs.customer.heldUsd),
+        )
+      : null;
   const reasons: DenyReason[] = [];
   if (!month.allowed) reasons.push("monthly_budget");
   if (run && !run.allowed) reasons.push("run_budget");
+  if (customer && !customer.allowed) reasons.push("customer_limit");
   return {
     allowed: reasons.length === 0,
     reasons,
     estimatedCostUsd: microsToDecimal(request.estimateMicros),
     month: { period: now.toISOString().slice(0, 7), ...month },
     run: run && request.runId ? { runId: request.runId, ...run } : null,
+    customer:
+      customer && request.customerId && inputs.customer
+        ? {
+            customerId: request.customerId,
+            plan: inputs.customer.planSlug,
+            ...customer,
+          }
+        : null,
   };
 }

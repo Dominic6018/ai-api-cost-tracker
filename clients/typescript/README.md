@@ -135,12 +135,12 @@ Ask before an agent step whether the run or the month has room left ([details](.
 const run = tracker.with({ customerId, runId: agentRun.id });
 const check = await run.checkBudget({ estimatedCostUsd: "0.25" });
 if (!check.allowed) {
-  // check.reasons: ["run_budget"] and/or ["monthly_budget"]
+  // check.reasons: "run_budget", "monthly_budget" and/or "customer_limit"
   return stopRun(check.run?.remainingUsd);
 }
 ```
 
-A scoped tracker's `runId` is used unless you pass one. The result has `allowed`, `reasons`, and `month` and `run` blocks with the cap, spent and remaining as exact decimal strings (`run` is `null` without a run ID). A denial isn't an error. Network errors, 429s and 5xx are retried, since a check changes nothing; after that it throws a `CostTrackerError`, so choose whether to fail open or closed:
+A scoped tracker's `runId` and `customerId` are used unless you pass them. The result has `allowed`, `reasons`, and `month`, `run` and `customer` blocks with the cap, spent and remaining as exact decimal strings (`run` is `null` without a run ID, `customer` without a customer ID). `customer` checks the monthly usage limit of the customer's [billing plan](../../docs/BILLING.md#usage-limits), across the organization's projects. A denial isn't an error. Network errors, 429s and 5xx are retried, since a check changes nothing; after that it throws a `CostTrackerError`, so choose whether to fail open or closed:
 
 ```ts
 const allowed = await run.checkBudget({ estimatedCostUsd: "0.25" }).then(

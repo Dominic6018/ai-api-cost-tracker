@@ -159,12 +159,18 @@ export interface BudgetCap {
 export interface BudgetCheck {
   allowed: boolean;
   /** Why it was denied; empty when allowed. */
-  reasons: Array<"monthly_budget" | "run_budget">;
+  reasons: Array<"monthly_budget" | "run_budget" | "customer_limit">;
   estimatedCostUsd: string;
   /** This UTC month against the project's monthly budget. */
   month: BudgetCap & { period: string };
   /** The run against the project's run budget; null without a runId. */
   run: (BudgetCap & { runId: string }) | null;
+  /**
+   * The customer against their billing plan's monthly usage limit, across
+   * the organization's projects; null without a customerId. `plan` is null
+   * when they have none, and then nothing is limited.
+   */
+  customer: (BudgetCap & { customerId: string; plan: string | null }) | null;
 }
 
 export interface BudgetCheckOptions {
@@ -175,6 +181,8 @@ export interface BudgetCheckOptions {
   estimatedCostUsd?: string | number;
   /** The agent run; defaults to a scoped tracker's runId. */
   runId?: string;
+  /** The customer, for their plan's limit; defaults to a scoped tracker's. */
+  customerId?: string;
 }
 
 /** A hold on part of the budgets, from `reserveBudget()`. */
@@ -183,6 +191,7 @@ export interface Reservation {
   /** The amount held, as an exact decimal string. */
   amountUsd: string;
   runId: string | null;
+  customerId: string | null;
   /** "expired" once past `expiresAt`, when it stops counting. */
   status: "held" | "released" | "settled" | "expired";
   expiresAt: string;
@@ -206,6 +215,8 @@ export interface ReserveOptions {
   estimatedCostUsd: string | number;
   /** The agent run; defaults to a scoped tracker's runId. */
   runId?: string;
+  /** The customer, for their plan's limit; defaults to a scoped tracker's. */
+  customerId?: string;
   /** How long the hold lasts; the server's default is 600, at most 86400. */
   ttlSeconds?: number;
 }
@@ -737,6 +748,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
     defaults: Scope,
   ): Promise<BudgetCheck> {
     const runId = options.runId ?? defaults.runId;
+    const customerId = options.customerId ?? defaults.customerId;
     const json = await post(
       "/api/budget/check",
       {
@@ -744,6 +756,7 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
           estimatedCostUsd: options.estimatedCostUsd,
         }),
         ...(runId !== undefined && { runId }),
+        ...(customerId !== undefined && { customerId }),
       },
       // A check is read-only, so a retry can't change anything.
       true,
@@ -759,10 +772,12 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
     defaults: Scope,
   ): Promise<BudgetReservation> {
     const runId = options.runId ?? defaults.runId;
+    const customerId = options.customerId ?? defaults.customerId;
     const body: Record<string, unknown> = {
       reservationId: options.reservationId,
       estimatedCostUsd: options.estimatedCostUsd,
       ...(runId !== undefined && { runId }),
+      ...(customerId !== undefined && { customerId }),
       ...(options.ttlSeconds !== undefined && {
         ttlSeconds: options.ttlSeconds,
       }),

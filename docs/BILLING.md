@@ -20,7 +20,7 @@ There's no invoicing or payment collection: the ledger says what each customer o
 
 ## Plans
 
-A plan has three terms, set when it's created:
+A plan has three terms, and an optional [usage limit](#usage-limits), set when it's created:
 
 | Term                 | Meaning                                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -35,6 +35,15 @@ For example, a plan with a $49 fee, $20 included and a multiplier of 1.25, for a
 - **One change at a time.** Changes for a customer are serialized, so periods never overlap, even when two are made at once.
 - **Separate organizations.** A plan belongs to one organization, and the database refuses a subscription whose customer or plan is in another.
 - Plans, subscriptions and unsubscriptions are in the audit log. A change that changes nothing is refused rather than logged.
+
+### Usage limits
+
+A plan can also say how much a customer may use: `--usage-limit 50` caps the AI API cost of their usage at $50 a UTC month. It's an entitlement, enforced before spending rather than billed:
+
+- [Budget checks and reservations](../README.md#budget-check-before-spending) that name a `customerId` check it, from any project in the organization, and deny with `customer_limit` when the estimate doesn't fit. The answer's `customer` block shows the plan, the limit, the spend and the holds.
+- Spend is the customer's recorded cost this month across the organization's projects; holds are unexpired reservations made for the customer in any of them. Reservations for one customer are decided in turn, so steps in different projects can't overspend it together.
+- A customer that isn't a billing customer, isn't on a plan this month, or is on a plan without a limit is never denied by it. The limit is on AI API cost, not on the usage charge, so it doesn't depend on the multiplier.
+- Like a budget, it only holds for calls that check first. The TypeScript and Python clients send a scoped tracker's customer automatically.
 
 ## Monthly charges
 
@@ -79,7 +88,7 @@ npm run billing -- reverse --entry <entry id> --reason "Charged twice"
 npm run billing -- ledger --customer cus_42      # balance and the latest 100 entries
 npm run billing -- customers                     # every customer's balance and plan this month
 
-npm run billing -- plan-add --plan pro --name "Pro" --fee 49 --included 20 --multiplier 1.25
+npm run billing -- plan-add --plan pro --name "Pro" --fee 49 --included 20 --multiplier 1.25 --usage-limit 100
 npm run billing -- plans                         # terms, and customers on each this month
 npm run billing -- subscribe --customer cus_42 --plan pro --from 2026-12
 npm run billing -- unsubscribe --customer cus_42 --from 2027-06

@@ -46,6 +46,8 @@ export function createBillingPlan(
     monthlyFeeMicros: bigint;
     includedUsageMicros: bigint;
     usageMultiplier: string;
+    /** The most AI API cost a customer may use in a month; null for none. */
+    monthlyUsageLimitMicros?: bigint | null;
   },
 ): Promise<CreatePlanResult> {
   return audited(db, actor, async (tx): Promise<Change<CreatePlanResult>> => {
@@ -58,6 +60,10 @@ export function createBillingPlan(
         monthlyFeeUsd: microsToDecimal(input.monthlyFeeMicros),
         includedUsageUsd: microsToDecimal(input.includedUsageMicros),
         usageMultiplier: input.usageMultiplier,
+        monthlyUsageLimitUsd:
+          input.monthlyUsageLimitMicros == null
+            ? null
+            : microsToDecimal(input.monthlyUsageLimitMicros),
       })
       .onConflictDoNothing()
       .returning();
