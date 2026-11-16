@@ -152,7 +152,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
 
 - Why spend changed:
   - [x] Volume, model mix, tokens per request and cost per token, adding up exactly (#167)
-  - [ ] Cost per token split into cache rate, input/output mix and price changes
+  - [x] Cost per token split into cache rate, input/output mix and price changes (#169)
 - [ ] Forecasts that show their method, horizon and whether there's enough data
 - [ ] Savings estimates from caching, batching and model choice, labelled as estimates
 

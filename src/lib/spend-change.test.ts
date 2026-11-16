@@ -5,6 +5,7 @@ import {
   explainSpendChange,
   parseComparison,
   type ModelInput,
+  type ModelUsage,
 } from "./spend-change";
 
 const usage = (requests: number, tokens: number, costMicros: number) => ({
@@ -15,8 +16,8 @@ const usage = (requests: number, tokens: number, costMicros: number) => ({
 
 const model = (
   name: string,
-  before: ReturnType<typeof usage> | null,
-  after: ReturnType<typeof usage> | null,
+  before: ModelUsage | null,
+  after: ModelUsage | null,
 ): ModelInput => ({ provider: "openai", model: name, before, after });
 
 const sumOf = (effects: Record<string, bigint>) =>
@@ -43,8 +44,11 @@ describe("explainSpendChange", () => {
       modelMix: 60_000_000n,
       // A's 108,000 tokens at $0.001 = $108, against $90.
       tokensPerRequest: 18_000_000n,
-      // A's actual $118.80 against $108.
-      costPerToken: 10_800_000n,
+      // A's actual $118.80 against $108; without prices it's all other.
+      inputOutputMix: 0n,
+      cacheRate: 0n,
+      price: 0n,
+      other: 10_800_000n,
     });
     expect(sumOf(result.effects)).toBe(result.changeMicros);
     expect(result.models.map((m) => m.model)).toEqual(["b", "a"]);
@@ -61,7 +65,10 @@ describe("explainSpendChange", () => {
       // 20 requests on A at $1 = $20, against the $40 before.
       modelMix: -20_000_000n,
       tokensPerRequest: 0n,
-      costPerToken: 0n,
+      inputOutputMix: 0n,
+      cacheRate: 0n,
+      price: 0n,
+      other: 0n,
     });
     expect(result.changeMicros).toBe(-20_000_000n);
   });
@@ -74,7 +81,90 @@ describe("explainSpendChange", () => {
       volume: 7_000_000n,
       modelMix: 0n,
       tokensPerRequest: 0n,
-      costPerToken: 0n,
+      inputOutputMix: 0n,
+      cacheRate: 0n,
+      price: 0n,
+      other: 0n,
+    });
+  });
+
+  it("splits cost per token into input/output mix, cache rate and price", () => {
+    const rates = (output: number) => ({
+      inputPerMTokUsd: 2,
+      cachedInputPerMTokUsd: 0.5,
+      outputPerMTokUsd: output,
+    });
+    const parts = (input: number, cached: number, output: number) => ({
+      input: BigInt(input),
+      cached: BigInt(cached),
+      writes: 0n,
+      writes1h: 0n,
+      output: BigInt(output),
+    });
+    // Before: 1M input, none cached, 100k output, at $2 / $8: $2.80.
+    // After: half the input cached, twice the output, output now $10:
+    // $1.00 + $0.25 + $2.00 = $3.25.
+    const result = explainSpendChange(
+      [
+        model(
+          "a",
+          {
+            ...usage(100, 1_100_000, 2_800_000),
+            parts: parts(1_000_000, 0, 100_000),
+          },
+          {
+            ...usage(100, 1_200_000, 3_250_000),
+            parts: parts(1_000_000, 500_000, 200_000),
+          },
+        ),
+      ],
+      new Map([["openai/a", { before: rates(8), after: rates(10) }]]),
+    );
+    expect(result.effects).toEqual({
+      volume: 0n,
+      modelMix: 0n,
+      // 1.2M tokens at the earlier $2.80 per 1.1M.
+      tokensPerRequest: 254_545n,
+      // 200k output instead of 100k-in-1.1M's share, at the old rates: $3.60.
+      inputOutputMix: 545_455n,
+      // Half the input cached, at the old rates: $2.85.
+      cacheRate: -750_000n,
+      // The same tokens at the new output rate: $3.25.
+      price: 400_000n,
+      // The rates model these costs exactly.
+      other: 0n,
+    });
+    expect(sumOf(result.effects)).toBe(450_000n);
+  });
+
+  it("leaves cost per token as other without a price for both periods", () => {
+    const parts = {
+      input: 900n,
+      cached: 0n,
+      writes: 0n,
+      writes1h: 0n,
+      output: 100n,
+    };
+    const result = explainSpendChange(
+      [
+        model(
+          "a",
+          { ...usage(1, 1000, 1_000_000), parts },
+          { ...usage(1, 1000, 1_500_000), parts },
+        ),
+      ],
+      new Map([
+        [
+          "openai/a",
+          { before: null, after: { inputPerMTokUsd: 1, outputPerMTokUsd: 1 } },
+        ],
+      ]),
+    );
+    expect(result.effects).toMatchObject({
+      inputOutputMix: 0n,
+      cacheRate: 0n,
+      price: 0n,
+      other: 500_000n,
     });
   });
 
@@ -82,7 +172,7 @@ describe("explainSpendChange", () => {
     const same = usage(3, 300, 4_000_000);
     const result = explainSpendChange([model("a", same, same)]);
     expect(result.changeMicros).toBe(0n);
-    expect(Object.values(result.effects)).toEqual([0n, 0n, 0n, 0n]);
+    expect(Object.values(result.effects).every((v) => v === 0n)).toBe(true);
   });
 
   it("always adds up to the change exactly, whatever the rounding", () => {
@@ -104,7 +194,37 @@ describe("explainSpendChange", () => {
             : usage(1 + next(89), next(10_001), next(9_999_999)),
         ),
       );
-      const result = explainSpendChange(inputs);
+      // Token kinds and prices for some models, so repricing is tested too.
+      const prices = new Map();
+      for (const m of inputs) {
+        for (const u of [m.before, m.after]) {
+          if (u && next(2) === 0) {
+            const input = (u.tokens * BigInt(next(100))) / 100n;
+            const cached = (input * BigInt(next(100))) / 100n;
+            const writes = ((input - cached) * BigInt(next(100))) / 100n;
+            Object.assign(u, {
+              parts: {
+                input,
+                cached,
+                writes,
+                writes1h: (writes * BigInt(next(100))) / 100n,
+                output: u.tokens - input,
+              },
+            });
+          }
+        }
+        const rate = () => ({
+          inputPerMTokUsd: next(1000) / 100,
+          outputPerMTokUsd: next(4000) / 100,
+          cachedInputPerMTokUsd: next(3) === 0 ? null : next(100) / 100,
+          cacheWritePerMTokUsd: next(3) === 0 ? null : next(500) / 100,
+        });
+        prices.set(`openai/${m.model}`, {
+          before: next(5) === 0 ? null : rate(),
+          after: rate(),
+        });
+      }
+      const result = explainSpendChange(inputs, prices);
       expect(sumOf(result.effects)).toBe(result.changeMicros);
       for (const m of result.models) {
         expect(sumOf(m.effects)).toBe(m.changeMicros);
