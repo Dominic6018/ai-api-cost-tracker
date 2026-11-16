@@ -291,14 +291,17 @@ Prices are shared by the whole install, so only the install's owners, the admins
 
 `/changes` compares two periods of whole UTC days, the last 30 or 7 days against the period before or the last two finished months, for all projects or one, and splits the change in spend into:
 
-| Effect             | What it measures                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------------------ |
-| Volume             | More or fewer requests, at the earlier mix of models and cost per request                              |
-| Model mix          | Requests moving between models, including models that started or stopped being used                    |
-| Tokens per request | Longer or shorter requests on the same model, at its earlier cost per token                            |
-| Cost per token     | The rest on the same model: the cache rate, the input/output split and price changes, together for now |
+| Effect             | What it measures                                                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Volume             | More or fewer requests, at the earlier mix of models and cost per request                                                         |
+| Model mix          | Requests moving between models, including models that started or stopped being used                                               |
+| Tokens per request | Longer or shorter requests on the same model, at its earlier cost per token                                                       |
+| Input/output mix   | On the same model, more or less of the tokens being output, which costs more than input                                           |
+| Cache rate         | On the same model, more or less of the input read from or written to the prompt cache                                             |
+| Price              | The model's rates in the price table at the end of each period                                                                    |
+| Other              | What those rates don't model: long-prompt tiers, batch, audio, images, web searches, a price change during a period, and rounding |
 
-Each driver is swapped from the earlier period to the later one in that order, holding the others (a chained substitution), so the effects add up to the change exactly, overall and per model; a different order would give somewhat different amounts, and the page says so. Each step is rounded once to the micro-dollar. Only priced requests count, and unpriced ones in either period are flagged.
+Each driver is swapped from the earlier period to the later one in that order, holding the others (a chained substitution), so the effects add up to the change exactly, overall and per model; a different order would give somewhat different amounts, and the page says so. The last four split the change in a model's cost per token: its tokens of each kind (uncached and cached input, cache writes, output) are repriced at the model's standard rates in the price table at the end of each period. Whatever that repricing doesn't explain is **other**, which is zero when every request was billed at those plain rates; a model without a price in both periods has all of its cost-per-token change there. Each step is rounded once to the micro-dollar. Only priced requests count, and unpriced ones in either period are flagged.
 
 ### Revenue
 

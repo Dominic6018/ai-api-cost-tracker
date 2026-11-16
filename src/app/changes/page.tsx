@@ -3,7 +3,7 @@ import Link from "next/link";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
 import { organizationScope } from "@/db/scope";
-import { getSpendChangeInputs } from "@/db/spend-change";
+import { getReferencePrices, getSpendChangeInputs } from "@/db/spend-change";
 import { requireUser } from "@/lib/auth";
 import { formatEntryUsd } from "@/lib/billing";
 import { formatUsd } from "@/lib/cost";
@@ -41,9 +41,21 @@ const EFFECT_LABELS: Record<Effect, { label: string; hint: string }> = {
     label: "Tokens per request",
     hint: "Longer or shorter requests on the same model",
   },
-  costPerToken: {
-    label: "Cost per token",
-    hint: "The rest, on the same model: cache rate, input/output split and price changes, together",
+  inputOutputMix: {
+    label: "Input/output mix",
+    hint: "On the same model, more or less of the tokens being output, which costs more than input",
+  },
+  cacheRate: {
+    label: "Cache rate",
+    hint: "On the same model, more or less of the input read from or written to the prompt cache",
+  },
+  price: {
+    label: "Price",
+    hint: "The model's rates in the price table at the end of each period",
+  },
+  other: {
+    label: "Other",
+    hint: "What the rates don't model: long-prompt tiers, batch, audio, images, web searches, a price change during a period, and rounding",
   },
 };
 
@@ -77,7 +89,8 @@ export default async function ChangesPage({
 
   const periods = comparisonPeriods(new Date(), comparison);
   const inputs = await getSpendChangeInputs(db, scope, periods, project?.id);
-  const result = explainSpendChange(inputs.models);
+  const prices = await getReferencePrices(db, inputs.models, periods);
+  const result = explainSpendChange(inputs.models, prices);
   const unpriced = inputs.unpriced.before + inputs.unpriced.after;
   const query = (compare: string) =>
     `/changes?compare=${compare}${project ? `&project=${project.id}` : ""}`;

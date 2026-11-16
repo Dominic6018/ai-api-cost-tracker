@@ -443,7 +443,9 @@ step("why spend changed adds up and states its method");
       "Volume",
       "Model mix",
       "Tokens per request",
-      "Cost per token",
+      "Input/output mix",
+      "Cache rate",
+      "Other",
       "Method:",
     ]) {
       assert.ok(text.includes(label), `the page shows "${label}"`);
