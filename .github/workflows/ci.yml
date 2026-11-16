@@ -719,6 +719,11 @@ jobs:
           if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO billing_credit_uses (organization_id, customer_id, grant_id, kind, amount_usd, created_by) SELECT organization_id, customer_id, id, 'refunded', 0.000001, 'ci' FROM billing_credit_grants WHERE id = '$GRANT'"; then exit 1; fi
           if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE billing_credit_grants SET amount_usd = 1000 WHERE id = '$GRANT'"; then exit 1; fi
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action IN ('billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded') AND target = '$C2'")" = 4
+          # Revenue against AI API cost for last month: $49 fee + $17 usage
+          # billed, $30 of usage; applied credit isn't less revenue.
+          npm run --silent billing -- revenue --month "$LAST" | tee revenue.log
+          grep -qxF "$C2  revenue \$66.000000  AI API cost \$30.000000  revenue minus AI API cost \$36.000000 (54.5% of revenue)" revenue.log
+          if grep -qi 'profit' revenue.log; then exit 1; fi
           # Entitlements: a plan's monthly usage limit, enforced by budget
           # checks naming the customer. $4 used this month of a $5 limit.
           C3="cus-ci-limit-$GITHUB_RUN_ID"

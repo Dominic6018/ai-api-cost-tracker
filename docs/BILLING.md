@@ -70,6 +70,25 @@ Credit is money a customer has paid in advance, or that you give them. It's kept
 
 The database refuses to use more of a grant than is left, to use expired credit, or to use another customer's credit, even from two runs at once. Grants and their uses are append-only, like the ledger, and applied credit can't be reversed: grant new credit instead. Every grant, application and refund is in the audit log.
 
+## Revenue and AI API cost
+
+`/revenue` on the dashboard, and `npm run billing -- revenue --month 2026-10`, put each customer's revenue next to what their usage cost, for a UTC month:
+
+| Column                    | What it is                                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Revenue                   | What the ledger billed for the month: its plan fees and usage charges, and adjustments and reversals made during it       |
+| AI API cost               | The recorded cost of the customer's usage that month, across the organization's projects, as on the rest of the dashboard |
+| Revenue minus AI API cost | Revenue less AI API cost. It leaves out hosting, staff and every other cost, so it isn't profit and isn't called that     |
+| Share of revenue          | That difference as a share of revenue, rounded toward zero to a tenth of a percent; blank without revenue                 |
+
+- **Applied credit isn't less revenue.** It's how a bill was paid. Give a discount as a negative adjustment instead.
+- **A month's charges count in that month,** even when they're posted early the next month. Adjustments and reversals count in the month they're made, so reversing last month's fee lowers this month's revenue.
+- **Everything is shown,** so totals add up: customers whose usage was never billed (not billing customers, or billed nothing), and usage attributed to no customer, as its own row.
+- **Unpriced usage is flagged:** its cost isn't known yet, so AI API cost is short until it's priced.
+- **The current month is in progress:** its fees and usage charges are posted once it's over, so revenue then is only what's been billed so far.
+
+Amounts on the page are rounded for display, with the exact amount on hover; the command prints them exactly.
+
 ## Guarantees
 
 - **Exact amounts.** Entries are stored as decimals with six places (micro-dollars), summed exactly, and shown unrounded. An amount with more than six decimals is refused, not rounded. The largest entry is $99,999,999.999999, and zero isn't an entry.
@@ -102,6 +121,8 @@ npm run billing -- grant-credit --customer cus_42 --amount 100 --reason "Prepaid
 npm run billing -- credits --customer cus_42     # each grant: used, left, expiry
 npm run billing -- apply-credits                 # every customer who owes something
 npm run billing -- refund-credit --grant <grant id> --reason "Refunded by bank transfer"
+
+npm run billing -- revenue --month 2026-10        # revenue, AI API cost and the difference
 ```
 
 `--from` defaults to the current UTC month and `--month` to last month. `ledger` also lists the customer's plan history. Run `charge` early each month, for example from cron, after any late usage has arrived.

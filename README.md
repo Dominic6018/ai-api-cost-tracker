@@ -20,7 +20,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 
 <sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
 
-> **Status:** Milestones 0–9 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting, the TypeScript and Python clients, OpenTelemetry intake, reconciliation with Anthropic, OpenAI and Google Cloud bills, cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports, a reporting API, budget notifications and checks, and audited price management. Milestone 10 added roles, an audit log, organizations and single sign-on. Milestone 12 rounded out the clients, and Milestone 13 has a [billing ledger](docs/BILLING.md) with plans, monthly usage charges, prepaid credit and plan usage limits; invoicing and revenue reports are not built. See [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
+> **Status:** Milestones 0–9 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting, the TypeScript and Python clients, OpenTelemetry intake, reconciliation with Anthropic, OpenAI and Google Cloud bills, cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports, a reporting API, budget notifications and checks, and audited price management. Milestone 10 added roles, an audit log, organizations and single sign-on. Milestone 12 rounded out the clients, and Milestone 13 has a [billing ledger](docs/BILLING.md) with plans, monthly usage charges, prepaid credit and plan usage limits; and a revenue minus AI API cost view; invoicing and Stripe are not built. See [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
 
 ## Features
 
@@ -57,7 +57,7 @@ What it doesn't do yet (the plan is in [docs/PRODUCT_UPGRADE_PLAN.md](docs/PRODU
 - **Unpriced usage isn't estimated.** Usage with no stored price is kept as unpriced and left out of totals, budgets and exports until a price is added and `npm run reprice` runs; the tracker never guesses a cost.
 - **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Provider bills are compared with recorded costs (`npm run reconcile`), not imported as usage. The clients read usage from OpenAI, Anthropic and Gemini streams with `trackStream()` / `track_stream()`.
 - **Budgets only hold for calls that ask first.** A reservation stops concurrent steps from overspending, but a provider call your app makes without reserving isn't stopped (see [Reserving budget](#reserving-budget)). The TypeScript and Python clients reserve with `reserveBudget()` / `reserve_budget()`.
-- **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. The [billing ledger](docs/BILLING.md) records what customers owe: plan fees and usage charges posted each month from the command line, adjustments, and prepaid credit applied against them. There are no invoices, payments or revenue reports yet.
+- **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. The [billing ledger](docs/BILLING.md) records what customers owe: plan fees and usage charges posted each month from the command line, adjustments, and prepaid credit applied against them. [`/revenue`](docs/BILLING.md#revenue-and-ai-api-cost) puts each customer's revenue next to their AI API cost. There are no invoices or payment collection yet.
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's Ultrafast tier isn't tracked.
 - **Organizations are managed from the command line**, as accounts are. An account is in one organization, and prices are shared across the install.
 - **Days are UTC days** for "today", "this month" and the charts.
@@ -285,6 +285,10 @@ npm run org -- list                                              # with account 
 ```
 
 Prices are shared by the whole install, so only the install's owners, the admins of the default organization, can change them. Admins of other organizations can read prices but not who added them. Scheduled budget notifications cover every organization and go to the install's one set of destinations. Project slugs are unique within an organization, so two organizations can each have a `web-app`; when they do, `npm run api-key -- create` needs `--org <slug>` to know which. Changes made from the command line to an account or API key are logged in that account's or project's organization.
+
+### Revenue
+
+`/revenue` shows, for a UTC month, each customer's revenue from the [billing ledger](docs/BILLING.md), the AI API cost of their usage, and **revenue minus AI API cost**, with its share of revenue. That difference leaves out every other cost, so it's never called profit. Customers whose usage wasn't billed, and usage with no customer, are listed too, and unpriced usage is flagged. See [Revenue and AI API cost](docs/BILLING.md#revenue-and-ai-api-cost).
 
 ### Single sign-on
 

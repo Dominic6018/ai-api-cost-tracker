@@ -146,7 +146,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
   - [x] Prepaid credit: grant, apply to what's owed, expire, refund (#161)
   - [x] Entitlements: what a plan allows, checked before spending (#163)
 - [ ] Optional per-customer billing through Stripe, in test mode by default (needs a Stripe test account)
-- [ ] Revenue and a "revenue minus AI API cost" view per customer, never labelled profit
+- [x] Revenue and a "revenue minus AI API cost" view per customer, never labelled profit (#165)
 
 ## Milestone 14: Insights
 

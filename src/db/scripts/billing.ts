@@ -47,6 +47,8 @@ import {
   usableCredit,
 } from "../billing-credits";
 import { findOrganization } from "../organizations";
+import { getRevenueInputs } from "../revenue";
+import { formatShare, revenueReport } from "@/lib/revenue";
 
 const USAGE = `Usage:
   npm run billing -- customer-add --customer <id> --name <name>
@@ -63,6 +65,7 @@ const USAGE = `Usage:
   npm run billing -- credits --customer <id>
   npm run billing -- apply-credits [--customer <id>]
   npm run billing -- refund-credit --grant <grant id> --reason <text>
+  npm run billing -- revenue [--month YYYY-MM]
 
 Each takes --org <slug>; the default organization otherwise.
 
@@ -89,7 +92,11 @@ applied to what the customers owe.
 
 Credit is prepaid: apply-credits uses it against what a customer owes,
 soonest-expiring first. --expires is the last day it can be used (UTC).
-refund-credit withdraws what's left of a grant.`;
+refund-credit withdraws what's left of a grant.
+
+revenue lists each customer's revenue (what the ledger billed for the
+month), AI API cost and revenue minus AI API cost, which isn't profit;
+--month defaults to this month.`;
 
 function valid<T>(parsed: Parsed<T>): T {
   if (!parsed.ok) throw new Error(parsed.error);
@@ -135,6 +142,7 @@ async function main() {
     credits: ["customer"],
     "apply-credits": [],
     "refund-credit": ["grant", "reason"],
+    revenue: [],
   };
   if (
     !command ||
@@ -393,6 +401,29 @@ async function main() {
       console.log(
         `Refunded ${formatEntryUsd(result.refundedMicros)} of unused credit from grant ${values.grant} (${result.customerExternalId}).`,
       );
+    } else if (command === "revenue") {
+      const reportMonth = values.month !== undefined ? month : thisMonth;
+      const report = revenueReport(
+        await getRevenueInputs(db, scope, reportMonth),
+      );
+      const line = (
+        label: string,
+        r: {
+          revenueMicros: bigint;
+          costMicros: bigint;
+          differenceMicros: bigint;
+          sharePermille: number | null;
+          unpriced: number;
+        },
+      ) =>
+        `${label}  revenue ${formatEntryUsd(r.revenueMicros)}  AI API cost ${formatEntryUsd(r.costMicros)}  revenue minus AI API cost ${formatEntryUsd(r.differenceMicros)} (${formatShare(r.sharePermille)} of revenue)${r.unpriced > 0 ? `  ${r.unpriced} unpriced request(s)` : ""}`;
+      console.log(
+        `${monthLabel(reportMonth)}${reportMonth >= thisMonth ? " (so far)" : ""}`,
+      );
+      for (const row of report.rows) {
+        console.log(line(row.customerId ?? "(no customer)", row));
+      }
+      console.log(line("Total", report.total));
     } else if (command === "subscribe" || command === "unsubscribe") {
       const target = await customer();
       const chosen = command === "subscribe" ? await plan() : null;

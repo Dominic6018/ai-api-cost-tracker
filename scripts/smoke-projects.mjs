@@ -425,6 +425,25 @@ step("spend over time filters by range and project");
     assert.equal(total(fallback.html), expected, "unknown project means all");
 }
 
+step("revenue against AI API cost, never called profit");
+{
+  const result = await page("/revenue");
+  assert.equal(result.status, 200);
+  const text = result.html.replace(/<!-- -->/g, "");
+  assert.ok(text.includes("Revenue minus AI API cost"), "the column is named");
+  // "Profit" appears once, in the sentence saying the figure isn't profit.
+  assert.equal(
+    (text.match(/profit/gi) ?? []).length,
+    1,
+    "nothing is labelled profit",
+  );
+  const month = new Date().toISOString().slice(0, 7);
+  assert.ok(text.includes(month), "the current month is shown");
+  const fallback = await page("/revenue?month=not-a-month");
+  assert.equal(fallback.status, 200, "an invalid month falls back");
+  assert.ok(fallback.html.replace(/<!-- -->/g, "").includes(month));
+}
+
 step("ingestion health lists what each project sent today");
 {
   const result = await page("/ingestion");
@@ -691,6 +710,7 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     "/audit",
     "/prices",
     "/ingestion",
+    "/revenue",
   ]) {
     const result = await page(path);
     assert.equal(result.status, 200, `GET ${path}`);
