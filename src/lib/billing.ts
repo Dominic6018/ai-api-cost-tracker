@@ -302,3 +302,85 @@ export function chargedEntry(charge: {
     organizationId: charge.organizationId,
   };
 }
+
+/**
+ * The last day credit can be used, "2027-01-31", as the moment it
+ * expires: the start of the next UTC day.
+ */
+export function parseCreditExpiry(value: string): Parsed<Date> {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  const day = match ? new Date(`${match[0]}T00:00:00Z`) : null;
+  if (
+    !day ||
+    Number.isNaN(day.getTime()) ||
+    day.toISOString().slice(0, 10) !== match![0]
+  ) {
+    return {
+      ok: false,
+      error: `An expiry date is written YYYY-MM-DD: "${value}"`,
+    };
+  }
+  return { ok: true, value: new Date(day.getTime() + 86_400_000) };
+}
+
+export interface GrantBalance {
+  id: string;
+  remainingMicros: bigint;
+  expiresAt: Date | null;
+  createdAt: Date;
+}
+
+/**
+ * How much of each grant to use for `owedMicros`: credit that expires
+ * soonest first, then the oldest, so as little as possible goes unused.
+ * Grants with nothing left, or expired at `now`, are skipped.
+ */
+export function allocateCredit(
+  grants: GrantBalance[],
+  owedMicros: bigint,
+  now: Date,
+): Array<{ id: string; amountMicros: bigint }> {
+  const usable = grants
+    .filter(
+      (g) =>
+        g.remainingMicros > 0n &&
+        (g.expiresAt === null || g.expiresAt.getTime() > now.getTime()),
+    )
+    .sort(
+      (a, b) =>
+        (a.expiresAt?.getTime() ?? Infinity) -
+          (b.expiresAt?.getTime() ?? Infinity) ||
+        a.createdAt.getTime() - b.createdAt.getTime() ||
+        a.id.localeCompare(b.id),
+    );
+  const uses: Array<{ id: string; amountMicros: bigint }> = [];
+  let left = owedMicros;
+  for (const grant of usable) {
+    if (left <= 0n) break;
+    const take = grant.remainingMicros < left ? grant.remainingMicros : left;
+    uses.push({ id: grant.id, amountMicros: take });
+    left -= take;
+  }
+  return uses;
+}
+
+export function creditGrantedEntry(grant: {
+  id: string;
+  customerExternalId: string;
+  amountUsd: string;
+  expiresAt: Date | null;
+  description: string;
+  organizationId: string;
+}): AuditEntry {
+  return {
+    action: "billing.credit_granted",
+    target: grant.customerExternalId,
+    details: {
+      grantId: grant.id,
+      amountUsd: grant.amountUsd,
+      expiresAt: grant.expiresAt?.toISOString() ?? null,
+      description: grant.description,
+    },
+    organizationId: grant.organizationId,
+  };
+}

@@ -7,6 +7,7 @@ import {
   monthLabel,
   monthStart,
   parseBillingMonth,
+  parseCreditExpiry,
   parseCustomerExternalId,
   parseCustomerName,
   parseEntryAmount,
@@ -38,6 +39,13 @@ import {
   plansByCustomer,
 } from "../billing-plans";
 import { chargeMonth, customersOnPlans } from "../billing-charges";
+import {
+  applyCredits,
+  grantCredit,
+  listCreditGrants,
+  refundCredit,
+  usableCredit,
+} from "../billing-credits";
 import { findOrganization } from "../organizations";
 
 const USAGE = `Usage:
@@ -51,6 +59,10 @@ const USAGE = `Usage:
   npm run billing -- subscribe --customer <id> --plan <slug> [--from YYYY-MM]
   npm run billing -- unsubscribe --customer <id> [--from YYYY-MM]
   npm run billing -- charge [--month YYYY-MM] [--customer <id>]
+  npm run billing -- grant-credit --customer <id> --amount <usd> --reason <text> [--expires YYYY-MM-DD] [--key <key>]
+  npm run billing -- credits --customer <id>
+  npm run billing -- apply-credits [--customer <id>]
+  npm run billing -- refund-credit --grant <grant id> --reason <text>
 
 Each takes --org <slug>; the default organization otherwise.
 
@@ -70,7 +82,12 @@ default for --from) or a later one, replacing what was scheduled.
 charge posts a finished month's plan fee and usage beyond the allowance
 for every customer on a plan that month (or one --customer); --month
 defaults to last month. A month is charged once, and not while any of its
-usage is unpriced: price it first with npm run reprice.`;
+usage is unpriced: price it first with npm run reprice. Credit is then
+applied to what the customers owe.
+
+Credit is prepaid: apply-credits uses it against what a customer owes,
+soonest-expiring first. --expires is the last day it can be used (UTC).
+refund-credit withdraws what's left of a grant.`;
 
 function valid<T>(parsed: Parsed<T>): T {
   if (!parsed.ok) throw new Error(parsed.error);
@@ -95,6 +112,8 @@ async function main() {
       multiplier: { type: "string" },
       from: { type: "string" },
       month: { type: "string" },
+      expires: { type: "string" },
+      grant: { type: "string" },
     },
   });
   const [command] = positionals;
@@ -109,6 +128,10 @@ async function main() {
     subscribe: ["customer", "plan"],
     unsubscribe: ["customer"],
     charge: [],
+    "grant-credit": ["customer", "amount", "reason"],
+    credits: ["customer"],
+    "apply-credits": [],
+    "refund-credit": ["grant", "reason"],
   };
   if (
     !command ||
@@ -164,6 +187,13 @@ async function main() {
     values.reason !== undefined
       ? valid(parseEntryDescription(values.reason))
       : undefined;
+  const expires =
+    values.expires !== undefined
+      ? valid(parseCreditExpiry(values.expires))
+      : null;
+  if (command === "grant-credit" && amount !== undefined && amount <= 0n) {
+    throw new Error("Credit is a positive amount.");
+  }
   const key =
     values.key !== undefined ? valid(parseEntryKey(values.key)) : undefined;
 
@@ -272,6 +302,12 @@ async function main() {
         console.log(
           `${prefix}  ${result.planSlug}: fee ${formatEntryUsd(charges.feeMicros)}, usage ${formatEntryUsd(charges.billableUsageMicros)} (AI API cost ${formatEntryUsd(result.usage.costMicros)}, ${result.usage.requests} request(s))  ${result.posted ? "posted" : result.entries.length > 0 ? "already charged" : "nothing to post"}`,
         );
+        const credit = await applyCredits(db, actor, target);
+        if (credit.appliedMicros > 0n) {
+          console.log(
+            `${prefix}  credit applied ${formatEntryUsd(credit.appliedMicros)}`,
+          );
+        }
       }
       if (targets.length === 0) {
         console.log(`No customers on a plan in ${monthLabel(month)}.`);
@@ -281,6 +317,74 @@ async function main() {
           `${blocked} customer(s) not charged because of unpriced usage.`,
         );
       }
+    } else if (command === "grant-credit") {
+      const result = await grantCredit(db, actor, await customer(), {
+        amountMicros: amount!,
+        expiresAt: expires,
+        description: reason!,
+        grantKey: key,
+      });
+      if (!result.ok) {
+        throw new Error(
+          result.error === "already_expired"
+            ? "That expiry date has passed."
+            : `Grant key "${key}" was already used for a different grant.`,
+        );
+      }
+      const { grant } = result;
+      console.log(
+        `${result.replayed ? "Already granted" : "Granted"} ${usd(grant.amountUsd)} of credit to ${customerId}${grant.expiresAt ? `, usable until ${grant.expiresAt.toISOString()}` : ""}: grant ${grant.id}`,
+      );
+    } else if (command === "credits") {
+      const found = await customer();
+      const grants = await listCreditGrants(db, found);
+      console.log(
+        `${found.externalId}  usable credit ${formatEntryUsd(usableCredit(grants))}`,
+      );
+      for (const g of grants) {
+        console.log(
+          [
+            g.grant.id,
+            `granted ${usd(g.grant.amountUsd)}`,
+            `used ${formatEntryUsd(g.usedMicros)}`,
+            `left ${formatEntryUsd(g.remainingMicros)}`,
+            g.grant.expiresAt
+              ? `${g.expired ? "expired" : "expires"} ${g.grant.expiresAt.toISOString()}`
+              : "no expiry",
+            g.grant.description,
+          ].join("  "),
+        );
+      }
+    } else if (command === "apply-credits") {
+      const targets =
+        customerId !== undefined
+          ? [await customer()]
+          : (await listBillingCustomers(db, scope))
+              .filter((row) => row.balanceMicros > 0n)
+              .map((row) => row.customer);
+      for (const target of targets) {
+        const result = await applyCredits(db, actor, target);
+        console.log(
+          `${target.externalId}  credit applied ${formatEntryUsd(result.appliedMicros)}`,
+        );
+      }
+    } else if (command === "refund-credit") {
+      const result = await refundCredit(db, actor, scope, {
+        grantId: values.grant!,
+        reason: reason!,
+      });
+      if (!result.ok) {
+        throw new Error(
+          {
+            not_found: `No credit grant ${values.grant} in ${organization.slug}.`,
+            expired: "That credit has expired; there's nothing to refund.",
+            nothing_left: "That credit has all been used or refunded.",
+          }[result.error],
+        );
+      }
+      console.log(
+        `Refunded ${formatEntryUsd(result.refundedMicros)} of unused credit from grant ${values.grant} (${result.customerExternalId}).`,
+      );
     } else if (command === "subscribe" || command === "unsubscribe") {
       const target = await customer();
       const chosen = command === "subscribe" ? await plan() : null;
@@ -325,6 +429,8 @@ async function main() {
           {
             not_found: `No ledger entry ${values.entry} in ${organization.slug}.`,
             is_reversal: "That entry is a reversal; it can't be reversed.",
+            is_credit:
+              "Applied credit can't be reversed; grant new credit instead.",
             already_reversed: "That entry has already been reversed.",
           }[result.error],
         );

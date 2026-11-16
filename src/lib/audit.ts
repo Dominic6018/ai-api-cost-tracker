@@ -40,6 +40,9 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "billing.subscribed": "Changed billing plan",
   "billing.unsubscribed": "Ended billing plan",
   "billing.charged": "Charged plan month",
+  "billing.credit_granted": "Granted credit",
+  "billing.credits_applied": "Applied credit",
+  "billing.credit_refunded": "Refunded credit",
 };
 
 const PROJECT_FIELDS = [
