@@ -80,6 +80,9 @@ export default async function OverviewPage() {
           <Link href="/ingestion" className="underline">
             Ingestion
           </Link>
+          <Link href="/revenue" className="underline">
+            Revenue
+          </Link>
           <Link href="/prices" className="underline">
             Prices
           </Link>
