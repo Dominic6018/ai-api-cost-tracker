@@ -17,6 +17,7 @@ export interface BudgetCheckHandlerDeps extends ApiKeyDeps {
     projectId: string,
     runId: string | undefined,
     now: Date,
+    customerId: string | undefined,
   ) => Promise<BudgetCheckInputs | undefined>;
 }
 
@@ -60,6 +61,7 @@ export function createBudgetCheckHandler(deps: BudgetCheckHandlerDeps) {
       auth.projectId,
       parsed.request.runId,
       at,
+      parsed.request.customerId,
     );
     if (!inputs) {
       return errorResponse(404, "project_not_found", "Project not found");

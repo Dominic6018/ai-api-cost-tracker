@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { TablesRelationalConfig } from "drizzle-orm/relations";
 import {
@@ -8,7 +8,12 @@ import {
 } from "@/lib/budget-check";
 import type { ReserveRequest } from "@/lib/budget-reservations";
 import { getBudgetCheckInputs } from "./budget-check";
-import { budgetReservations, projects, type BudgetReservation } from "./schema";
+import {
+  billingCustomers,
+  budgetReservations,
+  projects,
+  type BudgetReservation,
+} from "./schema";
 
 export type ReserveResult =
   | {
@@ -48,6 +53,20 @@ export async function reserveBudget<
       .where(eq(projects.id, projectId))
       .for("update");
     if (!project) return { ok: false, error: "project_not_found" } as const;
+    // A customer's limit spans projects, so holds for one customer are
+    // decided in turn too, whichever project they're made in.
+    if (request.customerId !== undefined) {
+      await tx
+        .select({ id: billingCustomers.id })
+        .from(billingCustomers)
+        .where(
+          and(
+            eq(billingCustomers.externalId, request.customerId),
+            sql`${billingCustomers.organizationId} = (select ${projects.organizationId} from ${projects} where ${projects.id} = ${projectId}::uuid)`,
+          ),
+        )
+        .for("update");
+    }
 
     const [existing] = await tx
       .select()
@@ -63,13 +82,15 @@ export async function reserveBudget<
       projectId,
       request.runId,
       now,
+      request.customerId,
     );
     if (!inputs) return { ok: false, error: "project_not_found" } as const;
 
     if (existing) {
       const same =
         existing.amountUsd === microsToDecimal(request.estimateMicros) &&
-        (existing.runId ?? undefined) === request.runId;
+        (existing.runId ?? undefined) === request.runId &&
+        (existing.customerId ?? undefined) === request.customerId;
       if (!same) return { ok: false, error: "reservation_conflict" } as const;
       // The hold already counts in `inputs`; report the budgets as they are.
       const held = existing.status === "held" && existing.expiresAt > now;
@@ -77,7 +98,11 @@ export async function reserveBudget<
         ok: true,
         decision: {
           ...decideBudgetCheck(
-            { estimateMicros: 0n, runId: request.runId },
+            {
+              estimateMicros: 0n,
+              runId: request.runId,
+              customerId: request.customerId,
+            },
             inputs,
             now,
           ),
@@ -105,6 +130,7 @@ export async function reserveBudget<
         projectId,
         reservationKey: request.reservationId,
         runId: request.runId ?? null,
+        customerId: request.customerId ?? null,
         amountUsd: microsToDecimal(request.estimateMicros),
         expiresAt: new Date(now.getTime() + request.ttlSeconds * 1000),
         createdAt: now,

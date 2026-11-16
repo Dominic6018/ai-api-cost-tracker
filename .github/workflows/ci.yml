@@ -719,6 +719,26 @@ jobs:
           if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO billing_credit_uses (organization_id, customer_id, grant_id, kind, amount_usd, created_by) SELECT organization_id, customer_id, id, 'refunded', 0.000001, 'ci' FROM billing_credit_grants WHERE id = '$GRANT'"; then exit 1; fi
           if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE billing_credit_grants SET amount_usd = 1000 WHERE id = '$GRANT'"; then exit 1; fi
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action IN ('billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded') AND target = '$C2'")" = 4
+          # Entitlements: a plan's monthly usage limit, enforced by budget
+          # checks naming the customer. $4 used this month of a $5 limit.
+          C3="cus-ci-limit-$GITHUB_RUN_ID"
+          npm run --silent billing -- customer-add --customer "$C3" --name "CI limited"
+          npm run --silent billing -- plan-add --plan "$P-limited" --name "CI limited" --fee 0 --included 0 --multiplier 1 --usage-limit 5 | grep -qF 'usage limited to $5.000000'
+          npm run --silent billing -- subscribe --customer "$C3" --plan "$P-limited"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO usage_events (project_id, provider, model, input_tokens, output_tokens, cost_usd, customer_id) SELECT id, 'openai', 'gpt-4.1', 1000, 100, 4, '$C3' FROM projects WHERE slug = 'sample-app'"
+          npm run --silent api-key -- create --project sample-app --name ci-limit > limit-key.txt
+          LIMIT_KEY=$(grep -oE 'act_[A-Za-z0-9_-]{43}' limit-key.txt)
+          echo "::add-mask::$LIMIT_KEY"
+          limit_check() {
+            curl -s -o limit.json -w '%{http_code}' -X POST http://localhost:3000/api/budget/check \
+              -H "authorization: Bearer $LIMIT_KEY" -H 'content-type: application/json' \
+              -d "{\"estimatedCostUsd\":\"$1\",\"customerId\":\"$C3\"}"
+          }
+          test "$(limit_check 1.000001)" = 200; cat limit.json; echo
+          grep -q '"allowed":false,"reasons":\["customer_limit"\]' limit.json
+          grep -qF "\"customer\":{\"customerId\":\"$C3\",\"plan\":\"$P-limited\",\"capUsd\":\"5.000000\",\"spentUsd\":\"4.000000\"" limit.json
+          test "$(limit_check 1)" = 200
+          grep -q '"allowed":true' limit.json
       - name: Budget alerts reach a signed webhook once per threshold
         run: |
           # A local receiver that checks each request's HMAC signature.

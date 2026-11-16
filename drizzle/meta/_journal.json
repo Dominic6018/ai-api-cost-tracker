@@ -267,6 +267,13 @@
       "when": 1794834173667,
       "tag": "0037_billing_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794835042174,
+      "tag": "0038_plan_usage_limits",
+      "breakpoints": true
     }
   ]
 }

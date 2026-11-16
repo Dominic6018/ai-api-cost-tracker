@@ -152,6 +152,7 @@ describe("decideBudgetCheck", () => {
         remainingUsd: "0.750000",
         allowed: true,
       },
+      customer: null,
     });
   });
 
@@ -195,5 +196,49 @@ describe("decideBudgetCheck", () => {
     expect(result.allowed).toBe(true);
     expect(result.month).toMatchObject({ capUsd: null, spentUsd: "40.000000" });
     expect(result.run).toMatchObject({ capUsd: null, spentUsd: "7.000000" });
+  });
+
+  it("checks a named customer against their plan's monthly limit", () => {
+    const customer = (limitUsd: string | null, spentUsd = "8.000000") => ({
+      planSlug: limitUsd === null ? null : "pro",
+      limitUsd,
+      spentUsd,
+      heldUsd: "1.500000",
+    });
+    const allowed = decideBudgetCheck(
+      { estimateMicros: 500_000n, customerId: "cus_42" },
+      inputs({ customer: customer("10") }),
+      NOW,
+    );
+    expect(allowed.customer).toEqual({
+      customerId: "cus_42",
+      plan: "pro",
+      capUsd: "10.000000",
+      spentUsd: "8.000000",
+      heldUsd: "1.500000",
+      remainingUsd: "0.500000",
+      allowed: true,
+    });
+    expect(allowed.allowed).toBe(true);
+
+    // One micro-dollar more than is left under the limit is denied.
+    const denied = decideBudgetCheck(
+      { estimateMicros: 500_001n, customerId: "cus_42" },
+      inputs({ customer: customer("10") }),
+      NOW,
+    );
+    expect([denied.allowed, denied.reasons]).toEqual([
+      false,
+      ["customer_limit"],
+    ]);
+
+    // No plan, or a plan without a limit, never denies.
+    const unlimited = decideBudgetCheck(
+      { estimateMicros: 50_000_000n, customerId: "cus_42" },
+      inputs({ customer: customer(null, "999") }),
+      NOW,
+    );
+    expect(unlimited.allowed).toBe(true);
+    expect(unlimited.customer).toMatchObject({ plan: null, capUsd: null });
   });
 });

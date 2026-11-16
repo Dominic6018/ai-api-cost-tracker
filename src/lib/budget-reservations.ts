@@ -34,6 +34,7 @@ export interface ReserveRequest {
   reservationId: string;
   estimateMicros: bigint;
   runId?: string;
+  customerId?: string;
   ttlSeconds: number;
 }
 
@@ -70,6 +71,7 @@ export function parseReservePayload(
       estimateMicros: result.data.estimatedCostUsd,
       ttlSeconds: result.data.ttlSeconds,
       ...(result.data.runId && { runId: result.data.runId }),
+      ...(result.data.customerId && { customerId: result.data.customerId }),
     },
   };
 }

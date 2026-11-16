@@ -13,6 +13,6 @@ export const POST = createBudgetCheckHandler({
       RATE_LIMITS.apiKeyIp,
       rateLimitKey(RATE_LIMITS.apiKeyIp, clientIp),
     ),
-  getInputs: (projectId, runId, now) =>
-    getBudgetCheckInputs(db, projectId, runId, now),
+  getInputs: (projectId, runId, now, customerId) =>
+    getBudgetCheckInputs(db, projectId, runId, now, customerId),
 });

@@ -173,17 +173,30 @@ class RunBudget(BudgetCap):
 
 
 @dataclass(frozen=True)
+class CustomerBudget(BudgetCap):
+    """A customer against their billing plan's monthly usage limit."""
+
+    customer_id: str
+    #: The customer's plan this month; None without one (nothing is limited).
+    plan: Optional[str]
+    held_usd: str = "0.000000"
+
+
+@dataclass(frozen=True)
 class BudgetCheck:
     """The answer to ``check_budget()``."""
 
     allowed: bool
-    #: Why it was denied ("monthly_budget", "run_budget"); empty when allowed.
+    #: Why it was denied ("monthly_budget", "run_budget", "customer_limit");
+    #: empty when allowed.
     reasons: Tuple[str, ...]
     estimated_cost_usd: str
     #: This UTC month against the project's monthly budget.
     month: MonthBudget
     #: The run against the project's run budget; None without a run ID.
     run: Optional[RunBudget]
+    #: The customer against their plan's limit; None without a customer ID.
+    customer: Optional[CustomerBudget] = None
 
 
 def _cap_fields(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -201,6 +214,16 @@ def _budget_check(data: Dict[str, Any]) -> BudgetCheck:
         month = MonthBudget(period=data["month"]["period"], **_cap_fields(data["month"]))
         run_data = data.get("run")
         run = RunBudget(run_id=run_data["runId"], **_cap_fields(run_data)) if run_data else None
+        customer_data = data.get("customer")
+        customer = (
+            CustomerBudget(
+                customer_id=customer_data["customerId"],
+                plan=customer_data.get("plan"),
+                **_cap_fields(customer_data),
+            )
+            if customer_data
+            else None
+        )
         allowed = data["allowed"]
         if not isinstance(allowed, bool):
             raise TypeError("allowed")
@@ -210,6 +233,7 @@ def _budget_check(data: Dict[str, Any]) -> BudgetCheck:
             estimated_cost_usd=data["estimatedCostUsd"],
             month=month,
             run=run,
+            customer=customer,
         )
     except (KeyError, TypeError) as error:
         raise CostTrackerError("Unexpected response") from error
@@ -698,10 +722,12 @@ class CostTracker:
         estimated_cost_usd: Optional[Union[str, int, float, Decimal]] = None,
         *,
         run_id: Optional[str] = None,
+        customer_id: Optional[str] = None,
     ) -> BudgetCheck:
         """Asks whether the project may spend ``estimated_cost_usd`` now,
-        under its monthly budget and, given a run ID, its run budget. A
-        scoped tracker's ``run_id`` is used unless one is passed.
+        under its monthly budget, given a run ID its run budget, and given
+        a customer ID their billing plan's monthly usage limit. A scoped
+        tracker's ``run_id`` and ``customer_id`` are used unless passed.
 
         A denial is a result with ``allowed=False``, not an error. Failures
         raise CostTrackerError, so decide whether to fail open or closed.
@@ -718,6 +744,9 @@ class CostTracker:
         run = run_id if run_id is not None else self._defaults.get("runId")
         if run is not None:
             payload["runId"] = run
+        customer = customer_id if customer_id is not None else self._defaults.get("customerId")
+        if customer is not None:
+            payload["customerId"] = customer
         return _budget_check(self._post("/api/budget/check", payload, True))
 
     def reserve_budget(
@@ -726,6 +755,7 @@ class CostTracker:
         *,
         reservation_id: str,
         run_id: Optional[str] = None,
+        customer_id: Optional[str] = None,
         ttl_seconds: Optional[int] = None,
     ) -> BudgetReservation:
         """Holds ``estimated_cost_usd`` of the budgets for a step if it fits,
@@ -744,6 +774,9 @@ class CostTracker:
         run = run_id if run_id is not None else self._defaults.get("runId")
         if run is not None:
             payload["runId"] = run
+        customer = customer_id if customer_id is not None else self._defaults.get("customerId")
+        if customer is not None:
+            payload["customerId"] = customer
         if ttl_seconds is not None:
             payload["ttlSeconds"] = ttl_seconds
         data = self._post("/api/budget/reserve", payload, True)

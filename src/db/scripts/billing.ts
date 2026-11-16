@@ -54,7 +54,7 @@ const USAGE = `Usage:
   npm run billing -- adjust --customer <id> --amount <usd> --reason <text> [--key <key>]
   npm run billing -- reverse --entry <entry id> --reason <text>
   npm run billing -- ledger --customer <id>
-  npm run billing -- plan-add --plan <slug> --name <name> --fee <usd> --included <usd> --multiplier <n>
+  npm run billing -- plan-add --plan <slug> --name <name> --fee <usd> --included <usd> --multiplier <n> [--usage-limit <usd>]
   npm run billing -- plans
   npm run billing -- subscribe --customer <id> --plan <slug> [--from YYYY-MM]
   npm run billing -- unsubscribe --customer <id> [--from YYYY-MM]
@@ -75,7 +75,9 @@ Entries are never changed or deleted: reverse one to correct it. With
 
 A plan has a monthly fee, the usage included in it (in USD of usage
 charges), and the rate for usage as a multiple of its AI API cost
-(--multiplier 1.25 is cost plus 25%). Plans can't be changed; add a new
+(--multiplier 1.25 is cost plus 25%). --usage-limit caps the AI API cost
+a customer may use in a month, enforced by budget checks that name the
+customer; without it there's no limit. Plans can't be changed; add a new
 one. A customer's plan changes by UTC month, from the current month (the
 default for --from) or a later one, replacing what was scheduled.
 
@@ -110,6 +112,7 @@ async function main() {
       fee: { type: "string" },
       included: { type: "string" },
       multiplier: { type: "string" },
+      "usage-limit": { type: "string" },
       from: { type: "string" },
       month: { type: "string" },
       expires: { type: "string" },
@@ -163,6 +166,10 @@ async function main() {
     values.included !== undefined
       ? valid(parsePlanAmount(values.included, "The included usage"))
       : undefined;
+  const usageLimit =
+    values["usage-limit"] !== undefined
+      ? valid(parsePlanAmount(values["usage-limit"], "The usage limit"))
+      : null;
   const multiplier =
     values.multiplier !== undefined
       ? valid(parseUsageMultiplier(values.multiplier))
@@ -257,6 +264,7 @@ async function main() {
         monthlyFeeMicros: fee!,
         includedUsageMicros: included!,
         usageMultiplier: multiplier!,
+        monthlyUsageLimitMicros: usageLimit,
       });
       if (!result.ok) {
         throw new Error(
@@ -265,12 +273,12 @@ async function main() {
       }
       const added = result.plan;
       console.log(
-        `Added plan ${added.slug} (${added.name}): ${usd(added.monthlyFeeUsd)} a month, ${usd(added.includedUsageUsd)} of usage included, usage at ${added.usageMultiplier} x AI API cost.`,
+        `Added plan ${added.slug} (${added.name}): ${usd(added.monthlyFeeUsd)} a month, ${usd(added.includedUsageUsd)} of usage included, usage at ${added.usageMultiplier} x AI API cost, ${added.monthlyUsageLimitUsd === null ? "no usage limit" : `usage limited to ${usd(added.monthlyUsageLimitUsd)} of AI API cost a month`}.`,
       );
     } else if (command === "plans") {
       for (const row of await listBillingPlans(db, scope, thisMonth)) {
         console.log(
-          `${row.plan.slug}  ${row.plan.name}  fee ${usd(row.plan.monthlyFeeUsd)}  included ${usd(row.plan.includedUsageUsd)}  multiplier ${row.plan.usageMultiplier}  ${row.customers} customer(s) this month`,
+          `${row.plan.slug}  ${row.plan.name}  fee ${usd(row.plan.monthlyFeeUsd)}  included ${usd(row.plan.includedUsageUsd)}  multiplier ${row.plan.usageMultiplier}  ${row.customers} customer(s) this month  limit ${row.plan.monthlyUsageLimitUsd === null ? "none" : usd(row.plan.monthlyUsageLimitUsd)}`,
         );
       }
     } else if (command === "charge") {

@@ -61,7 +61,7 @@ describe("POST /api/budget/check", () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(getInputs).toHaveBeenCalledWith(projectId, "run_42", now);
+    expect(getInputs).toHaveBeenCalledWith(projectId, "run_42", now, undefined);
     expect(await response.json()).toMatchObject({
       allowed: true,
       reasons: [],
@@ -91,7 +91,12 @@ describe("POST /api/budget/check", () => {
       });
       const response = await handler(post(body));
       expect(response.status).toBe(200);
-      expect(getInputs).toHaveBeenCalledWith(projectId, undefined, now);
+      expect(getInputs).toHaveBeenCalledWith(
+        projectId,
+        undefined,
+        now,
+        undefined,
+      );
       expect((await response.json()).run).toBeNull();
     },
   );

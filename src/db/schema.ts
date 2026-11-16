@@ -668,6 +668,8 @@ export const budgetReservations = pgTable(
     // The caller's id for the hold; retries reuse it.
     reservationKey: text("reservation_key").notNull(),
     runId: text("run_id"),
+    // The customer the step is for, whose plan limit the hold counts against.
+    customerId: text("customer_id"),
     amountUsd: numeric("amount_usd", { precision: 14, scale: 6 }).notNull(),
     status: text("status").$type<ReservationStatus>().notNull().default("held"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -682,6 +684,10 @@ export const budgetReservations = pgTable(
       t.reservationKey,
     ),
     // Serves the sum of a project's unexpired holds.
+    // Serves the sum of a customer's unexpired holds.
+    index("budget_reservations_customer_held_idx")
+      .on(t.customerId, t.expiresAt)
+      .where(sql`${t.status} = 'held' and ${t.customerId} is not null`),
     index("budget_reservations_held_idx")
       .on(t.projectId, t.expiresAt)
       .where(sql`${t.status} = 'held'`),
@@ -858,6 +864,12 @@ export const billingPlans = pgTable(
       precision: 10,
       scale: 4,
     }).notNull(),
+    // The most AI API cost the customer's usage may reach in a month, which
+    // budget checks naming the customer enforce; null for no limit.
+    monthlyUsageLimitUsd: numeric("monthly_usage_limit_usd", {
+      precision: 14,
+      scale: 6,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -876,6 +888,10 @@ export const billingPlans = pgTable(
     check(
       "billing_plans_amounts_valid",
       sql`${t.monthlyFeeUsd} >= 0 and ${t.includedUsageUsd} >= 0 and ${t.usageMultiplier} >= 0`,
+    ),
+    check(
+      "billing_plans_usage_limit_valid",
+      sql`${t.monthlyUsageLimitUsd} is null or ${t.monthlyUsageLimitUsd} >= 0`,
     ),
   ],
 );

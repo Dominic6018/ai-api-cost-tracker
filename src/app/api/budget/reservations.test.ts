@@ -14,6 +14,7 @@ const reservation: BudgetReservation = {
   projectId,
   reservationKey: "step-1",
   runId: "run_42",
+  customerId: null,
   amountUsd: "0.250000",
   status: "held",
   expiresAt: new Date("2026-11-10T12:10:00Z"),

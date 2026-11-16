@@ -784,12 +784,17 @@ describe("checkBudget", () => {
     await run.checkBudget({ estimatedCostUsd: 0.25 });
     await run.checkBudget({ runId: "run_other" });
     await tracker.checkBudget();
-    // Only the run matters to a check; other attribution isn't sent.
+    // The run and the customer (for their plan's limit) are sent; other
+    // attribution isn't.
     expect(bodyOf(fetch, 0)).toEqual({
       estimatedCostUsd: 0.25,
       runId: "run_42",
+      customerId: "cus_1",
     });
-    expect(bodyOf(fetch, 1)).toEqual({ runId: "run_other" });
+    expect(bodyOf(fetch, 1)).toEqual({
+      runId: "run_other",
+      customerId: "cus_1",
+    });
     expect(bodyOf(fetch, 2)).toEqual({});
   });
 
@@ -903,6 +908,7 @@ describe("reserveBudget and releaseBudget", () => {
       reservationId: "run_42-step_3",
       estimatedCostUsd: "0.25",
       runId: "run_42",
+      customerId: "cus_1",
       ttlSeconds: 120,
     });
     expect(reservePayloadSchema.safeParse(body).success).toBe(true);
