@@ -426,6 +426,16 @@ step("spend over time filters by range and project");
     assert.equal(total(fallback.html), expected, "unknown project means all");
 }
 
+step("savings are labelled as estimates");
+{
+  const result = await page("/savings");
+  assert.equal(result.status, 200);
+  const text = result.html.replace(/<!-- -->/g, "");
+  assert.ok(text.includes("Savings estimates"));
+  assert.ok(text.includes("These are estimates, not promises."));
+  assert.equal((await page("/savings?project=not-a-project")).status, 200);
+}
+
 step("why spend changed adds up and states its method");
 {
   for (const compare of ["30d", "7d", "month", "not-a-comparison"]) {
@@ -744,6 +754,7 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     "/ingestion",
     "/revenue",
     "/changes",
+    "/savings",
   ]) {
     const result = await page(path);
     assert.equal(result.status, 200, `GET ${path}`);
