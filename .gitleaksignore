@@ -1,0 +1,6 @@
+# Findings gitleaks may skip, by fingerprint (commit:file:rule:line).
+# Only made-up test values belong here, never a real secret: rotate those.
+
+# A made-up restricted key ("rk_test_abc123") in a test of key validation;
+# the line now builds the value at runtime so it is not flagged again.
+3faef58c45743b62e2b80053621ea8b9c15299bc:src/lib/stripe.test.ts:generic-api-key:31

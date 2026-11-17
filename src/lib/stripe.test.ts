@@ -28,7 +28,9 @@ describe("parseStripeConfig", () => {
       mode: "test",
     });
     expect(
-      parseStripeConfig({ STRIPE_SECRET_KEY: " rk_test_abc123 " }),
+      parseStripeConfig({
+        STRIPE_SECRET_KEY: ` ${["rk", "test", "abc123"].join("_")} `,
+      }),
     ).toMatchObject({ enabled: true, mode: "test" });
   });
 
