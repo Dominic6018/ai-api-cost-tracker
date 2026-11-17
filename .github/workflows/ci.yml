@@ -724,6 +724,13 @@ jobs:
           npm run --silent billing -- revenue --month "$LAST" | tee revenue.log
           grep -qxF "$C2  revenue \$66.000000  AI API cost \$30.000000  revenue minus AI API cost \$36.000000 (54.5% of revenue)" revenue.log
           if grep -qi 'profit' revenue.log; then exit 1; fi
+          # Stripe is off without a key, and refuses a live key unless asked
+          if npm run --silent billing -- stripe-invoice 2> stripe.log; then exit 1; fi
+          grep -qF "Stripe isn't set up" stripe.log
+          LIVE_LOOKING="sk_live_$(printf 'x%.0s' $(seq 24))"
+          if STRIPE_SECRET_KEY="$LIVE_LOOKING" npm run --silent billing -- stripe-invoice 2> stripe.log; then exit 1; fi
+          grep -qF "real money" stripe.log
+          if grep -qF "$LIVE_LOOKING" stripe.log; then echo "the key was echoed"; exit 1; fi
           # Entitlements: a plan's monthly usage limit, enforced by budget
           # checks naming the customer. $4 used this month of a $5 limit.
           C3="cus-ci-limit-$GITHUB_RUN_ID"

@@ -48,6 +48,11 @@ import {
 } from "../billing-credits";
 import { findOrganization } from "../organizations";
 import { getRevenueInputs } from "../revenue";
+import {
+  customersWithOpenEntries,
+  invoiceOpenEntries,
+} from "../billing-stripe";
+import { createStripeClient, parseStripeConfig } from "@/lib/stripe";
 import { formatShare, revenueReport } from "@/lib/revenue";
 
 const USAGE = `Usage:
@@ -66,6 +71,7 @@ const USAGE = `Usage:
   npm run billing -- apply-credits [--customer <id>]
   npm run billing -- refund-credit --grant <grant id> --reason <text>
   npm run billing -- revenue [--month YYYY-MM]
+  npm run billing -- stripe-invoice [--customer <id>]
 
 Each takes --org <slug>; the default organization otherwise.
 
@@ -96,7 +102,12 @@ refund-credit withdraws what's left of a grant.
 
 revenue lists each customer's revenue (what the ledger billed for the
 month), AI API cost and revenue minus AI API cost, which isn't profit;
---month defaults to this month.`;
+--month defaults to this month.
+
+stripe-invoice creates a draft Stripe invoice for each customer's ledger
+entries not yet invoiced (or one --customer), for you to review and send
+in Stripe. It needs STRIPE_SECRET_KEY, a test key unless
+STRIPE_ALLOW_LIVE=true.`;
 
 function valid<T>(parsed: Parsed<T>): T {
   if (!parsed.ok) throw new Error(parsed.error);
@@ -143,6 +154,7 @@ async function main() {
     "apply-credits": [],
     "refund-credit": ["grant", "reason"],
     revenue: [],
+    "stripe-invoice": [],
   };
   if (
     !command ||
@@ -211,6 +223,11 @@ async function main() {
   }
   const key =
     values.key !== undefined ? valid(parseEntryKey(values.key)) : undefined;
+
+  // Stripe settings are checked before connecting, like the arguments.
+  const stripe = command === "stripe-invoice" ? parseStripeConfig() : null;
+  if (stripe && !stripe.enabled) throw new Error(stripe.reason);
+  const stripeConfig = stripe?.enabled ? stripe : null;
 
   const client = postgres(parseEnv().DATABASE_URL, {
     max: 1,
@@ -424,6 +441,31 @@ async function main() {
         console.log(line(row.customerId ?? "(no customer)", row));
       }
       console.log(line("Total", report.total));
+    } else if (command === "stripe-invoice") {
+      const client = createStripeClient(stripeConfig!);
+      const targets =
+        customerId !== undefined
+          ? [await customer()]
+          : await customersWithOpenEntries(db, scope, client.mode);
+      if (targets.length === 0) {
+        console.log("Nothing to invoice: every ledger entry is on an invoice.");
+      }
+      const cents = (n: bigint) =>
+        `${n < 0n ? "-" : ""}$${(n < 0n ? -n : n) / 100n}.${String((n < 0n ? -n : n) % 100n).padStart(2, "0")}`;
+      for (const target of targets) {
+        const result = await invoiceOpenEntries(db, actor, client, target);
+        if (result.ok) {
+          console.log(
+            `${target.externalId}  draft invoice ${result.invoice.stripeInvoiceId} for ${cents(result.invoice.amountCents)} (${result.entries} entr${result.entries === 1 ? "y" : "ies"}, ${client.mode} mode)`,
+          );
+        } else if (result.error === "nothing_owed") {
+          console.log(
+            `${target.externalId}  not invoiced: the open entries come to ${cents(result.balanceCents)}, so nothing is owed`,
+          );
+        } else {
+          console.log(`${target.externalId}  nothing to invoice`);
+        }
+      }
     } else if (command === "subscribe" || command === "unsubscribe") {
       const target = await customer();
       const chosen = command === "subscribe" ? await plan() : null;

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
   date,
   foreignKey,
@@ -569,6 +570,7 @@ export const AUDIT_ACTIONS = [
   "billing.credit_granted",
   "billing.credits_applied",
   "billing.credit_refunded",
+  "billing.stripe_invoiced",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -606,7 +608,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded', 'billing.stripe_invoiced')`,
     ),
   ],
 );
@@ -1142,6 +1144,107 @@ export const billingCreditUses = pgTable(
   ],
 );
 
+export const STRIPE_MODES = ["test", "live"] as const;
+export type StripeMode = (typeof STRIPE_MODES)[number];
+
+/**
+ * A billing customer's customer in Stripe, per mode: test (sandbox) and
+ * live accounts are separate, with separate customers.
+ */
+export const billingStripeCustomers = pgTable(
+  "billing_stripe_customers",
+  {
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => billingCustomers.id, { onDelete: "cascade" }),
+    mode: text("mode").$type<StripeMode>().notNull(),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("billing_stripe_customers_customer_idx").on(
+      t.customerId,
+      t.mode,
+    ),
+    check(
+      "billing_stripe_customers_mode_valid",
+      sql`${t.mode} in ('test', 'live')`,
+    ),
+  ],
+);
+
+/**
+ * A draft invoice created in Stripe for ledger entries not invoiced
+ * before, in one mode. Append-only, like the ledger.
+ */
+export const billingStripeInvoices = pgTable(
+  "billing_stripe_invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull(),
+    mode: text("mode").$type<StripeMode>().notNull(),
+    stripeInvoiceId: text("stripe_invoice_id").notNull(),
+    // The sum of the items, in whole cents, as sent to Stripe.
+    amountCents: bigint("amount_cents", { mode: "bigint" }).notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "billing_stripe_invoices_customer_fk",
+      columns: [t.customerId, t.organizationId],
+      foreignColumns: [billingCustomers.id, billingCustomers.organizationId],
+    }),
+    uniqueIndex("billing_stripe_invoices_stripe_idx").on(t.stripeInvoiceId),
+    index("billing_stripe_invoices_customer_idx").on(t.customerId),
+    check(
+      "billing_stripe_invoices_mode_valid",
+      sql`${t.mode} in ('test', 'live')`,
+    ),
+    check("billing_stripe_invoices_amount_valid", sql`${t.amountCents} > 0`),
+  ],
+);
+
+/**
+ * Which invoice each ledger entry went out on, per mode: an entry is
+ * invoiced at most once in each. Append-only.
+ */
+export const billingStripeInvoiceItems = pgTable(
+  "billing_stripe_invoice_items",
+  {
+    ledgerEntryId: uuid("ledger_entry_id")
+      .notNull()
+      .references(() => billingLedgerEntries.id, { onDelete: "cascade" }),
+    mode: text("mode").$type<StripeMode>().notNull(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => billingStripeInvoices.id, { onDelete: "cascade" }),
+    // Null for an entry that rounds to $0.00, which has no Stripe item.
+    stripeItemId: text("stripe_item_id"),
+    // The entry rounded to whole cents, as sent; the ledger keeps the
+    // exact amount.
+    amountCents: bigint("amount_cents", { mode: "bigint" }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("billing_stripe_invoice_items_entry_idx").on(
+      t.ledgerEntryId,
+      t.mode,
+    ),
+    index("billing_stripe_invoice_items_invoice_idx").on(t.invoiceId),
+    check(
+      "billing_stripe_invoice_items_mode_valid",
+      sql`${t.mode} in ('test', 'live')`,
+    ),
+  ],
+);
+
 export const API_KEY_SCOPES = ["ingest", "read"] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
@@ -1157,6 +1260,7 @@ export type BillingPlan = typeof billingPlans.$inferSelect;
 export type BillingSubscription = typeof billingSubscriptions.$inferSelect;
 export type BillingCreditGrant = typeof billingCreditGrants.$inferSelect;
 export type BillingCreditUse = typeof billingCreditUses.$inferSelect;
+export type StripeInvoice = typeof billingStripeInvoices.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;
