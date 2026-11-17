@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DashboardNav } from "../dashboard-nav";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
 import { organizationScope } from "@/db/scope";
@@ -97,10 +98,8 @@ export default async function ChangesPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-12 sm:px-8">
+      <DashboardNav user={user} current="/changes" />
       <div className="flex flex-col gap-1">
-        <Link href="/overview" className="text-sm text-foreground/60 underline">
-          Spend overview
-        </Link>
         <h1 className="text-3xl font-semibold tracking-tight">
           Why spend changed
         </h1>

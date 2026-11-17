@@ -186,6 +186,7 @@ src/
     audit.ts      Audit entries: what's recorded and how it reads
     budget-check.ts  Budget check payloads and the exact allow/deny rule
     forecast.ts   Month-end forecast from the 7-full-day pace, its range and data check
+    navigation.ts The dashboard's sections and pages, by role
     spike.ts      Spending spike rule, against the same 7-day pace
     spend-signals.ts  Forecast and spike notifications: planning and messages
     prices.ts     Price list: current, scheduled and ended prices; stale checks
@@ -266,6 +267,21 @@ npm run user -- set-role --email you@example.com --role viewer
 npm run user -- reset-password --email you@example.com < password.txt
 npm run user -- revoke-sessions --email you@example.com     # sign out everywhere
 ```
+
+Every dashboard page has the same navigation bar, with the account and **Sign out**:
+
+| Section      | Pages                                                          |
+| ------------ | -------------------------------------------------------------- |
+| Overview     | `/overview`: spend today, this month and over 30 days          |
+| Usage        | `/usage` events, `/spend` over time, `/breakdown` by attribute |
+| Insights     | `/changes` why spend changed, `/savings` savings estimates     |
+| Customers    | `/revenue` revenue and AI API cost per customer                |
+| Budgets      | `/projects`, with each project's budgets                       |
+| Prices       | `/prices`                                                      |
+| Integrations | `/ingestion` ingestion health                                  |
+| Team         | `/audit` audit log, for admins                                 |
+
+The current section and page are marked, and a section's pages show beneath it. Sections an account's role can't open aren't shown.
 
 Each account has a role, and every role can read the whole dashboard. Add `--role` to `create` to choose one; without it, a new account is an `admin`, and accounts from before roles existed are admins too. A new role applies on the next request, without signing the user out. The server checks the role on every change, not only by hiding links.
 

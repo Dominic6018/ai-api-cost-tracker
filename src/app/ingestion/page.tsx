@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { DashboardNav } from "../dashboard-nav";
 import { db } from "@/db";
 import { getIngestionHealth } from "@/db/ingestion-health";
 import { organizationScope } from "@/db/scope";
@@ -45,10 +45,8 @@ export default async function IngestionPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-12 sm:px-8">
+      <DashboardNav user={user} current="/ingestion" />
       <div className="flex flex-col gap-1">
-        <Link href="/overview" className="text-sm text-foreground/60 underline">
-          Spend overview
-        </Link>
         <h1 className="text-3xl font-semibold tracking-tight">Ingestion</h1>
       </div>
       <p className="max-w-3xl text-sm text-foreground/70">

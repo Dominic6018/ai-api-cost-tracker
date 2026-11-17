@@ -136,6 +136,47 @@ step("an off-site next parameter is ignored");
   cookie = signedIn;
 }
 
+step("every dashboard page has the same navigation, marking where it is");
+{
+  const sections = [
+    "Overview",
+    "Usage",
+    "Insights",
+    "Customers",
+    "Budgets",
+    "Prices",
+    "Integrations",
+  ];
+  for (const [path, section] of [
+    ["/overview", "Overview"],
+    ["/usage", "Usage"],
+    ["/spend", "Usage"],
+    ["/breakdown", "Usage"],
+    ["/changes", "Insights"],
+    ["/savings", "Insights"],
+    ["/revenue", "Customers"],
+    ["/projects", "Budgets"],
+    ["/prices", "Prices"],
+    ["/ingestion", "Integrations"],
+  ]) {
+    const result = await page(path);
+    assert.equal(result.status, 200, `GET ${path}`);
+    const nav = result.html.match(
+      /data-testid="dashboard-nav"[\s\S]*?<\/form>/,
+    )?.[0];
+    assert.ok(nav, `${path} has the navigation`);
+    for (const label of sections) {
+      assert.ok(nav.includes(`>${label}</a>`), `${path} links to ${label}`);
+    }
+    assert.match(
+      nav,
+      new RegExp(`aria-current="page"[^>]*>${section}</a>`),
+      `${path} is under ${section}`,
+    );
+    assert.match(nav, /Sign out/);
+  }
+}
+
 step("the spend overview renders totals for each window");
 {
   const overview = await page("/overview");
@@ -694,6 +735,9 @@ if (process.env.SMOKE_VIEWER_EMAIL) {
   const projectsPage = await page("/projects");
   assert.equal(projectsPage.status, 200);
   assert.doesNotMatch(projectsPage.html, /New project|aria-label="Edit /);
+  // The audit log, and the Team section with it, isn't offered either.
+  assert.doesNotMatch(projectsPage.html, /href="\/audit"/);
+  assert.doesNotMatch(projectsPage.html, />Team<\/a>/);
   const pricesPage = await page("/prices");
   assert.equal(pricesPage.status, 200);
   assert.doesNotMatch(pricesPage.html, /Add price/);
