@@ -16,7 +16,7 @@ Nothing moves between them on its own. A charge to a customer is never derived f
 
 - **Prepaid credit** that pays what's owed until it runs out or expires (below).
 
-There's no invoicing or payment collection: the ledger says what each customer owes, and you bill them from it.
+The ledger says what each customer owes. You can bill them from it yourself, or have it [invoiced through Stripe](#invoicing-through-stripe).
 
 ## Plans
 
@@ -69,6 +69,31 @@ Credit is money a customer has paid in advance, or that you give them. It's kept
 - **Refund** what's left of a grant, for example when prepaid credit is paid back: the rest of the grant is withdrawn, once. Credit already applied stays applied, and expired credit can't be refunded.
 
 The database refuses to use more of a grant than is left, to use expired credit, or to use another customer's credit, even from two runs at once. Grants and their uses are append-only, like the ledger, and applied credit can't be reversed: grant new credit instead. Every grant, application and refund is in the audit log.
+
+## Invoicing through Stripe
+
+Stripe is optional and off until you give it a key. Create a [Stripe sandbox](https://docs.stripe.com/sandboxes) (test mode, no real money), copy its **test secret key** from Developers → API keys, and add it to `.env`, which the `npm run` commands read:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_...
+```
+
+Keep the key out of chats, issues and commits; `.env` is git-ignored. Then:
+
+```bash
+npm run billing -- stripe-invoice                    # every customer with entries not yet invoiced
+npm run billing -- stripe-invoice --customer cus_42
+```
+
+Each run creates a **draft** invoice in Stripe, in USD, for the customer's ledger entries that haven't been on one: plan fees, usage charges, adjustments, reversals and applied credit, one item each. You review and send it from the Stripe dashboard; nothing is sent or charged automatically. The customer is created in Stripe the first time, with their name and customer ID.
+
+- **Whole cents.** Stripe works in cents, so each entry is rounded to the cent, half away from zero; both amounts are kept. An entry under half a cent is recorded as invoiced with no Stripe item.
+- **Once per entry.** An entry goes on at most one invoice. When a customer's open entries come to zero or less (they're owed money), nothing is invoiced.
+- **Safe to retry.** Every request to Stripe carries an idempotency key made from the entries, so a run that fails partway can be repeated without a second invoice. A run that fails and is retried later with different entries can leave an unsent draft in Stripe; it's never sent on its own.
+- **Test first.** Test keys (`sk_test_`, or restricted `rk_test_`) are the default. A live key is refused unless `STRIPE_ALLOW_LIVE=true` is also set. Test and live invoices are kept apart, so trying things in a sandbox doesn't stop the same entries being invoiced live.
+- What was sent is append-only, and each invoice is in the audit log.
+
+Payments aren't recorded back yet: whether an invoice was paid shows in Stripe. Reading that from Stripe's signed webhooks is next on the [roadmap](ROADMAP.md).
 
 ## Revenue and AI API cost
 
@@ -123,6 +148,8 @@ npm run billing -- apply-credits                 # every customer who owes somet
 npm run billing -- refund-credit --grant <grant id> --reason "Refunded by bank transfer"
 
 npm run billing -- revenue --month 2026-10        # revenue, AI API cost and the difference
+
+npm run billing -- stripe-invoice                 # draft Stripe invoices; needs STRIPE_SECRET_KEY
 ```
 
 `--from` defaults to the current UTC month and `--month` to last month. `ledger` also lists the customer's plan history. Run `charge` early each month, for example from cron, after any late usage has arrived.
