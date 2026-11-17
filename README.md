@@ -142,6 +142,7 @@ src/
     spend/        Daily spend chart and provider/model breakdown
     usage/        Usage events table with filters and pagination
     changes/      Why spend changed between two periods
+    savings/      Savings estimates from batching, caching and model choice
     projects/     Projects list, create and edit pages (server actions)
   db/
     schema.ts     Drizzle schema (projects, model_pricing, usage_events)
@@ -302,6 +303,18 @@ Prices are shared by the whole install, so only the install's owners, the admins
 | Other              | What those rates don't model: long-prompt tiers, batch, audio, images, web searches, a price change during a period, and rounding |
 
 Each driver is swapped from the earlier period to the later one in that order, holding the others (a chained substitution), so the effects add up to the change exactly, overall and per model; a different order would give somewhat different amounts, and the page says so. The last four split the change in a model's cost per token: its tokens of each kind (uncached and cached input, cache writes, output) are repriced at the model's standard rates in the price table at the end of each period. Whatever that repricing doesn't explain is **other**, which is zero when every request was billed at those plain rates; a model without a price in both periods has all of its cost-per-token change there. Each step is rounded once to the micro-dollar. Only priced requests count, and unpriced ones in either period are flagged.
+
+### Savings estimates
+
+`/savings` estimates what the last 30 full UTC days of standard-tier usage, for all projects or one, would have cost in three other ways, at the price table's current rates. They're labelled as estimates on the page, with their assumption beside each, and they overlap, so they aren't added up:
+
+| Estimate                  | Assumption                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Batching                  | All of it went through the provider's Batch API, at the model's batch price; none for a model without one    |
+| Caching, per 10% of input | Each 10% of uncached input is read from the prompt cache instead, before the cost of writing it to the cache |
+| Model choice              | The same tokens on the cheapest other model from the same provider; no claim that it would do as well        |
+
+Tokens are repriced by kind at each model's standard rates, without long-prompt tiers, audio or image rates. None of them knows whether your prompts repeat, whether the work can wait a day, or whether a cheaper model is good enough, and another model may use a different number of tokens for the same text. Unpriced usage and usage already at another tier are left out and counted. A model with no current price gets no estimate.
 
 ### Revenue
 

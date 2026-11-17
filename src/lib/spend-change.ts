@@ -20,7 +20,8 @@
  * steps, so they always add up to the change exactly.
  */
 
-import { calculateCostMicros, type TokenPricing } from "./cost";
+import type { TokenPricing } from "./cost";
+import { atRates } from "./savings";
 
 export const COMPARISONS = ["30d", "7d", "month"] as const;
 export type Comparison = (typeof COMPARISONS)[number];
@@ -139,23 +140,6 @@ export interface SpendChange {
   effects: Effects;
   /** Largest change first, either way. */
   models: ModelChange[];
-}
-
-/**
- * The cost of tokens at a model's plain rates: no long-prompt tier,
- * batch, audio or image rates, which depend on single requests.
- */
-function atRates(parts: TokenParts, pricing: TokenPricing): bigint {
-  return calculateCostMicros(
-    {
-      inputTokens: Number(parts.input),
-      outputTokens: Number(parts.output),
-      cachedInputTokens: Number(parts.cached),
-      cacheWriteInputTokens: Number(parts.writes),
-      cacheWrite1hInputTokens: Number(parts.writes1h),
-    },
-    { ...pricing, longContext: null, batchMultiplier: null },
-  );
 }
 
 /** `later`'s input and output, with `earlier`'s mix of input kinds. */
