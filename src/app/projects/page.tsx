@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DashboardNav } from "../dashboard-nav";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
 import { organizationScope } from "@/db/scope";
@@ -10,7 +11,6 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/roles";
 import { BudgetAlerts } from "../budget-alerts";
 import { BudgetStatusBadge } from "../budget-status";
-import { logoutAction } from "../login/actions";
 
 export const metadata: Metadata = { title: "Projects · AI API Cost Tracker" };
 
@@ -28,20 +28,12 @@ export default async function ProjectsPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-4 py-12 sm:px-8">
+      <DashboardNav user={user} current="/projects" />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <Link href="/" className="text-sm text-foreground/60 underline">
-            AI API Cost Tracker
-          </Link>
           <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <form action={logoutAction} className="flex items-center gap-3">
-            <span className="text-sm text-foreground/60">{user.email}</span>
-            <button type="submit" className="text-sm underline">
-              Sign out
-            </button>
-          </form>
           {canManage && (
             <Link
               href="/projects/new"

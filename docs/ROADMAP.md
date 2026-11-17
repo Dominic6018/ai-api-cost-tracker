@@ -158,7 +158,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
 
 ## Milestone 15: Product finish
 
-- [ ] Navigation across overview, usage, prices, budgets, customers, insights, integrations and team
+- [x] Navigation across overview, usage, prices, budgets, customers, insights, integrations and team (#176)
 - [ ] Onboarding in the dashboard: projects, API keys, invitations and roles (the command line stays)
 - [ ] A read-only customer portal
 - [ ] Three demo scenarios: a support SaaS, multi-model agents, and usage-based billing

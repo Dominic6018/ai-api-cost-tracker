@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DashboardNav } from "../dashboard-nav";
 import { db } from "@/db";
 import { listProjects } from "@/db/projects";
 import { organizationScope } from "@/db/scope";
@@ -18,7 +19,6 @@ import {
   usageQuery,
   type UsageFilters,
 } from "@/lib/usage-filters";
-import { logoutAction } from "../login/actions";
 
 export const metadata: Metadata = {
   title: "Usage events · AI API Cost Tracker",
@@ -115,35 +115,13 @@ export default async function UsagePage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-8 px-4 py-12 sm:px-8">
+      <DashboardNav user={user} current="/usage" />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <Link href="/" className="text-sm text-foreground/60 underline">
-            AI API Cost Tracker
-          </Link>
           <h1 className="text-3xl font-semibold tracking-tight">
             Usage events
           </h1>
         </div>
-        <nav className="flex flex-wrap items-center gap-4 text-sm">
-          <Link href="/overview" className="underline">
-            Overview
-          </Link>
-          <Link href="/spend" className="underline">
-            Spend over time
-          </Link>
-          <Link href="/breakdown" className="underline">
-            Cost breakdown
-          </Link>
-          <Link href="/projects" className="underline">
-            Projects
-          </Link>
-          <form action={logoutAction} className="flex items-center gap-3">
-            <span className="text-foreground/60">{user.email}</span>
-            <button type="submit" className="underline">
-              Sign out
-            </button>
-          </form>
-        </nav>
       </header>
 
       {/* Filters: one row, above the table they scope; kept in the URL */}

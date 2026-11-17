@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { DashboardNav } from "../dashboard-nav";
 import { db } from "@/db";
 import { getSpendOverview } from "@/db/spend";
 import { getUnpricedSummary } from "@/db/unpriced";
@@ -14,7 +14,6 @@ import {
 } from "@/lib/forecast";
 import { detectSpike, SPIKE_RULES } from "@/lib/spike";
 import type { SpendWindow } from "@/lib/spend";
-import { logoutAction } from "../login/actions";
 import { BudgetAlerts } from "../budget-alerts";
 import { BudgetStatusIcon } from "../budget-status";
 import { BudgetMeter } from "./budget-meter";
@@ -72,55 +71,13 @@ export default async function OverviewPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-4 py-12 sm:px-8">
+      <DashboardNav user={user} current="/overview" />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <Link href="/" className="text-sm text-foreground/60 underline">
-            AI API Cost Tracker
-          </Link>
           <h1 className="text-3xl font-semibold tracking-tight">
             Spend overview
           </h1>
         </div>
-        <nav className="flex flex-wrap items-center gap-4 text-sm">
-          <Link href="/spend" className="underline">
-            Spend over time
-          </Link>
-          <Link href="/usage" className="underline">
-            Usage events
-          </Link>
-          <Link href="/breakdown" className="underline">
-            Cost breakdown
-          </Link>
-          <Link href="/changes" className="underline">
-            Why spend changed
-          </Link>
-          <Link href="/savings" className="underline">
-            Savings
-          </Link>
-          <Link href="/ingestion" className="underline">
-            Ingestion
-          </Link>
-          <Link href="/revenue" className="underline">
-            Revenue
-          </Link>
-          <Link href="/prices" className="underline">
-            Prices
-          </Link>
-          <Link href="/projects" className="underline">
-            Projects
-          </Link>
-          {can(user, "audit:read") && (
-            <Link href="/audit" className="underline">
-              Audit log
-            </Link>
-          )}
-          <form action={logoutAction} className="flex items-center gap-3">
-            <span className="text-foreground/60">{user.email}</span>
-            <button type="submit" className="underline">
-              Sign out
-            </button>
-          </form>
-        </nav>
       </header>
 
       <BudgetAlerts projects={overview.projects} />
