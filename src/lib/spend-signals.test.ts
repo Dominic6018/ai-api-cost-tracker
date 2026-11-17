@@ -19,6 +19,7 @@ const project = (
     month: string;
     last7FullDays: string;
     monthlyBudgetUsd: string | null;
+    earliestUsageAt: Date | null;
   }> = {},
 ) => ({
   id: "p1",
@@ -28,6 +29,7 @@ const project = (
   month: "50.000000",
   last7FullDays: "14.000000", // $2 a day
   monthlyBudgetUsd: "100.00",
+  earliestUsageAt: new Date("2026-01-01T00:00:00Z"),
   ...overrides,
 });
 
@@ -62,6 +64,23 @@ describe("planSignalAlerts", () => {
         NOW,
       ),
     ).toEqual([]);
+  });
+
+  it("doesn't warn from a forecast without 7 full days of history", () => {
+    const recent = (days: number) =>
+      project({
+        month: "90.000000",
+        earliestUsageAt: new Date(NOW.getTime() - days * 86_400_000),
+      });
+    expect(planSignalAlerts([recent(3)], NOW)).toEqual([]);
+    expect(
+      planSignalAlerts(
+        [project({ month: "90.000000", earliestUsageAt: null })],
+        NOW,
+      ),
+    ).toEqual([]);
+    // A full week of history is enough.
+    expect(planSignalAlerts([recent(8)], NOW)).toHaveLength(1);
   });
 
   it("flags a spike for today's UTC day", () => {

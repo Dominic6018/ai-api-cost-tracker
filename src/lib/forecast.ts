@@ -78,3 +78,81 @@ export function forecastOverBudget(
   const forecast = budgetStatus(budgetUtilization(projectedUsd, budgetUsd));
   return now !== "over" && forecast === "over";
 }
+
+/**
+ * Full UTC days of history a forecast needs: a whole pace window, so the
+ * pace isn't averaged over days before the usage began.
+ */
+export const MIN_HISTORY_DAYS = FORECAST_PACE_DAYS;
+
+export type Forecast =
+  | {
+      enough: true;
+      /** Spend so far plus the 7-day average pace for the time left. */
+      projectedUsd: string;
+      /** The same at the quietest and the busiest of those 7 days. */
+      lowUsd: string;
+      highUsd: string;
+      /** The horizon: the month's last day (UTC), and days until it ends. */
+      lastDay: Date;
+      daysLeft: number;
+    }
+  | {
+      enough: false;
+      /** Full UTC days of history, fewer than MIN_HISTORY_DAYS. */
+      historyDays: number;
+      lastDay: Date;
+    };
+
+/** Full UTC days of usage history before today, at most the pace window. */
+export function historyDays(earliestUsageAt: Date | null, now: Date): number {
+  if (earliestUsageAt === null) return 0;
+  const { end } = forecastPaceWindow(now);
+  const firstDay = Date.UTC(
+    earliestUsageAt.getUTCFullYear(),
+    earliestUsageAt.getUTCMonth(),
+    earliestUsageAt.getUTCDate(),
+  );
+  const days = Math.floor((end.getTime() - firstDay) / DAY_MS);
+  return Math.max(0, Math.min(MIN_HISTORY_DAYS, days));
+}
+
+/**
+ * The month-end forecast with its range and horizon, or "not enough data"
+ * when there are fewer than 7 full days of history to take a pace from.
+ * `paceDaysUsd` are the 7 pace days' spend; the range applies the
+ * quietest and the busiest of them to the time left. Exact in
+ * micro-dollars, rounded down.
+ */
+export function forecastWithRange(
+  input: {
+    monthSpentUsd: string;
+    paceUsd: string;
+    paceDaysUsd: string[];
+    earliestUsageAt: Date | null;
+  },
+  now: Date,
+): Forecast {
+  const end = monthEnd(now);
+  const lastDay = new Date(end.getTime() - DAY_MS);
+  const history = historyDays(input.earliestUsageAt, now);
+  if (history < MIN_HISTORY_DAYS) {
+    return { enough: false, historyDays: history, lastDay };
+  }
+  const remainingMs = BigInt(Math.max(0, end.getTime() - now.getTime()));
+  const spent = toMicros(input.monthSpentUsd);
+  const days = input.paceDaysUsd.map(toMicros);
+  const atDaily = (daily: bigint) =>
+    microsToDecimal(spent + (daily * remainingMs) / BigInt(DAY_MS));
+  const min = days.reduce((a, b) => (b < a ? b : a), days[0] ?? 0n);
+  const max = days.reduce((a, b) => (b > a ? b : a), days[0] ?? 0n);
+  return {
+    enough: true,
+    projectedUsd: forecastMonth(input.monthSpentUsd, input.paceUsd, now)
+      .projectedUsd,
+    lowUsd: atDaily(min),
+    highUsd: atDaily(max),
+    lastDay,
+    daysLeft: Math.round((Number(remainingMs) / DAY_MS) * 10) / 10,
+  };
+}

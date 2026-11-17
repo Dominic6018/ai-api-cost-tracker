@@ -16,7 +16,12 @@ import {
   type DeliveryResult,
 } from "./budget-notifications";
 import type { EmailContent } from "./email";
-import { forecastMonth, forecastOverBudget } from "./forecast";
+import {
+  forecastMonth,
+  forecastOverBudget,
+  historyDays,
+  MIN_HISTORY_DAYS,
+} from "./forecast";
 import { detectSpike } from "./spike";
 
 export const SIGNAL_KINDS = ["forecast", "spike"] as const;
@@ -78,6 +83,8 @@ export function planSignalAlerts(
       month: string;
       last7FullDays: string;
       monthlyBudgetUsd: string | null;
+      /** The earliest usage; a forecast needs 7 full days of history. */
+      earliestUsageAt: Date | null;
     }
   >,
   now: Date,
@@ -87,8 +94,10 @@ export function planSignalAlerts(
   for (const p of projects) {
     const project = { id: p.id, name: p.name, slug: p.slug };
     const forecast = forecastMonth(p.month, p.last7FullDays, now);
+    // No warning from a forecast without enough history to make one.
     if (
       p.monthlyBudgetUsd !== null &&
+      historyDays(p.earliestUsageAt, now) >= MIN_HISTORY_DAYS &&
       forecastOverBudget(p.month, forecast.projectedUsd, p.monthlyBudgetUsd)
     ) {
       alerts.push({

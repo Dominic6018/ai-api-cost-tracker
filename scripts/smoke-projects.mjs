@@ -305,16 +305,17 @@ step("the overview shows each project's monthly budget use");
     assert.match(budget, /<0\.1%/);
   }
 
-  // The forecast: all CI usage is from today, which the 7-full-day pace
-  // leaves out, so the month-end forecast is this month's spend so far.
+  // The forecast: all CI usage is from today, so there are no full days
+  // of history to take a pace from, and it says so rather than guessing.
   const forecast = row
     .match(/data-testid="forecast"[^>]*>([\s\S]*?)<\/td>/)?.[1]
     .replace(/<!-- -->/g, "")
     .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
   assert.ok(forecast, "shows a month-end forecast");
   if (process.env.EXPECT_TODAY_SPEND) {
-    assert.equal(forecast, process.env.EXPECT_TODAY_SPEND);
+    assert.match(forecast, /^Not enough data \(0\/ ?7 days\)$/);
   }
   assert.doesNotMatch(row, /Forecast over budget/);
   // $0.006 today is under the $1 floor for a spending spike.
