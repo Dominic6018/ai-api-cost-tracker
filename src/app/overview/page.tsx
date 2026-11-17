@@ -7,7 +7,11 @@ import { organizationScope } from "@/db/scope";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/roles";
 import { formatUsd } from "@/lib/cost";
-import { forecastMonth, forecastOverBudget } from "@/lib/forecast";
+import {
+  forecastOverBudget,
+  forecastWithRange,
+  MIN_HISTORY_DAYS,
+} from "@/lib/forecast";
 import { detectSpike, SPIKE_RULES } from "@/lib/spike";
 import type { SpendWindow } from "@/lib/spend";
 import { logoutAction } from "../login/actions";
@@ -53,7 +57,17 @@ export default async function OverviewPage() {
   const overview = await getSpendOverview(db, scope, now);
   const { totals, windows } = overview;
   const unpriced = await getUnpricedSummary(db, scope, windows.last30Days);
-  const totalForecast = forecastMonth(totals.month, totals.last7FullDays, now);
+  const forecastOf = (spend: typeof totals) =>
+    forecastWithRange(
+      {
+        monthSpentUsd: spend.month,
+        paceUsd: spend.last7FullDays,
+        paceDaysUsd: spend.paceDaysUsd,
+        earliestUsageAt: spend.earliestUsageAt,
+      },
+      now,
+    );
+  const totalForecast = forecastOf(totals);
   const hasUsage = totals.events > 0;
 
   return (
@@ -135,15 +149,35 @@ export default async function OverviewPage() {
         ))}
         <div className="flex flex-col gap-1 rounded-lg border border-foreground/10 p-5">
           <p className="text-sm text-foreground/60">Month-end forecast</p>
-          <p
-            className="text-3xl font-semibold tabular-nums"
-            data-forecast="total"
-          >
-            {usd(totalForecast.projectedUsd)}
-          </p>
-          <p className="text-xs text-foreground/50">
-            by {utcDay.format(totalForecast.lastDay)} UTC, at the recent pace
-          </p>
+          {totalForecast.enough ? (
+            <>
+              <p
+                className="text-3xl font-semibold tabular-nums"
+                data-forecast="total"
+              >
+                {usd(totalForecast.projectedUsd)}
+              </p>
+              <p className="text-xs text-foreground/50">
+                {usd(totalForecast.lowUsd)} to {usd(totalForecast.highUsd)} · by{" "}
+                {utcDay.format(totalForecast.lastDay)} UTC,{" "}
+                {totalForecast.daysLeft} days left, at the last 7 days&apos;
+                pace
+              </p>
+            </>
+          ) : (
+            <>
+              <p
+                className="text-lg font-semibold text-foreground/60"
+                data-forecast="total"
+              >
+                Not enough data
+              </p>
+              <p className="text-xs text-foreground/50">
+                {totalForecast.historyDays} of {MIN_HISTORY_DAYS} full days of
+                usage so far
+              </p>
+            </>
+          )}
         </div>
       </section>
 
@@ -189,16 +223,14 @@ export default async function OverviewPage() {
               </thead>
               <tbody>
                 {overview.projects.map((project) => {
-                  const forecast = forecastMonth(
-                    project.month,
-                    project.last7FullDays,
-                    now,
-                  );
-                  const flagged = forecastOverBudget(
-                    project.month,
-                    forecast.projectedUsd,
-                    project.monthlyBudgetUsd,
-                  );
+                  const forecast = forecastOf(project);
+                  const flagged =
+                    forecast.enough &&
+                    forecastOverBudget(
+                      project.month,
+                      forecast.projectedUsd,
+                      project.monthlyBudgetUsd,
+                    );
                   const spike = detectSpike(
                     project.today,
                     project.last7FullDays,
@@ -238,7 +270,22 @@ export default async function OverviewPage() {
                         className="px-4 py-3 text-right tabular-nums"
                         data-testid="forecast"
                       >
-                        {usd(forecast.projectedUsd)}
+                        {forecast.enough ? (
+                          <>
+                            {usd(forecast.projectedUsd)}
+                            <span className="block text-xs text-foreground/50">
+                              {usd(forecast.lowUsd)} to {usd(forecast.highUsd)}
+                            </span>
+                          </>
+                        ) : (
+                          <span
+                            className="text-xs text-foreground/60"
+                            title={`A forecast needs ${MIN_HISTORY_DAYS} full days of usage history`}
+                          >
+                            Not enough data ({forecast.historyDays}/
+                            {MIN_HISTORY_DAYS} days)
+                          </span>
+                        )}
                         {flagged && (
                           <span
                             className="mt-1 flex items-center justify-end gap-1 text-xs"
@@ -269,7 +316,11 @@ export default async function OverviewPage() {
         window of 30 × 24 hours. Usage counts by its <code>occurredAt</code>{" "}
         time. The month-end forecast is this month&apos;s spend so far plus the
         average daily spend of the last 7 full UTC days (today left out) for the
-        rest of the month. A spending spike is a day of at least{" "}
+        rest of the month; its range uses the quietest and the busiest of those
+        days instead. Its horizon is the end of the month (UTC). It needs{" "}
+        {MIN_HISTORY_DAYS} full days of usage history, and says &quot;Not enough
+        data&quot; until then, rather than averaging over days before the usage
+        began. A spending spike is a day of at least{" "}
         {`$${SPIKE_RULES.minimumUsd}`} and at least {SPIKE_RULES.multiplier}×
         that average.
       </p>

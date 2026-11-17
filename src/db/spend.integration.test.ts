@@ -89,6 +89,9 @@ describe("getSpendOverview", () => {
       last30Days: "18.440001",
       // Mar 8 00:00 to Mar 15 00:00: only alpha's event late on Mar 14
       last7FullDays: "0.100000",
+      paceDaysUsd: [...Array<string>(6).fill("0.000000"), "0.100000"],
+      // The earliest in the widest window (from Feb 13 18:00).
+      earliestUsageAt: at("2031-02-13T18:00:00Z"),
       events: 7,
     });
 
@@ -139,6 +142,8 @@ describe("getSpendOverview", () => {
       month: "0.000000",
       last30Days: "0.000000",
       last7FullDays: "0.000000",
+      paceDaysUsd: Array<string>(7).fill("0.000000"),
+      earliestUsageAt: null,
       events: 0,
     });
   });
@@ -185,6 +190,13 @@ describe("the forecast's pace window", () => {
       const overview = await getSpendOverview(db, ALL_ORGANIZATIONS, paceNow);
       expect(overview.projects.find((p) => p.id === project.id)).toMatchObject({
         last7FullDays: "1.500000",
+        // Jul 3 to Jul 9, one per day.
+        paceDaysUsd: [
+          "1.000000",
+          ...Array<string>(5).fill("0.000000"),
+          "0.500000",
+        ],
+        earliestUsageAt: new Date("2034-07-02T23:59:59.999Z"),
         today: "4.000000",
       });
     } finally {

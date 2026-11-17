@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  forecastWithRange,
+  historyDays,
   forecastMonth,
   forecastOverBudget,
   forecastPaceWindow,
@@ -92,5 +94,87 @@ describe("forecastOverBudget", () => {
     expect(forecastOverBudget("0.000000", "0.000000", "0.00")).toBe(false);
     // Spend is forecast against a zero budget.
     expect(forecastOverBudget("0.000000", "0.000001", "0.00")).toBe(true);
+  });
+});
+
+describe("forecastWithRange", () => {
+  // 2026-11-24 12:00 UTC: 6.5 days left in November.
+  const now = new Date("2026-11-24T12:00:00Z");
+  const paceDaysUsd = ["1", "2", "3", "2", "2", "2", "2"].map(
+    (d) => `${d}.000000`,
+  );
+  const input = {
+    monthSpentUsd: "50.000000",
+    paceUsd: "14.000000",
+    paceDaysUsd,
+    earliestUsageAt: new Date("2026-10-01T00:00:00Z"),
+  };
+
+  it("projects at the average pace, with the quietest and busiest days as the range", () => {
+    expect(forecastWithRange(input, now)).toEqual({
+      enough: true,
+      // $50 + 6.5 days x $2.
+      projectedUsd: "63.000000",
+      // x $1 and x $3.
+      lowUsd: "56.500000",
+      highUsd: "69.500000",
+      lastDay: new Date("2026-11-30T00:00:00Z"),
+      daysLeft: 6.5,
+    });
+  });
+
+  it("says there isn't enough data with fewer than 7 full days of history", () => {
+    for (const [earliest, days] of [
+      ["2026-11-24T00:30:00Z", 0], // today only
+      ["2026-11-23T23:59:59Z", 1],
+      ["2026-11-18T00:00:00Z", 6],
+    ] as const) {
+      expect(
+        forecastWithRange(
+          { ...input, earliestUsageAt: new Date(earliest) },
+          now,
+        ),
+      ).toEqual({
+        enough: false,
+        historyDays: days,
+        lastDay: new Date("2026-11-30T00:00:00Z"),
+      });
+    }
+    expect(
+      forecastWithRange({ ...input, earliestUsageAt: null }, now),
+    ).toMatchObject({ enough: false, historyDays: 0 });
+    // Exactly the start of the pace window is a full week.
+    expect(
+      forecastWithRange(
+        { ...input, earliestUsageAt: new Date("2026-11-17T23:00:00Z") },
+        now,
+      ).enough,
+    ).toBe(true);
+  });
+
+  it("projects spend so far when the last week was quiet", () => {
+    const quiet = forecastWithRange(
+      {
+        ...input,
+        paceUsd: "0.000000",
+        paceDaysUsd: Array(7).fill("0.000000"),
+      },
+      now,
+    );
+    expect(quiet).toMatchObject({
+      enough: true,
+      projectedUsd: "50.000000",
+      lowUsd: "50.000000",
+      highUsd: "50.000000",
+    });
+  });
+});
+
+describe("historyDays", () => {
+  it("counts full UTC days before today, up to a week", () => {
+    const now = new Date("2026-11-24T12:00:00Z");
+    expect(historyDays(new Date("2026-11-21T09:00:00Z"), now)).toBe(3);
+    expect(historyDays(new Date("2020-01-01T00:00:00Z"), now)).toBe(7);
+    expect(historyDays(null, now)).toBe(0);
   });
 });

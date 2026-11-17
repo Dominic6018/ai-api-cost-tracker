@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { forecastPaceWindow } from "@/lib/forecast";
+import { FORECAST_PACE_DAYS, forecastPaceWindow } from "@/lib/forecast";
 import { earliestWindowStart, spendWindows } from "@/lib/spend";
 import { projects, usageEvents } from "./schema";
 import { inOrganization, type OrganizationScope } from "./scope";
@@ -15,6 +15,13 @@ export interface SpendTotals {
   last30Days: string;
   /** The last 7 full UTC days, before today: the forecast's pace. */
   last7FullDays: string;
+  /** Each of those 7 days, oldest first: the forecast's range. */
+  paceDaysUsd: string[];
+  /**
+   * The earliest usage in the widest window, or null without any: whether
+   * there's a full pace window of history to forecast from.
+   */
+  earliestUsageAt: Date | null;
   /** Usage events in the widest window. */
   events: number;
 }
@@ -53,6 +60,17 @@ export async function getSpendOverview(
   const sumPace = sql`coalesce(sum(${usageEvents.costUsd}) filter (where ${usageEvents.occurredAt} >= ${pace.start.toISOString()}::timestamptz and ${usageEvents.occurredAt} < ${pace.end.toISOString()}::timestamptz), 0)::numeric(14, 6)`;
   const asText = (amount: ReturnType<typeof sumSince>) =>
     sql<string>`${amount}::text`;
+  const DAY_MS = 86_400_000;
+  const paceDays = sql<string>`concat_ws(',', ${Array.from(
+    { length: FORECAST_PACE_DAYS },
+    (_, i) => {
+      const from = new Date(pace.start.getTime() + i * DAY_MS).toISOString();
+      const to = new Date(
+        pace.start.getTime() + (i + 1) * DAY_MS,
+      ).toISOString();
+      return sql`(coalesce(sum(${usageEvents.costUsd}) filter (where ${usageEvents.occurredAt} >= ${from}::timestamptz and ${usageEvents.occurredAt} < ${to}::timestamptz), 0)::numeric(14, 6))::text`;
+    },
+  ).reduce((list, day) => sql`${list}, ${day}`)})`;
 
   const monthSum = sumSince(windows.month);
   const rows = await db
@@ -65,6 +83,11 @@ export async function getSpendOverview(
       month: asText(monthSum),
       last30Days: asText(sumSince(windows.last30Days)),
       last7FullDays: asText(sumPace),
+      paceDays,
+      // Epoch milliseconds: Postgres's text form of a timestamp isn't ISO.
+      earliest: sql<
+        string | null
+      >`(extract(epoch from min(${usageEvents.occurredAt})) * 1000)::bigint::text`,
       events: sql<number>`count(${usageEvents.id})::int`,
       isTotal: sql<boolean>`grouping(${projects.id}) = 1`,
     })
@@ -88,20 +111,27 @@ export async function getSpendOverview(
     month: "0.000000",
     last30Days: "0.000000",
     last7FullDays: "0.000000",
+    paceDaysUsd: Array<string>(FORECAST_PACE_DAYS).fill("0.000000"),
+    earliestUsageAt: null,
     events: 0,
   };
-  const strip = ({
-    today,
-    month,
-    last30Days,
-    last7FullDays,
-    events,
-  }: SpendTotals) => ({
-    today,
-    month,
-    last30Days,
-    last7FullDays,
-    events,
+  const strip = (row: {
+    today: string;
+    month: string;
+    last30Days: string;
+    last7FullDays: string;
+    paceDays: string;
+    earliest: string | null;
+    events: number;
+  }): SpendTotals => ({
+    today: row.today,
+    month: row.month,
+    last30Days: row.last30Days,
+    last7FullDays: row.last7FullDays,
+    paceDaysUsd: row.paceDays.split(","),
+    earliestUsageAt:
+      row.earliest === null ? null : new Date(Number(row.earliest)),
+    events: row.events,
   });
 
   const totalRow = rows.find((row) => row.isTotal);
