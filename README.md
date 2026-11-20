@@ -18,7 +18,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/spend-dark.png"><img alt="Daily spend over 90 days as a bar chart, with spend and tokens by provider" src="docs/screenshots/spend-light.png"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/usage-dark.png"><img alt="Filterable table of usage events with tokens, cost, customer, user, feature and run" src="docs/screenshots/usage-light.png"></picture> |
 
-<sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
+<sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month. The screenshots of newer pages further down were captured the same way on 20 November 2026; revenue, the team page and the customer portal come from the [billing demo](docs/BILLING.md#the-billing-demo).</sub>
 
 > **Status:** version 0.1.0, not tagged yet. Milestones 0–14 are complete: exact, tier-aware pricing, ingestion from the API, the TypeScript and Python clients and OpenTelemetry, reconciliation with provider bills, cost by customer, feature, agent run, tag and outcome, exports and a reporting API, budgets with alerts, checks and reservations, audited price management, teams with roles, organizations and single sign-on, a [billing ledger](docs/BILLING.md) with optional Stripe invoicing, and insights into why spend changed. Milestone 15's dashboard onboarding, customer portal, demos and documents are done, with screenshots of the newer pages still to come. See the [release notes](docs/RELEASE_NOTES.md), [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
 
@@ -302,6 +302,11 @@ To add someone, an admin enters their email and role under **Invite someone** on
 | `member` | Manage   | Read                               | —                                |
 | `viewer` | Read     | Read                               | —                                |
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/team-dark.png">
+  <img alt="The team page: each account with when it was added, its active sessions and a role to change, and a form to invite someone by email and role" src="docs/screenshots/team-light.png">
+</picture>
+
 Admins can see who changed what at `/audit`: projects created and updated (with the fields that changed), prices added and ended, accounts created, role changes, password resets, sessions revoked, API keys created and revoked, and billing customers, plans, plan changes, monthly charges, credit, adjustments and reversals. Changes made with `npm run user` or `npm run api-key` show as "command line". Each entry is saved in the same transaction as its change, and keeps the account's email if the account is later deleted. There's no way to edit or delete entries from the app, and they're kept indefinitely.
 
 Organizations keep teams apart: each sees only its own projects, usage, exports and audit log. Everything starts in one default organization. To add another:
@@ -316,6 +321,11 @@ npm run org -- list                                              # with account 
 Prices are shared by the whole install, so only the install's owners, the admins of the default organization, can change them. Admins of other organizations can read prices but not who added them. Scheduled budget notifications cover every organization and go to the install's one set of destinations. Project slugs are unique within an organization, so two organizations can each have a `web-app`; when they do, `npm run api-key -- create` needs `--org <slug>` to know which. Changes made from the command line to an account or API key are logged in that account's or project's organization.
 
 ### Why spend changed
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/changes-dark.png">
+  <img alt="Why spend changed: the last 30 days against the 30 before, with the change split into volume, model mix, tokens per request, input/output mix, cache rate, price and other, adding up to the total" src="docs/screenshots/changes-light.png">
+</picture>
 
 `/changes` compares two periods of whole UTC days, the last 30 or 7 days against the period before or the last two finished months, for all projects or one, and splits the change in spend into:
 
@@ -333,6 +343,11 @@ Each driver is swapped from the earlier period to the later one in that order, h
 
 ### Savings estimates
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/savings-dark.png">
+  <img alt="Savings estimates for the last 30 days: batching, caching per 10% of input and model choice, each labelled as an estimate, then per model" src="docs/screenshots/savings-light.png">
+</picture>
+
 `/savings` estimates what the last 30 full UTC days of standard-tier usage, for all projects or one, would have cost in three other ways, at the price table's current rates. They're labelled as estimates on the page, with their assumption beside each, and they overlap, so they aren't added up:
 
 | Estimate                  | Assumption                                                                                                   |
@@ -344,6 +359,11 @@ Each driver is swapped from the earlier period to the later one in that order, h
 Tokens are repriced by kind at each model's standard rates, without long-prompt tiers, audio or image rates. None of them knows whether your prompts repeat, whether the work can wait a day, or whether a cheaper model is good enough, and another model may use a different number of tokens for the same text. Unpriced usage and usage already at another tier are left out and counted. A model with no current price gets no estimate.
 
 ### Revenue
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/revenue-dark.png">
+  <img alt="Revenue and AI API cost for October 2026 in the billing demo: each customer's revenue, AI API cost, revenue minus AI API cost and its share of revenue" src="docs/screenshots/revenue-light.png">
+</picture>
 
 `/revenue` shows, for a UTC month, each customer's revenue from the [billing ledger](docs/BILLING.md), the AI API cost of their usage, and **revenue minus AI API cost**, with its share of revenue. That difference leaves out every other cost, so it's never called profit. Customers whose usage wasn't billed, and usage with no customer, are listed too, and unpriced usage is flagged. See [Revenue and AI API cost](docs/BILLING.md#revenue-and-ai-api-cost).
 
@@ -387,6 +407,11 @@ The sign-in page then shows **Sign in with …** above the password form; withou
 - `/prices/<id>/end` ends a current or scheduled price without a replacement, for when a provider retires a model; `/prices` links to it as **End**. It asks when the price ends (UTC) and, like every price change, a **required source URL** (e.g. the deprecation notice) **and check date**, stored with who did it (`end_source_url`, `end_checked_on`, `ended_by`) so the price's own source is kept. `/prices` shows them as "Ended per … , by …". It can only shorten a price: the end must be after its start and before any end it already has, and a price changed in the meantime is refused. After the end, the model has no price, so new usage for it is stored as unpriced (`no_pricing`), as for an unknown model; recorded usage keeps its cost.
 - `/projects` lists projects with their slug and monthly budget.
 - `/projects/new` and `/projects/<id>/edit` create and edit projects. Slugs must be unique lowercase words joined by hyphens, and a duplicate slug is shown as an error on the field. The monthly and run budgets accept an amount with up to two decimal places, or nothing for no limit. Forms also work without JavaScript.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/prices-dark.png">
+  <img alt="The price list: each model's input, cached input, cache-write, output, batch and web search prices, with long-prompt tiers, when each applies, its status and its source" src="docs/screenshots/prices-light.png">
+</picture>
 
 ## Recording usage
 

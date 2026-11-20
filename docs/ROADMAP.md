@@ -158,7 +158,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
 - [x] Forecasts that show their method, horizon and whether there's enough data (#172)
 - [x] Savings estimates from caching, batching and model choice, labelled as estimates (#174)
 
-## Milestone 15: Product finish
+## Milestone 15: Product finish ✅
 
 - [x] Navigation across overview, usage, prices, budgets, customers, insights, integrations and team (#176)
 - [x] Onboarding in the dashboard: projects, API keys, invitations and roles (the command line stays)
@@ -171,12 +171,12 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
   - [x] A support SaaS: `examples/support-agent` (#154)
   - [x] Multi-model agents under a run budget: `examples/multi-model-agent` (#194)
   - [x] Usage-based billing: `npm run db:demo-billing` (#196)
-- [ ] Architecture, cost accounting, integration and release documents, with screenshots from the running app
+- [x] Architecture, cost accounting, integration and release documents, with screenshots from the running app
   - [x] Architecture: [docs/ARCHITECTURE.md](ARCHITECTURE.md) (#198)
   - [x] Cost accounting: [docs/COST-ACCOUNTING.md](COST-ACCOUNTING.md) (#200)
   - [x] Integration guide: [docs/INTEGRATION.md](INTEGRATION.md) (#202)
   - [x] Release notes: [docs/RELEASE_NOTES.md](RELEASE_NOTES.md) (#204)
-  - [ ] Screenshots of the newer pages from the running app
+  - [x] Screenshots of the newer pages from the running app (#206)
 
 ## Why these milestones
 
