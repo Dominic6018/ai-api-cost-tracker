@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { parseOidcConfig, SSO_ERRORS } from "@/lib/oidc";
+import { parseOidcConfig, ssoErrorMessage } from "@/lib/oidc";
 import { safeRedirectPath } from "@/lib/sessions";
 import { LoginForm } from "./login-form";
 
@@ -21,10 +21,7 @@ export default async function LoginPage({
   const next = safeRedirectPath(params.next);
   if (await getCurrentUser()) redirect(next);
   const oidc = parseOidcConfig(process.env);
-  const error =
-    typeof params.error === "string" && params.error in SSO_ERRORS
-      ? SSO_ERRORS[params.error as keyof typeof SSO_ERRORS]
-      : null;
+  const error = ssoErrorMessage(params.error);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-4 py-12">

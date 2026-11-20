@@ -84,6 +84,17 @@ export const SSO_ERRORS = {
 } as const;
 export type SsoError = keyof typeof SSO_ERRORS;
 
+/**
+ * The message for the sign-in page's `error` parameter, or null. Only the
+ * table's own keys count: `in` would also match inherited names such as
+ * "toString", whose value is a function, not a message.
+ */
+export function ssoErrorMessage(value: unknown): string | null {
+  return typeof value === "string" && Object.hasOwn(SSO_ERRORS, value)
+    ? SSO_ERRORS[value as SsoError]
+    : null;
+}
+
 /** The identity claims single sign-on needs from the ID token. */
 export type SsoIdentity =
   { ok: true; subject: string; email: string } | { ok: false };

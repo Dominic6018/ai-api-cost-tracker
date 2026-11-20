@@ -133,6 +133,12 @@ step("an off-site next parameter is ignored");
   });
   assert.equal(new URL(result.location, base).pathname, "/overview");
   assert.equal(new URL(result.location, base).host, new URL(base).host);
+  // An unknown error is ignored, even a name every object inherits.
+  for (const error of ["toString", "constructor", "nope"]) {
+    const login = await page(`/login?error=${error}`);
+    assert.equal(login.status, 200, `/login?error=${error}`);
+    assert.doesNotMatch(login.html, /role="alert"/);
+  }
   cookie = signedIn;
 }
 
