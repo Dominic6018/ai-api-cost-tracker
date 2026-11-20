@@ -1,13 +1,17 @@
 import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { monthStart, parseSignedDecimal } from "@/lib/billing";
+import {
+  customerDescription,
+  monthStart,
+  parseSignedDecimal,
+} from "@/lib/billing";
 import { isUuid } from "@/lib/ids";
 import {
   generateLinkToken,
   hashLinkToken,
   isWellFormedLinkToken,
 } from "@/lib/links";
-import { PORTAL_LINK_TTL_MS, statementDescription } from "@/lib/portal";
+import { PORTAL_LINK_TTL_MS } from "@/lib/portal";
 import { listCreditGrants, usableCredit } from "./billing-credits";
 import { planForMonth } from "./billing-plans";
 import {
@@ -279,7 +283,7 @@ export async function getStatement(
       createdAt: row.createdAt,
       kind: row.kind,
       // Never a usage charge's own description, which names its cost.
-      description: statementDescription(row),
+      description: customerDescription(row),
       amountMicros: parseSignedDecimal(row.amountUsd),
     })),
     more: rows.length > limit,

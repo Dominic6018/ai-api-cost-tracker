@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  customerDescription,
   customerCreatedEntry,
   formatEntryUsd,
   allocateCredit,
@@ -308,6 +309,37 @@ describe("credit", () => {
       "2027-1-31",
     ]) {
       expect(parseCreditExpiry(text).ok, text).toBe(false);
+    }
+  });
+});
+
+describe("customerDescription", () => {
+  it("names a usage charge by its month, never its AI API cost or multiplier", () => {
+    expect(
+      customerDescription({
+        kind: "usage_charge",
+        description: "Usage, 2026-10: $30.000000 AI API cost x 1.25 = $37.50",
+        period: "2026-10-01",
+      }),
+    ).toBe("Usage, 2026-10");
+    expect(
+      customerDescription({
+        kind: "usage_charge",
+        description: "x",
+        period: null,
+      }),
+    ).toBe("Usage");
+  });
+
+  it("shows other entries as written", () => {
+    for (const kind of ["adjustment", "plan_fee", "payment"] as const) {
+      expect(
+        customerDescription({
+          kind,
+          description: "Team plan, 2026-10",
+          period: null,
+        }),
+      ).toBe("Team plan, 2026-10");
     }
   });
 });

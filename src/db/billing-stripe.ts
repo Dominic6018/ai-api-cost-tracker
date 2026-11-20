@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { AuditEntry } from "@/lib/audit";
-import { parseSignedDecimal } from "@/lib/billing";
+import { customerDescription, parseSignedDecimal } from "@/lib/billing";
 import { microsToCents, type StripeClient } from "@/lib/stripe";
 import { audited, type AuditActor } from "./audit";
 import {
@@ -98,7 +98,9 @@ export async function invoiceOpenEntries(
         .select({
           id: billingLedgerEntries.id,
           amountUsd: billingLedgerEntries.amountUsd,
+          kind: billingLedgerEntries.kind,
           description: billingLedgerEntries.description,
+          period: billingLedgerEntries.period,
         })
         .from(billingLedgerEntries)
         .where(
@@ -171,7 +173,8 @@ export async function invoiceOpenEntries(
             invoice: invoice.id,
             currency: "usd",
             amount: line.cents.toString(),
-            description: line.description,
+            // The customer sees this: never a usage charge's cost.
+            description: customerDescription(line),
             metadata: { ledger_entry_id: line.id },
           },
           `tracker-item-${run}-${line.id}`,

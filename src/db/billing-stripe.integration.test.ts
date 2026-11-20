@@ -8,9 +8,11 @@ import { parseEnv } from "@/lib/env";
 import type { StripeClient } from "@/lib/stripe";
 import { COMMAND_LINE, type AuditActor } from "./audit";
 import { addAdjustment, createBillingCustomer } from "./billing";
+import { createBillingPlan } from "./billing-plans";
 import { customersWithOpenEntries, invoiceOpenEntries } from "./billing-stripe";
 import {
   auditLog,
+  billingLedgerEntries,
   billingStripeCustomers,
   billingStripeInvoiceItems,
   billingStripeInvoices,
@@ -171,6 +173,46 @@ describe("invoicing the ledger in Stripe", () => {
     expect(
       audited.filter((a) => a.action === "billing.stripe_invoiced"),
     ).toHaveLength(2);
+  });
+
+  it("never shows the customer a usage charge's AI API cost", async () => {
+    const t = await setup();
+    const stripe = fakeStripe();
+    const plan = await createBillingPlan(db, t.actor, {
+      ...t.scope,
+      slug: "pro",
+      name: "Pro",
+      monthlyFeeMicros: 49_000_000n,
+      includedUsageMicros: 20_500_000n,
+      usageMultiplier: "1.2500",
+    });
+    if (!plan.ok) throw new Error("plan not created");
+    // A usage charge as charge writes it: its description is for staff.
+    await db.insert(billingLedgerEntries).values({
+      ...t.scope,
+      customerId: t.customer.id,
+      kind: "usage_charge",
+      amountUsd: "17.000000",
+      usageCostUsd: "30.000000",
+      planId: plan.plan.id,
+      period: "2026-10-01",
+      description:
+        "Usage, 2026-10: $30.000000 AI API cost x 1.25 = $37.500000, less $20.500000 included",
+      createdBy: "command line",
+    });
+    await t.entry(5_000_000n, "Setup, as agreed");
+
+    const result = await invoiceOpenEntries(db, t.actor, stripe, t.customer);
+    expect(result).toMatchObject({ ok: true, entries: 2 });
+    const items = stripe.calls.filter((c) => c.path === "/invoiceitems");
+    expect(items.map((c) => [c.params.description, c.params.amount])).toEqual([
+      ["Usage, 2026-10", "1700"],
+      ["Setup, as agreed", "500"],
+    ]);
+    // Nothing sent to Stripe names the cost or the multiplier.
+    expect(JSON.stringify(stripe.calls)).not.toMatch(
+      /AI API cost|30\.000000|1\.25/,
+    );
   });
 
   it("invoices nothing when the open entries come to zero or less", async () => {

@@ -188,6 +188,21 @@ export function monthStart(now: Date): string {
 /** "2026-12-01" as "2026-12". */
 export const monthLabel = (startsOn: string) => startsOn.slice(0, 7);
 
+/**
+ * An entry's description as the customer reads it, on the portal and on
+ * Stripe invoices. A usage charge's own description is written for staff
+ * and spells out the AI API cost and the plan's multiplier, so customers
+ * see just its month instead. Everything else is shown as written.
+ */
+export function customerDescription(entry: {
+  kind: BillingEntryKind;
+  description: string;
+  period: string | null;
+}): string {
+  if (entry.kind !== "usage_charge") return entry.description;
+  return entry.period ? `Usage, ${monthLabel(entry.period)}` : "Usage";
+}
+
 export function planCreatedEntry(plan: {
   slug: string;
   name: string;
