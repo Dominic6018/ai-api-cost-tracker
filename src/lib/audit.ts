@@ -44,6 +44,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "billing.credits_applied": "Applied credit",
   "billing.credit_refunded": "Refunded credit",
   "billing.stripe_invoiced": "Invoiced in Stripe",
+  "billing.stripe_paid": "Paid through Stripe",
 };
 
 const PROJECT_FIELDS = [

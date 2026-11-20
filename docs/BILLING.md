@@ -10,7 +10,7 @@ Nothing moves between them on its own. A charge to a customer is never derived f
 ## What's there now
 
 - **Customers** per organization, keyed by the `customerId` their usage and outcomes are attributed to, with a name.
-- **Ledger entries** for a customer: an **adjustment** (a charge, positive, or a credit, negative), a **reversal**, which cancels one earlier entry, a month's **plan fee** and **usage charge**, or **credit applied** from prepaid credit.
+- **Ledger entries** for a customer: an **adjustment** (a charge, positive, or a credit, negative), a **reversal**, which cancels one earlier entry, a month's **plan fee** and **usage charge**, **credit applied** from prepaid credit, or a **payment** received through Stripe.
 - **Balances**: the sum of a customer's entries. Positive means the customer owes you; negative means you owe them.
 - **Plans** and which customer is on which plan in each month, and **monthly charges** posted from them (below).
 
@@ -93,7 +93,21 @@ Each run creates a **draft** invoice in Stripe, in USD, for the customer's ledge
 - **Test first.** Test keys (`sk_test_`, or restricted `rk_test_`) are the default. A live key is refused unless `STRIPE_ALLOW_LIVE=true` is also set. Test and live invoices are kept apart, so trying things in a sandbox doesn't stop the same entries being invoiced live.
 - What was sent is append-only, and each invoice is in the audit log.
 
-Payments aren't recorded back yet: whether an invoice was paid shows in Stripe. Reading that from Stripe's signed webhooks is next on the [roadmap](ROADMAP.md).
+### Payments from Stripe
+
+Stripe tells the tracker what happens to its invoices through a webhook, `POST /api/stripe/webhook`. It's off until the app has the endpoint's signing secret, `STRIPE_WEBHOOK_SECRET`. The **app** receives webhooks, so the secret goes where the app reads its settings: `.env.local` for `npm run dev`, or your host's environment in production.
+
+- **Locally**, with the [Stripe CLI](https://docs.stripe.com/stripe-cli): `stripe listen --forward-to localhost:3000/api/stripe/webhook` prints a signing secret (`whsec_...`) to put in `.env.local`, then forwards your sandbox's events while it runs.
+- **Deployed**, in the Stripe dashboard under Developers → Webhooks: add an endpoint at `https://<your host>/api/stripe/webhook` for the events `invoice.finalized`, `invoice.paid`, `invoice.payment_failed`, `invoice.voided` and `invoice.marked_uncollectible`, and use its signing secret.
+
+What happens to each request:
+
+- **Verified.** It must carry Stripe's signature for the secret, made in the last 5 minutes; anything else is refused with a 400 and changes nothing. The comparison takes the same time whatever the input.
+- **Once.** Every event is stored by its ID, so when Stripe delivers one again it's acknowledged and nothing changes twice.
+- **The tracker's invoices only.** An invoice event for an invoice the tracker created, in the same mode (sandbox events can't touch live invoices), goes into that invoice's history: open, paid, payment failed, void or uncollectible. Every other event is acknowledged and ignored.
+- **Payments reduce what's owed.** When a live invoice is paid in USD, a **payment** entry for the amount paid goes on the ledger, once per invoice, with an audit entry. Payments aren't revenue: [revenue](#revenue-and-ai-api-cost) is what was billed. Sandbox payments are recorded in the invoice's history but never change the ledger, as sandbox invoicing doesn't either.
+
+`npm run billing -- stripe-invoices --customer cus_42` lists a customer's invoices with their latest status. A failed payment or a void invoice changes nothing on the ledger: correct it with an adjustment if needed.
 
 ## Revenue and AI API cost
 
@@ -150,6 +164,7 @@ npm run billing -- refund-credit --grant <grant id> --reason "Refunded by bank t
 npm run billing -- revenue --month 2026-10        # revenue, AI API cost and the difference
 
 npm run billing -- stripe-invoice                 # draft Stripe invoices; needs STRIPE_SECRET_KEY
+npm run billing -- stripe-invoices --customer cus_42  # its invoices and their status in Stripe
 ```
 
 `--from` defaults to the current UTC month and `--month` to last month. `ledger` also lists the customer's plan history. Run `charge` early each month, for example from cron, after any late usage has arrived.

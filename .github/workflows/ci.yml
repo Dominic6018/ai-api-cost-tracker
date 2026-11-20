@@ -103,6 +103,8 @@ jobs:
       OIDC_REDIRECT_URI: http://localhost:3000/login/oidc/callback
       OIDC_NAME: Test IdP
       OIDC_ALLOW_HTTP: "true"
+      # A made-up signing secret, so CI can sign Stripe webhook events.
+      STRIPE_WEBHOOK_SECRET: ci-webhook-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -724,6 +726,26 @@ jobs:
           npm run --silent billing -- revenue --month "$LAST" | tee revenue.log
           grep -qxF "$C2  revenue \$66.000000  AI API cost \$30.000000  revenue minus AI API cost \$36.000000 (54.5% of revenue)" revenue.log
           if grep -qi 'profit' revenue.log; then exit 1; fi
+          # Stripe webhooks: a signed invoice.paid for a live invoice posts the
+          # payment to the ledger once; a bad signature is refused.
+          INV="in_ci_$GITHUB_RUN_ID"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO billing_stripe_invoices (organization_id, customer_id, mode, stripe_invoice_id, amount_cents, created_by) SELECT organization_id, id, 'live', '$INV', 1600, 'ci' FROM billing_customers WHERE external_id = '$C2'"
+          T=$(date +%s)
+          EVENT="{\"id\":\"evt_ci_$GITHUB_RUN_ID\",\"type\":\"invoice.paid\",\"livemode\":true,\"created\":$T,\"data\":{\"object\":{\"id\":\"$INV\",\"amount_paid\":1600,\"currency\":\"usd\"}}}"
+          SIG=$(printf '%s' "$T.$EVENT" | openssl dgst -sha256 -hmac "$STRIPE_WEBHOOK_SECRET" | sed 's/^.* //')
+          hook() {
+            curl -s -o hook.json -w '%{http_code}' -X POST http://localhost:3000/api/stripe/webhook \
+              -H "stripe-signature: t=$T,v1=$1" -H 'content-type: application/json' --data-binary "$EVENT"
+          }
+          test "$(hook "$SIG")" = 200; cat hook.json; echo
+          grep -qF '"outcome":"recorded","paymentPosted":true' hook.json
+          test "$(hook "$SIG")" = 200
+          grep -qF '"outcome":"duplicate"' hook.json
+          test "$(hook "$(printf '0%.0s' $(seq 64))")" = 400
+          grep -qF '"invalid_signature"' hook.json
+          npm run --silent billing -- customers | grep -qF "$C2  CI charged  balance \$0.000000  4 entries"
+          npm run --silent billing -- stripe-invoices --customer "$C2" | grep -qF "$INV  \$16.00  live  paid"
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action = 'billing.stripe_paid' AND target = '$INV'")" = 1
           # Stripe is off without a key, and refuses a live key unless asked
           if npm run --silent billing -- stripe-invoice 2> stripe.log; then exit 1; fi
           grep -qF "Stripe isn't set up" stripe.log

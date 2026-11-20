@@ -52,6 +52,7 @@ import {
   customersWithOpenEntries,
   invoiceOpenEntries,
 } from "../billing-stripe";
+import { listStripeInvoices } from "../stripe-webhooks";
 import { createStripeClient, parseStripeConfig } from "@/lib/stripe";
 import { formatShare, revenueReport } from "@/lib/revenue";
 
@@ -72,6 +73,7 @@ const USAGE = `Usage:
   npm run billing -- refund-credit --grant <grant id> --reason <text>
   npm run billing -- revenue [--month YYYY-MM]
   npm run billing -- stripe-invoice [--customer <id>]
+  npm run billing -- stripe-invoices --customer <id>
 
 Each takes --org <slug>; the default organization otherwise.
 
@@ -107,7 +109,8 @@ month), AI API cost and revenue minus AI API cost, which isn't profit;
 stripe-invoice creates a draft Stripe invoice for each customer's ledger
 entries not yet invoiced (or one --customer), for you to review and send
 in Stripe. It needs STRIPE_SECRET_KEY, a test key unless
-STRIPE_ALLOW_LIVE=true.`;
+STRIPE_ALLOW_LIVE=true. stripe-invoices lists a customer's invoices with
+their latest status from Stripe's webhooks.`;
 
 function valid<T>(parsed: Parsed<T>): T {
   if (!parsed.ok) throw new Error(parsed.error);
@@ -155,6 +158,7 @@ async function main() {
     "refund-credit": ["grant", "reason"],
     revenue: [],
     "stripe-invoice": [],
+    "stripe-invoices": ["customer"],
   };
   if (
     !command ||
@@ -465,6 +469,24 @@ async function main() {
         } else {
           console.log(`${target.externalId}  nothing to invoice`);
         }
+      }
+    } else if (command === "stripe-invoices") {
+      const found = await customer();
+      const invoices = await listStripeInvoices(db, found);
+      if (invoices.length === 0) {
+        console.log(`${found.externalId}  no Stripe invoices`);
+      }
+      for (const { invoice, status } of invoices) {
+        const cents = invoice.amountCents;
+        console.log(
+          [
+            invoice.createdAt.toISOString().slice(0, 10),
+            invoice.stripeInvoiceId,
+            `$${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`,
+            invoice.mode,
+            status ?? "draft (no events yet)",
+          ].join("  "),
+        );
       }
     } else if (command === "subscribe" || command === "unsubscribe") {
       const target = await customer();

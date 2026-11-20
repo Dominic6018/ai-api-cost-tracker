@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   date,
   foreignKey,
@@ -571,6 +572,7 @@ export const AUDIT_ACTIONS = [
   "billing.credits_applied",
   "billing.credit_refunded",
   "billing.stripe_invoiced",
+  "billing.stripe_paid",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -608,7 +610,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded', 'billing.stripe_invoiced')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded', 'billing.stripe_invoiced', 'billing.stripe_paid')`,
     ),
   ],
 );
@@ -948,6 +950,7 @@ export const BILLING_ENTRY_KINDS = [
   "plan_fee",
   "usage_charge",
   "credit_applied",
+  "payment",
 ] as const;
 export type BillingEntryKind = (typeof BILLING_ENTRY_KINDS)[number];
 
@@ -1013,17 +1016,17 @@ export const billingLedgerEntries = pgTable(
     ),
     check(
       "billing_ledger_entries_kind_valid",
-      sql`${t.kind} in ('adjustment', 'reversal', 'plan_fee', 'usage_charge', 'credit_applied')`,
+      sql`${t.kind} in ('adjustment', 'reversal', 'plan_fee', 'usage_charge', 'credit_applied', 'payment')`,
     ),
     check(
       "billing_ledger_entries_charge_valid",
       sql`(${t.kind} in ('plan_fee', 'usage_charge')) = (${t.period} is not null and ${t.planId} is not null) and (${t.period} is null or extract(day from ${t.period}) = 1) and (${t.kind} not in ('plan_fee', 'usage_charge') or ${t.amountUsd} > 0) and (${t.kind} = 'usage_charge') = (${t.usageCostUsd} is not null) and (${t.usageCostUsd} is null or ${t.usageCostUsd} >= 0)`,
     ),
     check("billing_ledger_entries_amount_valid", sql`${t.amountUsd} <> 0`),
-    // Credits reduce what's owed.
+    // Credits and payments reduce what's owed.
     check(
       "billing_ledger_entries_credit_valid",
-      sql`${t.kind} <> 'credit_applied' or ${t.amountUsd} < 0`,
+      sql`${t.kind} not in ('credit_applied', 'payment') or ${t.amountUsd} < 0`,
     ),
     check(
       "billing_ledger_entries_description_valid",
@@ -1245,6 +1248,70 @@ export const billingStripeInvoiceItems = pgTable(
   ],
 );
 
+/**
+ * Every Stripe webhook event received, by Stripe's event ID, so an event
+ * Stripe delivers again is acknowledged without being applied twice.
+ */
+export const stripeWebhookEvents = pgTable(
+  "stripe_webhook_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    type: text("type").notNull(),
+    livemode: boolean("livemode").notNull(),
+    // "recorded" for an invoice event of the tracker's; "ignored" for
+    // anything else, such as an invoice made outside the tracker.
+    outcome: text("outcome").$type<"recorded" | "ignored">().notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      "stripe_webhook_events_outcome_valid",
+      sql`${t.outcome} in ('recorded', 'ignored')`,
+    ),
+  ],
+);
+
+/**
+ * What happened to an invoice in Stripe, one row per event, in the order
+ * Stripe created them: the latest is its status. Append-only.
+ */
+export const billingStripeInvoiceEvents = pgTable(
+  "billing_stripe_invoice_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => billingStripeInvoices.id, { onDelete: "cascade" }),
+    stripeEventId: text("stripe_event_id").notNull(),
+    status: text("status")
+      .$type<"open" | "paid" | "payment_failed" | "void" | "uncollectible">()
+      .notNull(),
+    // For a payment: the cents Stripe says were paid.
+    amountPaidCents: bigint("amount_paid_cents", { mode: "bigint" }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("billing_stripe_invoice_events_event_idx").on(t.stripeEventId),
+    index("billing_stripe_invoice_events_invoice_idx").on(
+      t.invoiceId,
+      t.occurredAt,
+    ),
+    check(
+      "billing_stripe_invoice_events_status_valid",
+      sql`${t.status} in ('open', 'paid', 'payment_failed', 'void', 'uncollectible')`,
+    ),
+    check(
+      "billing_stripe_invoice_events_paid_valid",
+      sql`${t.amountPaidCents} is null or ${t.amountPaidCents} >= 0`,
+    ),
+  ],
+);
+
 export const API_KEY_SCOPES = ["ingest", "read"] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
@@ -1261,6 +1328,7 @@ export type BillingSubscription = typeof billingSubscriptions.$inferSelect;
 export type BillingCreditGrant = typeof billingCreditGrants.$inferSelect;
 export type BillingCreditUse = typeof billingCreditUses.$inferSelect;
 export type StripeInvoice = typeof billingStripeInvoices.$inferSelect;
+export type StripeInvoiceEvent = typeof billingStripeInvoiceEvents.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;
