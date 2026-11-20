@@ -18,6 +18,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed/run.ts",
     "db:demo": "tsx src/db/scripts/demo.ts",
+    "db:demo-billing": "tsx src/db/scripts/billing-demo.ts",
     "api-key": "tsx src/db/scripts/api-key.ts",
     "user": "tsx src/db/scripts/user.ts",
     "org": "tsx src/db/scripts/org.ts",
