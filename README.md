@@ -57,7 +57,7 @@ What it doesn't do yet (the plan is in [docs/PRODUCT_UPGRADE_PLAN.md](docs/PRODU
 - **Unpriced usage isn't estimated.** Usage with no stored price is kept as unpriced and left out of totals, budgets and exports until a price is added and `npm run reprice` runs; the tracker never guesses a cost.
 - **Usage is reported by your code**, through the API or the [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients, or OpenTelemetry traces. Provider bills are compared with recorded costs (`npm run reconcile`), not imported as usage. The clients read usage from OpenAI, Anthropic and Gemini streams with `trackStream()` / `track_stream()`.
 - **Budgets only hold for calls that ask first.** A reservation stops concurrent steps from overspending, but a provider call your app makes without reserving isn't stopped (see [Reserving budget](#reserving-budget)). The TypeScript and Python clients reserve with `reserveBudget()` / `reserve_budget()`.
-- **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. The [billing ledger](docs/BILLING.md) records what customers owe: plan fees and usage charges posted each month from the command line, adjustments, and prepaid credit applied against them. [`/revenue`](docs/BILLING.md#revenue-and-ai-api-cost) puts each customer's revenue next to their AI API cost. Draft invoices for it can be created in [Stripe](docs/BILLING.md#invoicing-through-stripe), in test mode by default; payments aren't recorded back yet.
+- **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. The [billing ledger](docs/BILLING.md) records what customers owe: plan fees and usage charges posted each month from the command line, adjustments, and prepaid credit applied against them. [`/revenue`](docs/BILLING.md#revenue-and-ai-api-cost) puts each customer's revenue next to their AI API cost. Draft invoices for it can be created in [Stripe](docs/BILLING.md#invoicing-through-stripe), in test mode by default, and payments come back through Stripe's signed webhooks.
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's Ultrafast tier isn't tracked.
 - **Organizations are managed from the command line**, as accounts are. An account is in one organization, and prices are shared across the install.
 - **Days are UTC days** for "today", "this month" and the charts.
@@ -165,6 +165,7 @@ src/
     billing-charges.ts  A month's usage cost per customer, and posting monthly charges
     billing-credits.ts  Prepaid credit: grants, applying it to what's owed, refunds
     billing-stripe.ts  Draft Stripe invoices for ledger entries, once each
+    stripe-webhooks.ts  Records Stripe's invoice events once; posts live payments
     scripts/      `npm run api-key`, `user`, `db:demo`, `reconcile` and `budget-alerts` commands
     seed/         Sample project and dated model prices (`npm run db:seed`)
     demo/         Deterministic demo data generator and loader (`npm run db:demo`)

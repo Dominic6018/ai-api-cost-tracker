@@ -147,7 +147,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
   - [x] Entitlements: what a plan allows, checked before spending (#163)
 - Optional per-customer billing through Stripe, in test mode by default:
   - [x] Draft Stripe invoices for what the ledger says each customer owes, each entry once (#178)
-  - [ ] Payment status from Stripe's signed, idempotent webhooks
+  - [x] Payment status from Stripe's signed, idempotent webhooks (#180)
 - [x] Revenue and a "revenue minus AI API cost" view per customer, never labelled profit (#165)
 
 ## Milestone 14: Insights
