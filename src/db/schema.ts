@@ -477,6 +477,51 @@ export const sessions = pgTable(
 );
 
 /**
+ * Invitations to join an organization, by single-use link. Only a hash of
+ * the link's token is stored. One pending invitation per email at a time.
+ */
+export const accountInvitations = pgTable(
+  "account_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // Stored lowercased, like users.email.
+    email: text("email").notNull(),
+    role: text("role").$type<UserRole>().notNull(),
+    tokenHash: text("token_hash").notNull(),
+    // Who invited, kept by email if their account is later deleted.
+    invitedBy: uuid("invited_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    invitedByLabel: text("invited_by_label").notNull(),
+    createdAt: timestamps.createdAt,
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedUserId: uuid("accepted_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "account_invitations_role_valid",
+      sql`${t.role} in ('admin', 'member', 'viewer')`,
+    ),
+    check(
+      "account_invitations_closed_once",
+      sql`${t.acceptedAt} is null or ${t.revokedAt} is null`,
+    ),
+    uniqueIndex("account_invitations_token_hash_idx").on(t.tokenHash),
+    uniqueIndex("account_invitations_pending_email_idx")
+      .on(t.email)
+      .where(sql`${t.acceptedAt} is null and ${t.revokedAt} is null`),
+    index("account_invitations_organization_idx").on(t.organizationId),
+  ],
+);
+
+/**
  * Business outcomes, such as a resolved ticket or a completed order, so
  * cost can be divided by what it achieved. Attributed like usage events.
  */
@@ -573,6 +618,8 @@ export const AUDIT_ACTIONS = [
   "billing.credit_refunded",
   "billing.stripe_invoiced",
   "billing.stripe_paid",
+  "account.invited",
+  "account.invitation_revoked",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -610,7 +657,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded', 'billing.stripe_invoiced', 'billing.stripe_paid')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded', 'billing.stripe_invoiced', 'billing.stripe_paid', 'account.invited', 'account.invitation_revoked')`,
     ),
   ],
 );
@@ -1329,6 +1376,7 @@ export type BillingCreditGrant = typeof billingCreditGrants.$inferSelect;
 export type BillingCreditUse = typeof billingCreditUses.$inferSelect;
 export type StripeInvoice = typeof billingStripeInvoices.$inferSelect;
 export type StripeInvoiceEvent = typeof billingStripeInvoiceEvents.$inferSelect;
+export type AccountInvitation = typeof accountInvitations.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;

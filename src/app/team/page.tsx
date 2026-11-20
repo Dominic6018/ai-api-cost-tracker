@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { db } from "@/db";
 import { listOrganizationAccounts } from "@/db/accounts";
+import { listPendingInvitations } from "@/db/invitations";
 import { USER_ROLES } from "@/db/schema";
 import { requirePermission } from "@/lib/auth";
 import {
@@ -9,7 +10,12 @@ import {
   TEAM_STATUS_MESSAGES,
 } from "@/lib/team";
 import { DashboardNav } from "../dashboard-nav";
-import { changeRoleAction } from "./actions";
+import {
+  changeRoleAction,
+  inviteAction,
+  revokeInvitationAction,
+} from "./actions";
+import { InviteForm } from "./invite-form";
 
 export const metadata: Metadata = { title: "Accounts · AI API Cost Tracker" };
 
@@ -22,6 +28,14 @@ const utcDate = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
 });
+const utcDateTime = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 export default async function TeamPage({
   searchParams,
@@ -31,7 +45,11 @@ export default async function TeamPage({
   const user = await requirePermission("team:manage", "/team");
   const status = parseTeamStatus((await searchParams).status);
   const message = status ? TEAM_STATUS_MESSAGES[status] : null;
-  const accounts = await listOrganizationAccounts(db, user.organizationId);
+  const now = new Date();
+  const [accounts, invitations] = await Promise.all([
+    listOrganizationAccounts(db, user.organizationId, now),
+    listPendingInvitations(db, user.organizationId),
+  ]);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-4 py-12 sm:px-8">
@@ -41,11 +59,8 @@ export default async function TeamPage({
         <p className="max-w-2xl text-sm text-foreground/70">
           Everyone who can sign in to your organization. A new role applies from
           their next page, without signing them out. Each organization keeps at
-          least one admin. To add someone, run{" "}
-          <code className="font-mono">
-            npm run user -- create --email &lt;email&gt;
-          </code>{" "}
-          for now.
+          least one admin. Invite people below, or add them with{" "}
+          <code className="font-mono">npm run user -- create</code>.
         </p>
         <dl className="grid max-w-2xl gap-1 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-4">
           {USER_ROLES.map((role) => (
@@ -143,6 +158,90 @@ export default async function TeamPage({
           </tbody>
         </table>
       </div>
+
+      <section
+        className="flex flex-col gap-4"
+        aria-labelledby="invitations-heading"
+      >
+        <div className="flex flex-col gap-1">
+          <h2 id="invitations-heading" className="text-lg font-semibold">
+            Invite someone
+          </h2>
+          <p className="max-w-2xl text-sm text-foreground/70">
+            Creates a link that makes an account in your organization with the
+            role you choose. The person opening it sets their own password.
+          </p>
+        </div>
+        <InviteForm action={inviteAction} />
+        {invitations.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-foreground/10">
+            <table className="w-full min-w-[40rem] text-left text-sm">
+              <caption className="sr-only">Open invitations</caption>
+              <thead className="border-b border-foreground/10 text-foreground/60">
+                <tr>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Invited
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Role
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    By
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Link works until
+                  </th>
+                  <th scope="col" className="px-4 py-3">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {invitations.map((invitation) => {
+                  const expired = invitation.expiresAt <= now;
+                  return (
+                    <tr
+                      key={invitation.id}
+                      className="border-b border-foreground/10 last:border-0"
+                    >
+                      <td className="px-4 py-3 font-medium">
+                        {invitation.email}
+                      </td>
+                      <td className="px-4 py-3">{invitation.role}</td>
+                      <td className="px-4 py-3 text-foreground/70">
+                        {invitation.invitedByLabel}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums">
+                        {expired ? (
+                          <span className="text-foreground/60">Expired</span>
+                        ) : (
+                          `${utcDateTime.format(invitation.expiresAt)} UTC`
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <form
+                          action={revokeInvitationAction.bind(
+                            null,
+                            invitation.id,
+                          )}
+                        >
+                          <button
+                            type="submit"
+                            aria-label={`Revoke the invitation for ${invitation.email}`}
+                            className="text-red-700 underline dark:text-red-400"
+                          >
+                            Revoke
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </main>
   );
 }

@@ -45,6 +45,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "billing.credit_refunded": "Refunded credit",
   "billing.stripe_invoiced": "Invoiced in Stripe",
   "billing.stripe_paid": "Paid through Stripe",
+  "account.invited": "Invited account",
+  "account.invitation_revoked": "Revoked invitation",
 };
 
 const PROJECT_FIELDS = [
@@ -103,6 +105,49 @@ export function apiKeyRevokedEntry(
     action: "api_key.revoked",
     target: key.keyPrefix,
     details: { project: project.slug, name: key.name, scope: key.scope },
+  };
+}
+
+type InvitationFields = {
+  email: string;
+  role: string;
+  expiresAt: Date;
+  invitedByLabel: string;
+};
+
+/** An invitation, by the invited email; never its link. */
+export function invitedEntry(invitation: InvitationFields): AuditEntry {
+  return {
+    action: "account.invited",
+    target: invitation.email,
+    details: {
+      role: invitation.role,
+      expiresAt: invitation.expiresAt.toISOString(),
+    },
+  };
+}
+
+export function invitationRevokedEntry(
+  invitation: InvitationFields,
+): AuditEntry {
+  return {
+    action: "account.invitation_revoked",
+    target: invitation.email,
+    details: { role: invitation.role },
+  };
+}
+
+/** The account an accepted invitation made, recorded as by its owner. */
+export function invitationAcceptedEntry(
+  invitation: InvitationFields,
+): AuditEntry {
+  return {
+    action: "account.created",
+    target: invitation.email,
+    details: {
+      role: invitation.role,
+      invitedBy: invitation.invitedByLabel,
+    },
   };
 }
 

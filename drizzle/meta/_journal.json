@@ -288,6 +288,13 @@
       "when": 1795189704181,
       "tag": "0040_stripe_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795194998741,
+      "tag": "0041_account_invitations",
+      "breakpoints": true
     }
   ]
 }

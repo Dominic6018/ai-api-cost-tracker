@@ -837,6 +837,95 @@ step("an admin changes roles on the accounts page, keeping an admin");
   }
 }
 
+step("an admin invites someone by link, who joins with their own password");
+{
+  /** Creates an invitation on /team and returns its link's path. */
+  async function invite(invitee, role) {
+    const { html } = await page("/team");
+    const form = formFields(html, 'id="invite-email"');
+    form.set("email", invitee);
+    form.set("role", role);
+    const response = await fetch(`${base}/team`, {
+      method: "POST",
+      body: form,
+      headers: { cookie },
+      redirect: "manual",
+    });
+    const body = await response.text();
+    assert.equal(response.status, 200, `inviting ${invitee}`);
+    assert.match(body, /isn(&#x27;|')t emailed/);
+    const paths = [
+      ...new Set(body.match(/\/invite\/[A-Za-z0-9_-]{43}/g) ?? []),
+    ];
+    assert.equal(paths.length, 1, "the link is shown");
+    return paths[0];
+  }
+  const invalid = /This invitation link can(&#x27;|')t be used/;
+
+  const invitee = `invitee-${randomUUID().slice(0, 8)}@example.com`;
+  const link = await invite(invitee, "member");
+  const listed = await page("/team");
+  assert.ok(listed.html.includes(invitee), "the open invitation is listed");
+  assert.ok(!listed.html.includes(link), "the link isn't shown again");
+
+  const admin = cookie;
+  cookie = "";
+  const opened = await page(link);
+  assert.equal(opened.status, 200);
+  assert.ok(opened.html.includes(invitee), "the link names the email");
+  assert.match(opened.html, /<meta name="referrer" content="no-referrer"/);
+
+  for (const [fields, message] of [
+    [{ password: "short", confirmPassword: "short" }, /at least 12 characters/],
+    [
+      { password, confirmPassword: `${password}!` },
+      /two passwords don(&#x27;|')t match/,
+    ],
+  ]) {
+    const refused = await submit(link, fields);
+    assert.equal(refused.status, 200);
+    assert.match(refused.html, message);
+  }
+
+  const joined = await submit(link, { password, confirmPassword: password });
+  assert.equal(joined.status, 303, "redirect after joining");
+  assert.equal(new URL(joined.location, base).pathname, "/overview");
+  assert.ok(cookie, "the new account is signed in");
+  const overview = await page("/overview");
+  assert.equal(overview.status, 200);
+  assert.ok(overview.html.includes(invitee), "signed in as the invitee");
+  const team = await page("/team");
+  assert.equal(team.status, 307, "a member can't manage accounts");
+  assert.match((await page(link)).html, invalid, "the link works once");
+
+  cookie = admin;
+  const joinedList = await page("/team");
+  const row = joinedList.html.split("<tr").find((r) => r.includes(invitee));
+  assert.match(row ?? "", /<option value="member" selected="">/);
+
+  const revokedInvitee = `revoked-${randomUUID().slice(0, 8)}@example.com`;
+  const revokedLink = await invite(revokedInvitee, "viewer");
+  const withRevoke = await page("/team");
+  const revoke = await fetch(`${base}/team`, {
+    method: "POST",
+    body: formFields(
+      withRevoke.html,
+      `aria-label="Revoke the invitation for ${revokedInvitee}"`,
+    ),
+    headers: { cookie },
+    redirect: "manual",
+  });
+  await revoke.text();
+  assert.equal(revoke.status, 303);
+  assert.equal(
+    new URL(revoke.headers.get("location"), base).search,
+    "?status=invitation_revoked",
+  );
+  cookie = "";
+  assert.match((await page(revokedLink)).html, invalid, "revoked links fail");
+  cookie = admin;
+}
+
 step("the audit log records who changed projects and prices");
 {
   const result = await page("/audit");
@@ -849,6 +938,9 @@ step("the audit log records who changed projects and prices");
     "Ended price",
     "Created API key",
     "Revoked API key",
+    "Invited account",
+    "Revoked invitation",
+    "Created account",
     ...(process.env.SMOKE_VIEWER_EMAIL ? ["Changed role"] : []),
   ]) {
     assert.ok(text.includes(label), `the audit log shows "${label}"`);

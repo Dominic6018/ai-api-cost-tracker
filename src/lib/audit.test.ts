@@ -4,6 +4,9 @@ import {
   apiKeyCreatedEntry,
   apiKeyRevokedEntry,
   formatAuditDetails,
+  invitationAcceptedEntry,
+  invitationRevokedEntry,
+  invitedEntry,
   roleChangedEntry,
   parseAuditPage,
   priceAddedEntry,
@@ -158,5 +161,32 @@ describe("roleChangedEntry", () => {
         previousRole: "admin",
       }),
     ).toBeNull();
+  });
+});
+
+describe("invitation entries", () => {
+  const invitation = {
+    email: "new@example.com",
+    role: "member",
+    expiresAt: new Date("2026-11-28T12:00:00Z"),
+    invitedByLabel: "admin@example.com",
+  };
+
+  it("name the invited email, never the link", () => {
+    expect(invitedEntry(invitation)).toEqual({
+      action: "account.invited",
+      target: "new@example.com",
+      details: { role: "member", expiresAt: "2026-11-28T12:00:00.000Z" },
+    });
+    expect(invitationRevokedEntry(invitation)).toEqual({
+      action: "account.invitation_revoked",
+      target: "new@example.com",
+      details: { role: "member" },
+    });
+    expect(invitationAcceptedEntry(invitation)).toEqual({
+      action: "account.created",
+      target: "new@example.com",
+      details: { role: "member", invitedBy: "admin@example.com" },
+    });
   });
 });

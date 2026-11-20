@@ -287,6 +287,8 @@ The current section and page are marked, and a section's pages show beneath it. 
 
 Each account has a role, and every role can read the whole dashboard. Add `--role` to `create` to choose one; without it, a new account is an `admin`, and accounts from before roles existed are admins too. A new role applies on the next request, without signing the user out. The server checks the role on every change, not only by hiding links. Admins can also change roles at `/team`, which lists their organization's accounts with their roles and active sessions. A change that would leave the organization without an admin is refused there; `npm run user -- set-role` is still the way back in if that ever happens.
 
+To add someone, an admin enters their email and role under **Invite someone** on `/team`. That makes a link to send them yourself; nothing is emailed. The link is shown once, works once and expires after 7 days. Only a hash of it is stored. Opening it shows the organization, email and role, and asks for a password of at least 12 characters. That creates the account in the organization with that role and signs it in. Open invitations are listed on `/team` and can be revoked. An email that already has an account, or an open invitation, can't be invited. Inviting, revoking and joining are all in the audit log. The page behind a link sends no `Referer` and asks not to be indexed. Single sign-on works for invited accounts too, by their verified email.
+
 | Role     | Projects | Prices                             | API keys, accounts and audit log |
 | -------- | -------- | ---------------------------------- | -------------------------------- |
 | `admin`  | Manage   | Manage (default organization only) | Manage                           |
