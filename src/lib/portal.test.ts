@@ -5,6 +5,7 @@ import {
   ENTRY_KIND_LABELS,
   formatStatementUsd,
   portalUrl,
+  statementDescription,
 } from "./portal";
 
 describe("formatStatementUsd", () => {
@@ -45,4 +46,35 @@ it("makes a portal link on the request's host", () => {
   expect(
     portalUrl("t".repeat(43), { host: "costs.example.com", proto: null }),
   ).toBe(`https://costs.example.com/portal/${"t".repeat(43)}`);
+});
+
+describe("statementDescription", () => {
+  it("names a usage charge by its month, never its cost", () => {
+    expect(
+      statementDescription({
+        kind: "usage_charge",
+        description: "Usage, 2026-10: $30.000000 AI API cost x 1.25 = $37.50",
+        period: "2026-10-01",
+      }),
+    ).toBe("Usage, 2026-10");
+    expect(
+      statementDescription({
+        kind: "usage_charge",
+        description: "x",
+        period: null,
+      }),
+    ).toBe("Usage");
+  });
+
+  it("shows other entries as written", () => {
+    for (const kind of ["adjustment", "plan_fee", "payment"] as const) {
+      expect(
+        statementDescription({
+          kind,
+          description: "Team plan, 2026-10",
+          period: null,
+        }),
+      ).toBe("Team plan, 2026-10");
+    }
+  });
 });

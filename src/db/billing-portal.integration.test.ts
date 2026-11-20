@@ -21,6 +21,7 @@ import {
 } from "./billing-portal";
 import {
   auditLog,
+  billingLedgerEntries,
   billingPortalLinks,
   organizations,
   type BillingCustomer,
@@ -97,6 +98,19 @@ beforeAll(async () => {
     description: "Prepaid",
   });
   if (!credit.ok) throw new Error("credit not granted");
+  // A usage charge as charge writes it, naming the AI API cost.
+  await db.insert(billingLedgerEntries).values({
+    organizationId: customer.organizationId,
+    customerId: customer.id,
+    kind: "usage_charge",
+    amountUsd: "7.500000",
+    usageCostUsd: "6.000000",
+    planId: plan.plan.id,
+    period: "2026-10-01",
+    description:
+      "Usage, 2026-10: $6.000000 AI API cost x 1.7500 = $10.500000, less $3.000000 included",
+    createdBy: "command line",
+  });
 });
 
 afterAll(async () => {
@@ -223,10 +237,12 @@ describe("portal links", () => {
 describe("getStatement", () => {
   it("shows what the customer is billed, and nothing about cost", async () => {
     const statement = await getStatement(db, customer);
-    expect(statement.balanceMicros).toBe(42_345_678n);
+    expect(statement.balanceMicros).toBe(49_845_678n);
     expect(
       statement.entries.map((e) => [e.description, e.amountMicros]),
     ).toEqual([
+      // Named by its month, not by the description that holds its cost.
+      ["Usage, 2026-10", 7_500_000n],
       ["Goodwill credit", -10_000_000n],
       ["Usage above the plan", 12_345_678n],
       ["Team plan, this month", 40_000_000n],
@@ -247,6 +263,11 @@ describe("getStatement", () => {
 
     const short = await getStatement(db, customer, new Date(), 2);
     expect(short.entries).toHaveLength(2);
+    expect(
+      JSON.stringify(statement.entries, (_k, v) =>
+        typeof v === "bigint" ? String(v) : v,
+      ),
+    ).not.toMatch(/AI API cost|1.7500|6.000000/);
     expect(short.more).toBe(true);
   });
 

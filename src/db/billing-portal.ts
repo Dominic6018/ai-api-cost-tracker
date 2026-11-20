@@ -7,7 +7,7 @@ import {
   hashLinkToken,
   isWellFormedLinkToken,
 } from "@/lib/links";
-import { PORTAL_LINK_TTL_MS } from "@/lib/portal";
+import { PORTAL_LINK_TTL_MS, statementDescription } from "@/lib/portal";
 import { listCreditGrants, usableCredit } from "./billing-credits";
 import { planForMonth } from "./billing-plans";
 import {
@@ -258,6 +258,7 @@ export async function getStatement(
         createdAt: billingLedgerEntries.createdAt,
         kind: billingLedgerEntries.kind,
         description: billingLedgerEntries.description,
+        period: billingLedgerEntries.period,
         amountUsd: billingLedgerEntries.amountUsd,
       })
       .from(billingLedgerEntries)
@@ -277,7 +278,8 @@ export async function getStatement(
       id: row.id,
       createdAt: row.createdAt,
       kind: row.kind,
-      description: row.description,
+      // Never a usage charge's own description, which names its cost.
+      description: statementDescription(row),
       amountMicros: parseSignedDecimal(row.amountUsd),
     })),
     more: rows.length > limit,

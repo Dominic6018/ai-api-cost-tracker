@@ -795,10 +795,12 @@ jobs:
           grep -qF 'CI limited' limited.html
           grep -qF 'No entries yet' limited.html
           # The page as read, without scripts (dev builds put file paths there),
-          # and the data sent to the browser, for fields it must never carry.
+          # then the data sent to the browser, for fields it must never carry.
           visible() { node -e 'const h=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(h.replace(/<script[\s\S]*?<\/script>/g,""))' "$1"; }
+          # Its $4 of AI API cost appears nowhere.
+          if visible limited.html | grep -F '4.00'; then exit 1; fi
           for page in portal.html limited.html; do
-            if visible "$page" | grep -qiE 'AI API|multiplier|cost|command line|4\.00'; then
+            if visible "$page" | grep -iE 'AI API|multiplier|cost|command line|1\.25|30\.00'; then
               echo "$page shows internal data"; exit 1
             fi
             if grep -qiE 'usage_?multiplier|included_?usage|cost_?usd|created_?by' "$page"; then

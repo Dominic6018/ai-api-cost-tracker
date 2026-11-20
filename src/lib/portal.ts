@@ -27,6 +27,21 @@ export const ENTRY_KIND_LABELS: Record<BillingEntryKind, string> = {
   payment: "Payment",
 };
 
+/**
+ * An entry's description as the customer reads it. A usage charge's own
+ * description is written for staff and spells out the AI API cost and the
+ * multiplier, so the statement names just its month instead. Everything
+ * else is shown as written.
+ */
+export function statementDescription(entry: {
+  kind: BillingEntryKind;
+  description: string;
+  period: string | null;
+}): string {
+  if (entry.kind !== "usage_charge") return entry.description;
+  return entry.period ? `Usage, ${entry.period.slice(0, 7)}` : "Usage";
+}
+
 /** One message for every unusable link. */
 export const INVALID_PORTAL_MESSAGE =
   "This link can't be used. It may have expired or been revoked. Ask your provider for a new one.";
