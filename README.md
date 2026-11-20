@@ -120,6 +120,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 | `npm run db:migrate`       | Apply pending migrations                                              |
 | `npm run db:seed`          | Add sample data and model prices (safe to re-run; not for production) |
 | `npm run db:demo`          | Load demo projects and 90 days of usage (`-- --remove` deletes them)  |
+| `npm run db:demo-billing`  | Bill a demo month in its own organization (docs/BILLING.md)           |
 | `npm run api-key`          | Create or revoke ingestion API keys (see Recording usage)             |
 | `npm run user`             | Create, list and reset dashboard accounts (see Dashboard)             |
 | `npm run org`              | Create and list organizations (see Dashboard)                         |

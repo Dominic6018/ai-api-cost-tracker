@@ -110,6 +110,34 @@ What happens to each request:
 
 `npm run billing -- stripe-invoices --customer cus_42` lists a customer's invoices with their latest status. A failed payment or a void invoice changes nothing on the ledger: correct it with an adjustment if needed.
 
+## The billing demo
+
+`npm run db:demo-billing` runs all of the above for one month, in an organization of its own called `demo-billing`, with the same functions as `npm run billing`:
+
+1. **Plans:** Starter ($29 a month, $10 of usage included, usage at 1.5× its AI API cost) and Scale ($199, $150 included, 1.25×).
+2. **Customers:** three of them, subscribed since the start of last month. One has $20 of prepaid credit.
+3. **Usage:** last month's AI usage, $1.00 of Claude Sonnet 5.5 per request, priced at today's seed prices like the other demo data.
+4. **Billing:** last month's charges as of the first of this month, then credit applied.
+5. **Results:** revenue against AI API cost, and a portal link for the first customer.
+
+```text
+Billed 2026-10 for the demo-billing organization
+
+cus_brightline  starter   12 requests  AI API cost $12.00
+                fee $29.00 + usage $8.00 ($18.00 less $10.00 included) = owes $37.00
+cus_harbor      scale    160 requests  AI API cost $160.00
+                fee $199.00 + usage $50.00 ($200.00 less $150.00 included) = owes $249.00
+cus_quill       starter    4 requests  AI API cost $4.00
+                fee $29.00 + usage $0.00 ($6.00 less $10.00 included) - credit $20.00 = owes $9.00
+
+Revenue $315.00, AI API cost $176.00, revenue minus AI API cost $139.00 (44.1% of revenue)
+
+Portal for cus_brightline (send only to them; shown once):
+/portal/...
+```
+
+Add `--url https://costs.example.com` to print the portal link in full. To see it in the dashboard, make yourself an admin there with `npm run user -- create --email you@example.com --org demo-billing`. Then open `/revenue` for last month, and **Customers → Portal links**. Running the demo again starts over, and `npm run db:demo-billing -- --remove` deletes the organization and everything in it. It never touches another organization. It needs the seed prices (`npm run db:seed`), and in production it needs `--allow-production`.
+
 ## Customer portal
 
 A customer can read their own statement through a portal link, with no account. An admin makes one at **Customers → Portal links** (`/revenue/portal`) or with `npm run billing -- portal-link --customer cus_42 --url https://costs.example.com`. The link is shown once, and the admin sends it to the customer. It works for 90 days unless it's revoked first. Only a hash of it is stored.

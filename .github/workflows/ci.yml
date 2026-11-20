@@ -653,6 +653,28 @@ jobs:
 
           npm run db:demo -- --remove
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id LIKE 'demo-%'")" = 0
+
+          # The usage-based billing demo bills last month in its own
+          # organization, starts over when run again, and removes cleanly.
+          npm run --silent db:demo-billing -- --url http://localhost:3000 | tee billing-demo.log
+          grep -qF 'fee $29.00 + usage $8.00 ($18.00 less $10.00 included) = owes $37.00' billing-demo.log
+          grep -qF 'fee $199.00 + usage $50.00 ($200.00 less $150.00 included) = owes $249.00' billing-demo.log
+          grep -qF 'fee $29.00 + usage $0.00 ($6.00 less $10.00 included) - credit $20.00 = owes $9.00' billing-demo.log
+          grep -qxF 'Revenue $315.00, AI API cost $176.00, revenue minus AI API cost $139.00 (44.1% of revenue)' billing-demo.log
+          PORTAL=$(grep -oE 'http://localhost:3000/portal/[A-Za-z0-9_-]{43}' billing-demo.log)
+          echo "::add-mask::$PORTAL"
+          curl -s "$PORTAL" > billing-portal.html
+          grep -qF 'Brightline' billing-portal.html
+          grep -qF 'Usage, ' billing-portal.html
+          grep -qF '$37.00' billing-portal.html
+          npm run --silent db:demo-billing | grep -qxF 'Revenue $315.00, AI API cost $176.00, revenue minus AI API cost $139.00 (44.1% of revenue)'
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM billing_customers c JOIN organizations o ON o.id = c.organization_id WHERE o.slug = 'demo-billing'")" = 3
+          if NODE_ENV=production npm run --silent db:demo-billing; then
+            echo "the billing demo ran in production without --allow-production"; exit 1
+          fi
+          npm run --silent db:demo-billing -- --remove | grep -qF 'Removed the demo-billing organization'
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM organizations WHERE slug = 'demo-billing'")" = 0
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM usage_events WHERE request_id LIKE 'demo-billing-%'")" = 0
       - name: The billing ledger works from the command line
         run: |
           C="cus-ci-$GITHUB_RUN_ID"
