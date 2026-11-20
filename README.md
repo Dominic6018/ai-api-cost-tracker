@@ -281,17 +281,17 @@ Every dashboard page has the same navigation bar, with the account and **Sign ou
 | Budgets      | `/projects`, with each project's budgets                       |
 | Prices       | `/prices`                                                      |
 | Integrations | `/ingestion` ingestion health                                  |
-| Team         | `/audit` audit log, for admins                                 |
+| Team         | `/team` accounts and `/audit` audit log, for admins            |
 
 The current section and page are marked, and a section's pages show beneath it. Sections an account's role can't open aren't shown.
 
-Each account has a role, and every role can read the whole dashboard. Add `--role` to `create` to choose one; without it, a new account is an `admin`, and accounts from before roles existed are admins too. A new role applies on the next request, without signing the user out. The server checks the role on every change, not only by hiding links.
+Each account has a role, and every role can read the whole dashboard. Add `--role` to `create` to choose one; without it, a new account is an `admin`, and accounts from before roles existed are admins too. A new role applies on the next request, without signing the user out. The server checks the role on every change, not only by hiding links. Admins can also change roles at `/team`, which lists their organization's accounts with their roles and active sessions. A change that would leave the organization without an admin is refused there; `npm run user -- set-role` is still the way back in if that ever happens.
 
-| Role     | Projects | Prices                             |
-| -------- | -------- | ---------------------------------- |
-| `admin`  | Manage   | Manage (default organization only) |
-| `member` | Manage   | Read                               |
-| `viewer` | Read     | Read                               |
+| Role     | Projects | Prices                             | API keys, accounts and audit log |
+| -------- | -------- | ---------------------------------- | -------------------------------- |
+| `admin`  | Manage   | Manage (default organization only) | Manage                           |
+| `member` | Manage   | Read                               | —                                |
+| `viewer` | Read     | Read                               | —                                |
 
 Admins can see who changed what at `/audit`: projects created and updated (with the fields that changed), prices added and ended, accounts created, role changes, password resets, sessions revoked, API keys created and revoked, and billing customers, plans, plan changes, monthly charges, credit, adjustments and reversals. Changes made with `npm run user` or `npm run api-key` show as "command line". Each entry is saved in the same transaction as its change, and keeps the account's email if the account is later deleted. There's no way to edit or delete entries from the app, and they're kept indefinitely.
 

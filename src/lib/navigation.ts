@@ -47,7 +47,10 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Team",
-    links: [{ href: "/audit", label: "Audit log", permission: "audit:read" }],
+    links: [
+      { href: "/team", label: "Accounts", permission: "team:manage" },
+      { href: "/audit", label: "Audit log", permission: "audit:read" },
+    ],
   },
 ];
 

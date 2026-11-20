@@ -783,6 +783,60 @@ step("the usage CSV export downloads the filtered events");
   );
 }
 
+step("an admin changes roles on the accounts page, keeping an admin");
+{
+  /** Submits the role form on the row for `account`, as a browser would. */
+  async function changeRole(account, role) {
+    const { html } = await page("/team");
+    const form = formFields(html, `aria-label="Change role for ${account}"`);
+    form.set("role", role);
+    const response = await fetch(`${base}/team`, {
+      method: "POST",
+      body: form,
+      headers: { cookie },
+      redirect: "manual",
+    });
+    await response.text();
+    assert.equal(response.status, 303, `redirect after changing ${account}`);
+    const location = new URL(response.headers.get("location"), base);
+    assert.equal(location.pathname, "/team");
+    return location.searchParams.get("status");
+  }
+  const roleShown = (html, account) =>
+    html
+      .split("<tr")
+      .find((row) => row.includes(account))
+      ?.match(/<option value="(\w+)" selected="">/)?.[1];
+
+  const team = await page("/team");
+  assert.equal(team.status, 200);
+  assert.ok(team.html.includes(email), "the admin is listed");
+  assert.match(team.html, /\(you\)/);
+
+  // In CI the admin is the organization's only admin.
+  if (roleShown(team.html, email) === "admin") {
+    const others = team.html.match(/<option value="admin" selected="">/g);
+    if (others.length === 1) {
+      assert.equal(await changeRole(email, "member"), "last_admin");
+      const after = await page("/team?status=last_admin");
+      assert.match(after.html, /Each organization needs an admin/);
+      assert.equal(roleShown(after.html, email), "admin", "still an admin");
+    }
+  }
+
+  const viewer = process.env.SMOKE_VIEWER_EMAIL;
+  if (viewer) {
+    assert.equal(roleShown(team.html, viewer), "viewer");
+    assert.equal(await changeRole(viewer, "member"), "changed");
+    const changed = await page("/team?status=changed");
+    assert.match(changed.html, /Role changed\./);
+    assert.equal(roleShown(changed.html, viewer), "member");
+    // Back, for the viewer checks below.
+    assert.equal(await changeRole(viewer, "viewer"), "changed");
+    assert.equal(roleShown((await page("/team")).html, viewer), "viewer");
+  }
+}
+
 step("the audit log records who changed projects and prices");
 {
   const result = await page("/audit");
@@ -795,6 +849,7 @@ step("the audit log records who changed projects and prices");
     "Ended price",
     "Created API key",
     "Revoked API key",
+    ...(process.env.SMOKE_VIEWER_EMAIL ? ["Changed role"] : []),
   ]) {
     assert.ok(text.includes(label), `the audit log shows "${label}"`);
   }
@@ -818,7 +873,13 @@ if (process.env.SMOKE_VIEWER_EMAIL) {
   });
   assert.equal(signedIn.status, 303, "viewer signs in");
 
-  for (const path of ["/projects/new", "/prices/new", "/audit", keysPath]) {
+  for (const path of [
+    "/projects/new",
+    "/prices/new",
+    "/audit",
+    "/team",
+    keysPath,
+  ]) {
     const denied = await page(path);
     assert.equal(denied.status, 307, `GET ${path} as a viewer`);
     assert.equal(new URL(denied.location, base).pathname, "/no-access");
@@ -895,6 +956,7 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     "/revenue",
     "/changes",
     "/savings",
+    "/team",
   ]) {
     const result = await page(path);
     assert.equal(result.status, 200, `GET ${path}`);
