@@ -2,7 +2,7 @@
 
 A lightweight, self-hosted ledger of what your AI API calls cost. Your app sends the token counts from each request; the tracker prices them exactly against dated, tier-aware model prices and shows spend by project, provider and model, with monthly budgets and alerts. **Prompts and responses are never sent or stored**, only token counts.
 
-It complements LLM gateways (which route requests and cap spend) and tracing tools (which follow a request through an agent) rather than replacing them: it's the system of record for cost. Cost per customer, feature and agent run is next on the [roadmap](docs/ROADMAP.md#milestone-7-cost-by-customer-feature-and-agent-run).
+It complements LLM gateways (which route requests and cap spend) and tracing tools (which follow a request through an agent) rather than replacing them: it's the system of record for cost. It breaks cost down by customer, feature and agent run.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
@@ -20,7 +20,7 @@ It complements LLM gateways (which route requests and cap spend) and tracing too
 
 <sub>Demo data from `npm run db:demo`, captured by CI on 3 November 2026, and shown in your GitHub theme. The breakdown shows cost per resolved ticket for the Support Bot, the project that resolves tickets. The demo sets budgets from the current month's spend, so they're small this early in a month.</sub>
 
-> **Status:** Milestones 0–9 are complete: exact, tier-aware pricing, authenticated ingestion, the dashboard, budgets with alerts, Docker deployment, demo data, rate limiting, the TypeScript and Python clients, OpenTelemetry intake, reconciliation with Anthropic, OpenAI and Google Cloud bills, cost by customer, feature, agent run, tag and outcome, CSV and FOCUS exports, a reporting API, budget notifications and checks, and audited price management. Milestone 10 added roles, an audit log, organizations and single sign-on. Milestone 12 rounded out the clients, and Milestone 13 has a [billing ledger](docs/BILLING.md) with plans, monthly usage charges, prepaid credit and plan usage limits; and a revenue minus AI API cost view, and optional draft invoicing through Stripe. See [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
+> **Status:** version 0.1.0, not tagged yet. Milestones 0–14 are complete: exact, tier-aware pricing, ingestion from the API, the TypeScript and Python clients and OpenTelemetry, reconciliation with provider bills, cost by customer, feature, agent run, tag and outcome, exports and a reporting API, budgets with alerts, checks and reservations, audited price management, teams with roles, organizations and single sign-on, a [billing ledger](docs/BILLING.md) with optional Stripe invoicing, and insights into why spend changed. Milestone 15's dashboard onboarding, customer portal, demos and documents are done, with screenshots of the newer pages still to come. See the [release notes](docs/RELEASE_NOTES.md), [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/PRODUCT_UPGRADE_AUDIT.md](docs/PRODUCT_UPGRADE_AUDIT.md) for a verified list of what works and what doesn't.
 
 ## Features
 
@@ -59,7 +59,7 @@ What it doesn't do yet (the plan is in [docs/PRODUCT_UPGRADE_PLAN.md](docs/PRODU
 - **Budgets only hold for calls that ask first.** A reservation stops concurrent steps from overspending, but a provider call your app makes without reserving isn't stopped (see [Reserving budget](#reserving-budget)). The TypeScript and Python clients reserve with `reserveBudget()` / `reserve_budget()`.
 - **Cost is broken down by project, provider, model, customer, user, feature, run and tag.** `metadata` is stored but not filterable. The [billing ledger](docs/BILLING.md) records what customers owe: plan fees and usage charges posted each month from the command line, adjustments, and prepaid credit applied against them. [`/revenue`](docs/BILLING.md#revenue-and-ai-api-cost) puts each customer's revenue next to their AI API cost. Draft invoices for it can be created in [Stripe](docs/BILLING.md#invoicing-through-stripe), in test mode by default, and payments come back through Stripe's signed webhooks. Customers can read their own statement, never your AI API cost, through a [portal link](docs/BILLING.md#customer-portal).
 - **Prices are token prices (with audio and image tokens at their own rates) plus web search**, seeded and managed at `/prices`. OpenAI's Ultrafast tier isn't tracked.
-- **Organizations are managed from the command line**, as accounts are. An account is in one organization, and prices are shared across the install.
+- **Organizations are created from the command line.** Accounts are invited and given roles at `/team`, or managed from the command line. An account is in one organization, and prices are shared across the install.
 - **Days are UTC days** for "today", "this month" and the charts.
 
 ## Tech stack
@@ -208,6 +208,7 @@ docs/BILLING.md   The billing ledger, kept apart from provider cost
 docs/ARCHITECTURE.md  How the parts fit together
 docs/COST-ACCOUNTING.md  How a request's cost is computed, priced and reconciled
 docs/INTEGRATION.md  Wiring the tracker into an app, with a go-live checklist
+docs/RELEASE_NOTES.md  What each release contains, and its known limitations
 scripts/          End-to-end smoke tests and screenshots run in CI
 clients/typescript/  Dependency-free client that reports usage from provider responses
 clients/python/      The same for Python, standard library only
