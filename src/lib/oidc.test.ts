@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseOidcConfig, ssoIdentity } from "./oidc";
+import {
+  parseOidcConfig,
+  SSO_ERRORS,
+  ssoErrorMessage,
+  ssoIdentity,
+} from "./oidc";
 
 const env = {
   OIDC_ISSUER: "https://example.okta.com",
@@ -86,5 +91,27 @@ describe("ssoIdentity", () => {
     { ...claims, sub: 42 },
   ])("refuses %j", (bad) => {
     expect(ssoIdentity(bad as Record<string, unknown>)).toEqual({ ok: false });
+  });
+});
+
+describe("ssoErrorMessage", () => {
+  it("reads the sign-in page's known errors", () => {
+    expect(ssoErrorMessage("sso_failed")).toBe(SSO_ERRORS.sso_failed);
+    expect(ssoErrorMessage("sso_denied")).toBe(SSO_ERRORS.sso_denied);
+  });
+
+  it("ignores anything else, including inherited names", () => {
+    for (const value of [
+      "toString",
+      "constructor",
+      "__proto__",
+      "hasOwnProperty",
+      "",
+      "SSO_FAILED",
+      ["sso_failed"],
+      undefined,
+    ]) {
+      expect(ssoErrorMessage(value), String(value)).toBeNull();
+    }
   });
 });
