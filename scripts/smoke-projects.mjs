@@ -511,9 +511,16 @@ step(
   );
   await revoke.text();
 
+  // A valid key always gets through; a refused one is a 401, or a 429
+  // once this address has sent too many invalid keys, as CI's earlier
+  // rate limit check makes it.
   const refused = await report(key);
-  assert.equal(refused.status, 401, "the revoked key is refused");
-  await refused.text();
+  const body = await refused.text();
+  assert.ok(
+    refused.status === 401 ||
+      (refused.status === 429 && body.includes('"rate_limited"')),
+    `the revoked key is refused (got ${refused.status})`,
+  );
   const after = await page(keysPath);
   assert.match(after.html, /Revoked/);
   assert.ok(!after.html.includes(marker), "a revoked key has no revoke button");
