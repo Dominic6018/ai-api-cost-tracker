@@ -387,6 +387,10 @@ The [TypeScript](clients/typescript/README.md) and [Python](clients/python/READM
 
 ### API keys
 
+Admins manage a project's keys in the dashboard: **Projects**, then **Keys** on the project's row (`/projects/<id>/keys`). Choose a name and what the key may do; the key is shown once, on the page that creates it. The list shows each key's prefix, scope, and when it was created, last used and revoked, with a button to revoke it. Members and viewers can't open the page, and an admin sees only their own organization's projects. Keys made and revoked there are in the audit log under the admin's email.
+
+The command line does the same:
+
 ```bash
 # Create a key; it's printed once and can't be shown again
 npm run api-key -- create --project sample-app --name my-service

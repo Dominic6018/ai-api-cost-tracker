@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ModelPricing, Project } from "@/db/schema";
 import {
+  apiKeyCreatedEntry,
+  apiKeyRevokedEntry,
   formatAuditDetails,
   parseAuditPage,
   priceAddedEntry,
@@ -112,4 +114,25 @@ describe("parseAuditPage", () => {
       expect(parseAuditPage(value)).toBe(1);
     },
   );
+});
+
+describe("API key entries", () => {
+  const key = {
+    keyPrefix: "act_abcd1234",
+    name: "production",
+    scope: "ingest",
+  };
+
+  it("name the key by its prefix, never the key", () => {
+    for (const [entry, action] of [
+      [apiKeyCreatedEntry({ slug: "sample-app" }, key), "api_key.created"],
+      [apiKeyRevokedEntry({ slug: "sample-app" }, key), "api_key.revoked"],
+    ] as const) {
+      expect(entry).toEqual({
+        action,
+        target: "act_abcd1234",
+        details: { project: "sample-app", name: "production", scope: "ingest" },
+      });
+    }
+  });
 });

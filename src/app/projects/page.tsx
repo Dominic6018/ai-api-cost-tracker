@@ -20,6 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function ProjectsPage() {
   const user = await requireUser("/projects");
   const canManage = can(user, "projects:manage");
+  const canManageKeys = can(user, "api_keys:manage");
   const [projects, overview] = await Promise.all([
     listProjects(db, organizationScope(user)),
     getSpendOverview(db, organizationScope(user)),
@@ -112,15 +113,26 @@ export default async function ProjectsPage() {
                     })()}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {canManage && (
-                      <Link
-                        href={`/projects/${project.id}/edit`}
-                        className="underline"
-                        aria-label={`Edit ${project.name}`}
-                      >
-                        Edit
-                      </Link>
-                    )}
+                    <div className="flex justify-end gap-3">
+                      {canManageKeys && (
+                        <Link
+                          href={`/projects/${project.id}/keys`}
+                          className="underline"
+                          aria-label={`API keys for ${project.name}`}
+                        >
+                          Keys
+                        </Link>
+                      )}
+                      {canManage && (
+                        <Link
+                          href={`/projects/${project.id}/edit`}
+                          className="underline"
+                          aria-label={`Edit ${project.name}`}
+                        >
+                          Edit
+                        </Link>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

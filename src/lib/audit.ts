@@ -81,6 +81,31 @@ export function projectUpdatedEntry(
   return { action: "project.updated", target: after.slug, details };
 }
 
+type KeyFields = { keyPrefix: string; name: string; scope: string };
+
+/** A key by its prefix; the key itself is never recorded. */
+export function apiKeyCreatedEntry(
+  project: Pick<Project, "slug">,
+  key: KeyFields,
+): AuditEntry {
+  return {
+    action: "api_key.created",
+    target: key.keyPrefix,
+    details: { project: project.slug, name: key.name, scope: key.scope },
+  };
+}
+
+export function apiKeyRevokedEntry(
+  project: Pick<Project, "slug">,
+  key: KeyFields,
+): AuditEntry {
+  return {
+    action: "api_key.revoked",
+    target: key.keyPrefix,
+    details: { project: project.slug, name: key.name, scope: key.scope },
+  };
+}
+
 const priceTarget = (price: ModelPricing) =>
   `${price.provider} ${price.model} (${price.serviceTier})`;
 

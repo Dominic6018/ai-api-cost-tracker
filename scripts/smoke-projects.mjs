@@ -435,6 +435,97 @@ step("editing clears the budget and renames the project");
   assert.match(updated, /No budget/);
 }
 
+/** The hidden server action inputs of the one form on a page holding `marker`. */
+function formFields(html, marker) {
+  const form = html.split("<form").find((chunk) => chunk.includes(marker));
+  assert.ok(form, `a form holds ${marker}`);
+  return hiddenFields(form.split("</form>")[0]);
+}
+
+const KEY_PATTERN = /act_[A-Za-z0-9_-]{43}/g;
+let keysPath;
+
+step(
+  "an admin creates an API key in the dashboard, shown once, and revokes it",
+);
+{
+  const list = await page("/projects");
+  const row = list.html.split("<tr").find((r) => r.includes(slug));
+  keysPath = row?.match(/href="(\/projects\/[^"]+\/keys)"/)?.[1];
+  assert.ok(keysPath, "the project list links to its keys");
+
+  const empty = await page(keysPath);
+  assert.equal(empty.status, 200);
+  assert.match(empty.html, /No keys yet/);
+
+  const unnamed = await submit(keysPath, { name: " ", scope: "read" });
+  assert.equal(unnamed.status, 200);
+  assert.match(unnamed.html, /Name is required/);
+  assert.doesNotMatch(unnamed.html, KEY_PATTERN, "no key was created");
+
+  const created = await submit(keysPath, {
+    name: "smoke-reports",
+    scope: "read",
+  });
+  assert.equal(created.status, 200);
+  const shown = [...new Set(created.html.match(KEY_PATTERN) ?? [])];
+  assert.equal(shown.length, 1, "the new key is shown");
+  const [key] = shown;
+  assert.match(created.html, /can(&#x27;|')t be shown again/);
+  assert.match(created.html, /COST_TRACKER_READ_KEY/);
+
+  const report = (presented) =>
+    fetch(`${base}/api/reports/spend`, {
+      headers: { authorization: `Bearer ${presented}` },
+    });
+  const allowed = await report(key);
+  assert.equal(allowed.status, 200, "the new read key reads reports");
+  await allowed.text();
+  const ingest = await fetch(`${base}/api/usage`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${key}`,
+      "content-type": "application/json",
+    },
+    body: "{}",
+  });
+  assert.equal(ingest.status, 403, "a read key can't send usage");
+  await ingest.text();
+
+  const listed = await page(keysPath);
+  assert.doesNotMatch(listed.html, KEY_PATTERN, "the key isn't shown again");
+  assert.ok(listed.html.includes(key.slice(0, 12)), "it's listed by prefix");
+  assert.match(listed.html, /Read reports/);
+
+  const marker = `aria-label="Revoke smoke-reports (${key.slice(0, 12)})"`;
+  const revoke = await fetch(base + keysPath, {
+    method: "POST",
+    body: formFields(listed.html, marker),
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.equal(revoke.status, 303, "redirect after revoking");
+  assert.equal(
+    new URL(revoke.headers.get("location"), base).pathname,
+    keysPath,
+  );
+  await revoke.text();
+
+  // A valid key always gets through; a refused one is a 401, or a 429
+  // once this address has sent too many invalid keys, as CI's earlier
+  // rate limit check makes it.
+  const refused = await report(key);
+  const body = await refused.text();
+  assert.ok(
+    refused.status === 401 ||
+      (refused.status === 429 && body.includes('"rate_limited"')),
+    `the revoked key is refused (got ${refused.status})`,
+  );
+  const after = await page(keysPath);
+  assert.match(after.html, /Revoked/);
+  assert.ok(!after.html.includes(marker), "a revoked key has no revoke button");
+}
+
 step("spend over time filters by range and project");
 {
   const total = (html) =>
@@ -702,6 +793,8 @@ step("the audit log records who changed projects and prices");
     "Updated project",
     "Added price",
     "Ended price",
+    "Created API key",
+    "Revoked API key",
   ]) {
     assert.ok(text.includes(label), `the audit log shows "${label}"`);
   }
@@ -725,7 +818,7 @@ if (process.env.SMOKE_VIEWER_EMAIL) {
   });
   assert.equal(signedIn.status, 303, "viewer signs in");
 
-  for (const path of ["/projects/new", "/prices/new", "/audit"]) {
+  for (const path of ["/projects/new", "/prices/new", "/audit", keysPath]) {
     const denied = await page(path);
     assert.equal(denied.status, 307, `GET ${path} as a viewer`);
     assert.equal(new URL(denied.location, base).pathname, "/no-access");
@@ -734,7 +827,10 @@ if (process.env.SMOKE_VIEWER_EMAIL) {
 
   const projectsPage = await page("/projects");
   assert.equal(projectsPage.status, 200);
-  assert.doesNotMatch(projectsPage.html, /New project|aria-label="Edit /);
+  assert.doesNotMatch(
+    projectsPage.html,
+    /New project|aria-label="Edit |aria-label="API keys for /,
+  );
   // The audit log, and the Team section with it, isn't offered either.
   assert.doesNotMatch(projectsPage.html, /href="\/audit"/);
   assert.doesNotMatch(projectsPage.html, />Team<\/a>/);
@@ -809,6 +905,11 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     (await page(`/projects/${projectId}/edit`)).status,
     404,
     "another organization's project is a 404",
+  );
+  assert.equal(
+    (await page(`/projects/${projectId}/keys`)).status,
+    404,
+    "another organization's keys are a 404",
   );
   const denied = await page("/prices/new");
   assert.equal(denied.status, 307, "GET /prices/new from another organization");
