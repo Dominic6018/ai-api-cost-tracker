@@ -172,6 +172,10 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
   - [x] Multi-model agents under a run budget: `examples/multi-model-agent` (#194)
   - [x] Usage-based billing: `npm run db:demo-billing` (#196)
 - [ ] Architecture, cost accounting, integration and release documents, with screenshots from the running app
+  - [x] Architecture: [docs/ARCHITECTURE.md](ARCHITECTURE.md) (#198)
+  - [ ] Cost accounting: how a request's cost is computed, priced and reconciled
+  - [ ] Integration guide, and release notes
+  - [ ] Screenshots of the newer pages from the running app
 
 ## Why these milestones
 

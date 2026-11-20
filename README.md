@@ -132,6 +132,8 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 
 ## Project structure
 
+How the parts fit together, and why, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ```
 src/
   app/            Next.js App Router pages and layouts

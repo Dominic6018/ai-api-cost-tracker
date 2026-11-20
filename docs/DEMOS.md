@@ -10,4 +10,4 @@ Runnable stories that show what the tracker is for. Each needs only a tracker wi
 
 The billing demo runs against the database with the same functions as `npm run billing`, so it needs `DATABASE_URL` rather than an API key.
 
-For a dashboard full of history instead, `npm run db:demo` loads four demo projects with 90 days of usage. See the [README](../README.md).
+For a dashboard full of history instead, `npm run db:demo` loads four demo projects with 90 days of usage. See [Demo data](../README.md#demo-data).
