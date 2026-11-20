@@ -24,13 +24,13 @@ describe("navigationFor", () => {
     ]);
   });
 
-  it("hides the audit log, and so Team, from members and viewers", () => {
+  it("hides accounts and the audit log, and so Team, from members and viewers", () => {
     for (const role of ["member", "viewer"] as const) {
       const sections = navigationFor(account(role), "/overview");
       expect(sections.map((s) => s.label)).not.toContain("Team");
-      expect(sections.flatMap((s) => s.links.map((l) => l.href))).not.toContain(
-        "/audit",
-      );
+      const hrefs = sections.flatMap((s) => s.links.map((l) => l.href));
+      expect(hrefs).not.toContain("/audit");
+      expect(hrefs).not.toContain("/team");
     }
   });
 

@@ -106,6 +106,20 @@ export function apiKeyRevokedEntry(
   };
 }
 
+/** A role change, by the account's email. */
+export function roleChangedEntry(change: {
+  email: string;
+  role: string;
+  previousRole: string;
+}): AuditEntry | null {
+  if (change.role === change.previousRole) return null;
+  return {
+    action: "account.role_changed",
+    target: change.email,
+    details: { role: { from: change.previousRole, to: change.role } },
+  };
+}
+
 const priceTarget = (price: ModelPricing) =>
   `${price.provider} ${price.model} (${price.serviceTier})`;
 

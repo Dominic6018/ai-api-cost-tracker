@@ -4,6 +4,7 @@ import {
   apiKeyCreatedEntry,
   apiKeyRevokedEntry,
   formatAuditDetails,
+  roleChangedEntry,
   parseAuditPage,
   priceAddedEntry,
   priceEndedEntry,
@@ -134,5 +135,28 @@ describe("API key entries", () => {
         details: { project: "sample-app", name: "production", scope: "ingest" },
       });
     }
+  });
+});
+
+describe("roleChangedEntry", () => {
+  it("records the change by email, and nothing for no change", () => {
+    expect(
+      roleChangedEntry({
+        email: "a@example.com",
+        role: "viewer",
+        previousRole: "member",
+      }),
+    ).toEqual({
+      action: "account.role_changed",
+      target: "a@example.com",
+      details: { role: { from: "member", to: "viewer" } },
+    });
+    expect(
+      roleChangedEntry({
+        email: "a@example.com",
+        role: "admin",
+        previousRole: "admin",
+      }),
+    ).toBeNull();
   });
 });

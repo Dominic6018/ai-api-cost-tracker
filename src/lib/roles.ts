@@ -14,6 +14,8 @@ const ALLOWED_ROLES = {
   // A key outlives the account that made it, and a read key opens cost
   // data to any tool holding it, so only admins make or revoke them.
   "api_keys:manage": ["admin"],
+  // Who is in the organization and what they may do.
+  "team:manage": ["admin"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Permission = keyof typeof ALLOWED_ROLES;

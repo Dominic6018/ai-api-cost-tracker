@@ -21,6 +21,9 @@ describe("can", () => {
     ["admin", "api_keys:manage", true],
     ["member", "api_keys:manage", false],
     ["viewer", "api_keys:manage", false],
+    ["admin", "team:manage", true],
+    ["member", "team:manage", false],
+    ["viewer", "team:manage", false],
   ] as const)("%s, %s: %s", (role, permission, allowed) => {
     expect(can(inDefault(role), permission)).toBe(allowed);
   });
@@ -35,6 +38,7 @@ describe("can", () => {
       expect(can(admin, "projects:manage")).toBe(true);
       expect(can(admin, "audit:read")).toBe(true);
       expect(can(admin, "api_keys:manage")).toBe(true);
+      expect(can(admin, "team:manage")).toBe(true);
     });
 
     it("can't change prices, even as an admin", () => {
