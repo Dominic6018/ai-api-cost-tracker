@@ -947,6 +947,19 @@ jobs:
           echo "::add-mask::$SHOT_PASSWORD"
           echo "$SHOT_PASSWORD" | npm run --silent user -- create --email demo@example.com
           SHOT_EMAIL=demo@example.com SHOT_PASSWORD="$SHOT_PASSWORD" node scripts/screenshots.mjs http://localhost:3000 screenshots
+      - name: Screenshot the billing pages with the billing demo, in light and dark mode
+        run: |
+          # Revenue, portal links and the team in the demo's own
+          # organization, as its admin, and the portal its customer sees.
+          npm run --silent db:demo-billing > billing-shots.log
+          SHOT_PORTAL_PATH=$(grep -oE '/portal/[A-Za-z0-9_-]{43}' billing-shots.log)
+          echo "::add-mask::$SHOT_PORTAL_PATH"
+          SHOT_PASSWORD=$(openssl rand -base64 24)
+          echo "::add-mask::$SHOT_PASSWORD"
+          echo "$SHOT_PASSWORD" | npm run --silent user -- create --email admin@example.com --org demo-billing --role admin
+          echo "$SHOT_PASSWORD" | npm run --silent user -- create --email analyst@example.com --org demo-billing --role viewer
+          SHOT_SET=billing SHOT_EMAIL=admin@example.com SHOT_PASSWORD="$SHOT_PASSWORD" SHOT_PORTAL_PATH="$SHOT_PORTAL_PATH" \
+            node scripts/screenshots.mjs http://localhost:3000 screenshots
       - name: Upload screenshots for review
         uses: actions/upload-artifact@v4
         with:

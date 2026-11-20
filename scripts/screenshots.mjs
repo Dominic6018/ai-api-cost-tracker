@@ -1,6 +1,12 @@
-// Captures the README screenshots from a running app, in light and dark
-// mode, by driving headless Chrome over the DevTools protocol. Load demo
-// data first (`npm run db:demo`) and create an account to sign in with.
+// Captures the documentation screenshots from a running app, in light and
+// dark mode, by driving headless Chrome over the DevTools protocol.
+//
+// SHOT_SET picks the pages:
+// - dashboard (the default): load demo data first (`npm run db:demo`) and
+//   sign in as an account in the default organization.
+// - billing: run `npm run db:demo-billing` first, sign in as an admin of
+//   its demo-billing organization, and set SHOT_PORTAL_PATH to the portal
+//   link it prints (/portal/...).
 //
 // Usage: SHOT_EMAIL=... SHOT_PASSWORD=... node scripts/screenshots.mjs [base URL] [output dir]
 // CHROME_PATH overrides the browser (default: google-chrome).
@@ -18,18 +24,48 @@ const email = process.env.SHOT_EMAIL;
 const password = process.env.SHOT_PASSWORD;
 assert.ok(email && password, "set SHOT_EMAIL and SHOT_PASSWORD");
 
-const PAGES = [
-  ["overview", "/overview"],
-  ["spend", "/spend?range=90"],
-  ["usage", "/usage"],
-  ["projects", "/projects"],
-  // Cost per resolved ticket within the project that resolves tickets;
-  // across all projects, a customer's other spend would count too.
-  [
-    "breakdown",
-    "/breakdown?range=90&outcome=ticket_resolved&project={Support Bot}",
+/** The UTC month before this one, as /revenue takes it: YYYY-MM. */
+function lastMonth(now = new Date()) {
+  const first = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  return new Date(first - 86_400_000).toISOString().slice(0, 7);
+}
+
+const SETS = {
+  dashboard: () => [
+    ["overview", "/overview"],
+    ["spend", "/spend?range=90"],
+    ["usage", "/usage"],
+    ["projects", "/projects"],
+    // Cost per resolved ticket within the project that resolves tickets;
+    // across all projects, a customer's other spend would count too.
+    [
+      "breakdown",
+      "/breakdown?range=90&outcome=ticket_resolved&project={Support Bot}",
+    ],
+    ["changes", "/changes"],
+    ["savings", "/savings"],
+    ["prices", "/prices"],
   ],
-];
+  billing: () => {
+    const portal = process.env.SHOT_PORTAL_PATH;
+    assert.ok(
+      portal && /^\/portal\/[A-Za-z0-9_-]+$/.test(portal),
+      "set SHOT_PORTAL_PATH to the /portal/... link db:demo-billing prints",
+    );
+    return [
+      ["revenue", `/revenue?month=${lastMonth()}`],
+      ["portal-links", "/revenue/portal"],
+      ["team", "/team"],
+      ["portal", portal],
+    ];
+  },
+};
+const set = process.env.SHOT_SET ?? "dashboard";
+assert.ok(
+  Object.hasOwn(SETS, set),
+  `SHOT_SET must be one of: ${Object.keys(SETS).join(", ")}`,
+);
+const PAGES = SETS[set]();
 const VIEWPORT = { width: 1280, height: 900, deviceScaleFactor: 1 };
 
 const profile = await mkdtemp(path.join(tmpdir(), "screenshots-"));
@@ -148,12 +184,15 @@ try {
 
   // Paths name projects as {Name}; the pages take generated IDs, so read
   // them from the project selector.
-  await open("/breakdown");
-  const projectIds = await evaluate(`Object.fromEntries(
-    [...document.querySelectorAll("#project option")]
-      .filter((option) => option.value)
-      .map((option) => [option.textContent, option.value]),
-  )`);
+  let projectIds = {};
+  if (PAGES.some(([, pathname]) => pathname.includes("{"))) {
+    await open("/breakdown");
+    projectIds = await evaluate(`Object.fromEntries(
+      [...document.querySelectorAll("#project option")]
+        .filter((option) => option.value)
+        .map((option) => [option.textContent, option.value]),
+    )`);
+  }
   const resolve = (pathname) =>
     pathname.replace(/\{([^}]+)\}/g, (_, name) => {
       assert.ok(projectIds[name], `no project named ${name}`);

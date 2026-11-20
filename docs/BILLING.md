@@ -151,7 +151,17 @@ The portal (`/portal/<token>`) is read-only. It shows the customer's name and yo
 
 It never shows AI API cost, a plan's usage multiplier or included usage, or who entered anything. The descriptions you write on adjustments and credit **are** shown, so write them for the customer. The page has no forms and no links into the dashboard. It sends no `Referer` and asks not to be indexed. Revoked, expired and unknown links all get the same message.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/portal-dark.png">
+  <img alt="A customer's portal: what they owe, their plan and fee, credit available, and their ledger entries with dates, types, descriptions and amounts" src="screenshots/portal-light.png">
+</picture>
+
 Working links are listed on the page and by `npm run billing -- portal-links`, with who made them, when they expire and when they were last opened. You can revoke them on the page or with `npm run billing -- portal-revoke --link <link id>`. Only admins can manage links, and only their own organization's. Making and revoking links is audited.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/portal-links-dark.png">
+  <img alt="Portal links for admins: a customer to make a link for, and the working links with who made each, when it expires, when it was last opened and a Revoke button" src="screenshots/portal-links-light.png">
+</picture>
 
 ## Revenue and AI API cost
 
