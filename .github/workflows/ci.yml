@@ -617,6 +617,23 @@ jobs:
           # Without a read key it stops after reporting
           COST_TRACKER_API_KEY="$API_KEY_2" node examples/support-agent/app.mjs | tee sample.log
           grep -qF 'Set COST_TRACKER_READ_KEY' sample.log
+          # The multi-model agent stays under a $0.10 run budget: task B
+          # can't afford Opus for its answer, so Haiku writes it.
+          psql "$DATABASE_URL" -c "UPDATE projects SET run_budget_usd = 0.10 WHERE slug = 'sample-app'"
+          COST_TRACKER_API_KEY="$API_KEY_2" node examples/multi-model-agent/app.mjs | tee agents.log
+          grep -qxF '  run total    $0.086100' agents.log
+          grep -qF 'write with Opus would pass the run budget (run_budget); using Haiku' agents.log
+          grep -qxF '  write-lite   claude-haiku-5-5   $0.001250' agents.log
+          grep -qxF '  run total    $0.066600' agents.log
+          grep -qxF '  claude-opus-5-5    $0.086000' agents.log
+          grep -qxF '  gpt-5.4-mini       $0.064350' agents.log
+          grep -qxF '  Total              $0.152700' agents.log
+          AGENTS=$(sed -n 's/^Run \(agents-[0-9]*\),.*/\1/p' agents.log)
+          # 17 holds, all settled; the refused Opus hold stored nothing
+          test "$(psql "$DATABASE_URL" -tAc "SELECT string_agg(DISTINCT status, ',') || ' ' || count(*) FROM budget_reservations WHERE reservation_key LIKE '$AGENTS-%'")" = "settled 17"
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM outcomes WHERE outcome_id LIKE '$AGENTS-%' AND name = 'answer_written'")" = 2
+          test "$(psql "$DATABASE_URL" -tAc "SELECT sum(cost_usd) FROM usage_events WHERE run_id LIKE '$AGENTS-%'")" = "0.152700"
+          psql "$DATABASE_URL" -c "UPDATE projects SET run_budget_usd = NULL WHERE slug = 'sample-app'"
       - name: Demo data loads, refuses production, and removes cleanly
         run: |
           npm run db:demo | tee demo.log

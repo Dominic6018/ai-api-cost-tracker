@@ -385,7 +385,7 @@ The sign-in page then shows **Sign in with …** above the password form; withou
 
 Each request is authenticated with a per-project API key. The key decides which project the usage belongs to.
 
-The [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients read usage from OpenAI, Anthropic and Gemini responses and report it for you, e.g. `tracker.track(openai.responses.create(...))`. Apps instrumented with OpenTelemetry can send their traces instead; see [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md). Anything else calls the API below. The [quickstart](docs/QUICKSTART.md) has runnable scripts and a [sample support agent](examples/support-agent/README.md) that need no provider keys.
+The [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients read usage from OpenAI, Anthropic and Gemini responses and report it for you, e.g. `tracker.track(openai.responses.create(...))`. Apps instrumented with OpenTelemetry can send their traces instead; see [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md). Anything else calls the API below. The [quickstart](docs/QUICKSTART.md) has runnable scripts and a [sample support agent](examples/support-agent/README.md) that need no provider keys; [docs/DEMOS.md](docs/DEMOS.md) lists every runnable demo, including a [multi-model agent under a run budget](examples/multi-model-agent/README.md).
 
 ### API keys
 
