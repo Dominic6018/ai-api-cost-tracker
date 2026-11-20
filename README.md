@@ -132,7 +132,7 @@ To run the whole stack in Docker instead, see the [quick start](#quick-start-wit
 
 ## Project structure
 
-How the parts fit together, and why, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+How the parts fit together, and why, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). How a request's cost is computed, priced and checked against provider bills is in [docs/COST-ACCOUNTING.md](docs/COST-ACCOUNTING.md).
 
 ```
 src/
@@ -205,6 +205,8 @@ Dockerfile        Multi-stage image: tools (migrations, CLI) and a non-root stan
 docs/DEPLOYMENT.md  Deployment guide
 docs/OPENTELEMETRY.md  OpenTelemetry intake and Collector setup
 docs/BILLING.md   The billing ledger, kept apart from provider cost
+docs/ARCHITECTURE.md  How the parts fit together
+docs/COST-ACCOUNTING.md  How a request's cost is computed, priced and reconciled
 scripts/          End-to-end smoke tests and screenshots run in CI
 clients/typescript/  Dependency-free client that reports usage from provider responses
 clients/python/      The same for Python, standard library only
