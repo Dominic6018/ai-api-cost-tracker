@@ -167,7 +167,10 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
   - [x] Roles: list an organization's accounts and change their roles, keeping an admin (#184)
   - [x] Invitations: a single-use link, set your own password (#186)
 - [x] A read-only customer portal (#188)
-- [ ] Three demo scenarios: a support SaaS, multi-model agents, and usage-based billing
+- [ ] Three demo scenarios: a support SaaS, multi-model agents, and usage-based billing ([docs/DEMOS.md](DEMOS.md))
+  - [x] A support SaaS: `examples/support-agent` (#154)
+  - [x] Multi-model agents under a run budget: `examples/multi-model-agent` (#194)
+  - [ ] Usage-based billing
 - [ ] Architecture, cost accounting, integration and release documents, with screenshots from the running app
 
 ## Why these milestones
