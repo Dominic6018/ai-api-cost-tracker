@@ -27,6 +27,14 @@ export const TEAM_STATUS_MESSAGES = {
     text: "That account isn't in your organization.",
   },
   invalid_role: { tone: "error", text: "Choose admin, member or viewer." },
+  invitation_not_found: {
+    tone: "error",
+    text: "That invitation is no longer open.",
+  },
+  invitation_revoked: {
+    tone: "ok",
+    text: "Invitation revoked. Its link no longer works.",
+  },
 } as const satisfies Record<string, { tone: "ok" | "error"; text: string }>;
 
 export type TeamStatus = keyof typeof TEAM_STATUS_MESSAGES;
