@@ -74,6 +74,7 @@ OpenTelemetry traces (`/api/otel/v1/traces`) are turned into the same usage reco
 
 - **Exact amounts:** money is a whole number of micro-dollars, held as `bigint` in code and as `numeric` with six decimals in the database, never as a float. A request's cost is rounded once, half up, to the micro-dollar.
 - **Prices:** prices are dated, sourced and audited. Usage is priced at the rate in effect when it happened, so changing a price never rewrites history.
+- **How a cost is computed:** token kinds, tiers, rounding, unpriced usage and reconciliation are in [docs/COST-ACCOUNTING.md](COST-ACCOUNTING.md).
 - **Provider cost vs billing:** what providers charge you (`usage_events.cost_usd`) and what you bill customers (the ledger) are kept apart. Revenue minus AI API cost is reported as exactly that, and never called profit.
 - **What customers see:** the portal and Stripe line items show billed amounts only, never AI API cost, multipliers or who entered something.
 
