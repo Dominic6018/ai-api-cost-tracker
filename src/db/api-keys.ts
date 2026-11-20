@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import {
   apiKeyMatchesHash,
@@ -6,6 +6,12 @@ import {
   generateApiKey,
   isWellFormedApiKey,
 } from "@/lib/api-keys";
+import { isUuid } from "@/lib/ids";
+import {
+  inOrganization,
+  projectInOrganization,
+  type OrganizationScope,
+} from "./scope";
 import {
   apiKeys,
   organizations,
@@ -67,7 +73,16 @@ export async function createApiKey(
   if (matches.length === 0) return { ok: false, error: "project_not_found" };
   if (matches.length > 1) return { ok: false, error: "project_ambiguous" };
   const [project] = matches;
+  const { key, record } = await insertKey(db, project.id, name, scope);
+  return { ok: true, key, record, organizationId: project.organizationId };
+}
 
+async function insertKey(
+  db: Database,
+  projectId: string,
+  name: string,
+  scope: ApiKeyScope,
+): Promise<{ key: string; record: ApiKey }> {
   // A prefix collision is astronomically unlikely, but retry rather than fail.
   for (let attempt = 1; ; attempt++) {
     const generated = generateApiKey();
@@ -75,24 +90,123 @@ export async function createApiKey(
       const [record] = await db
         .insert(apiKeys)
         .values({
-          projectId: project.id,
+          projectId,
           name,
           keyPrefix: generated.prefix,
           keyHash: generated.hash,
           scope,
         })
         .returning();
-      return {
-        ok: true,
-        key: generated.key,
-        record,
-        organizationId: project.organizationId,
-      };
+      return { key: generated.key, record };
     } catch (error) {
       if (pgErrorCode(error) !== UNIQUE_VIOLATION) throw error;
       if (attempt >= MAX_CREATE_ATTEMPTS) throw error;
     }
   }
+}
+
+/** A key as the dashboard lists it: never its hash. */
+export type ApiKeySummary = Omit<ApiKey, "keyHash">;
+
+const summaryColumns = {
+  id: apiKeys.id,
+  projectId: apiKeys.projectId,
+  name: apiKeys.name,
+  keyPrefix: apiKeys.keyPrefix,
+  scope: apiKeys.scope,
+  createdAt: apiKeys.createdAt,
+  lastUsedAt: apiKeys.lastUsedAt,
+  revokedAt: apiKeys.revokedAt,
+};
+
+const toSummary = (record: ApiKey): ApiKeySummary => ({
+  id: record.id,
+  projectId: record.projectId,
+  name: record.name,
+  keyPrefix: record.keyPrefix,
+  scope: record.scope,
+  createdAt: record.createdAt,
+  lastUsedAt: record.lastUsedAt,
+  revokedAt: record.revokedAt,
+});
+
+/**
+ * A project's keys, active ones first and newest first within each, for
+ * a project in `scope`; none for another organization's project.
+ */
+export async function listProjectApiKeys(
+  db: Pick<Database, "select">,
+  scope: OrganizationScope,
+  projectId: string,
+): Promise<ApiKeySummary[]> {
+  if (!isUuid(projectId)) return [];
+  return db
+    .select(summaryColumns)
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.projectId, projectId),
+        projectInOrganization(apiKeys.projectId, scope),
+      ),
+    )
+    .orderBy(
+      sql`${apiKeys.revokedAt} is not null`,
+      desc(apiKeys.createdAt),
+      asc(apiKeys.id),
+    );
+}
+
+export type CreateProjectApiKeyResult =
+  | { ok: true; key: string; record: ApiKeySummary }
+  | { ok: false; error: "not_found" };
+
+/**
+ * Creates a key for a project in `scope`, as the dashboard does. The
+ * returned `key` is the only copy of the secret.
+ */
+export async function createProjectApiKey(
+  db: Database,
+  scope: OrganizationScope,
+  {
+    projectId,
+    name,
+    keyScope,
+  }: { projectId: string; name: string; keyScope: ApiKeyScope },
+): Promise<CreateProjectApiKeyResult> {
+  if (!isUuid(projectId)) return { ok: false, error: "not_found" };
+  const [project] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), inOrganization(scope)));
+  if (!project) return { ok: false, error: "not_found" };
+  const { key, record } = await insertKey(db, project.id, name, keyScope);
+  return { ok: true, key, record: toSummary(record) };
+}
+
+/**
+ * Revokes one active key of a project in `scope`, by id. Returns the
+ * revoked key, or null if no active key of that project matched.
+ */
+export async function revokeProjectApiKey(
+  db: Pick<Database, "update">,
+  scope: OrganizationScope,
+  { projectId, keyId }: { projectId: string; keyId: string },
+  now: Date = new Date(),
+): Promise<ApiKeySummary | null> {
+  if (!isUuid(projectId) || !isUuid(keyId)) return null;
+  const [revoked] = await db
+    .update(apiKeys)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(apiKeys.id, keyId),
+        eq(apiKeys.projectId, projectId),
+        isNull(apiKeys.revokedAt),
+        projectInOrganization(apiKeys.projectId, scope),
+      ),
+    )
+    .returning(summaryColumns);
+  return revoked ?? null;
 }
 
 export type AuthenticateResult =

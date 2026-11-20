@@ -162,6 +162,9 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
 
 - [x] Navigation across overview, usage, prices, budgets, customers, insights, integrations and team (#176)
 - [ ] Onboarding in the dashboard: projects, API keys, invitations and roles (the command line stays)
+  - [x] Projects: create and edit (#21)
+  - [x] API keys: create, shown once, list and revoke, for admins (#182)
+  - [ ] Invitations and roles
 - [ ] A read-only customer portal
 - [ ] Three demo scenarios: a support SaaS, multi-model agents, and usage-based billing
 - [ ] Architecture, cost accounting, integration and release documents, with screenshots from the running app

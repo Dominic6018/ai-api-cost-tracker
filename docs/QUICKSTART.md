@@ -23,7 +23,7 @@ docker compose run --rm migrate npm run --silent api-key -- create --project sam
 docker compose run --rm migrate npm run --silent api-key -- create --project sample-app --name quickstart-read --scope read
 ```
 
-Each prints a key starting `act_`, once. The first sends usage; the second, a read key, is only for the sample app's totals in step 4. Keep them out of source control.
+Or, signed in as an admin, open **Projects**, choose **Keys** for `sample-app`, and create one key that sends usage and one that reads reports. Each prints a key starting `act_`, once. The first sends usage; the second, a read key, is only for the sample app's totals in step 4. Keep them out of source control.
 
 ```bash
 export COST_TRACKER_API_KEY=act_...   # the first key
