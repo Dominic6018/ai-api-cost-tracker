@@ -113,7 +113,7 @@ Recording usage shouldn't require hand-written API calls.
 - [x] An audit log of changes (#122)
 - [x] Single sign-on with OpenID Connect (#137)
 
-Per-customer billing through Stripe moved to [Milestone 13](#milestone-13-billing-credits-and-profitability): it needs the billing ledger built there first.
+Per-customer billing through Stripe moved to [Milestone 13](#milestone-13-billing-credits-and-profitability-): it needs the billing ledger built there first.
 
 ## Milestone 11: Financial reliability ✅
 
@@ -126,7 +126,7 @@ Numbers people can trust, before anything is built on them. Details and evidence
 - [x] Ingestion health: stored, unpriced, replayed, conflicting and invalid counts per project and day (#143)
 - [x] Project slugs unique per organization; command-line changes logged in the organization they concern (#141)
 
-## Milestone 12: Integration experience
+## Milestone 12: Integration experience ✅
 
 - [x] Reserve and release budget from the TypeScript and Python clients (#145)
 - [x] Reliable client delivery: a bounded queue with backoff, and counts of dropped usage (#147)
@@ -134,7 +134,7 @@ Numbers people can trust, before anything is built on them. Details and evidence
 - [x] Count a request once when a client and OpenTelemetry (or a gateway) both report it (#151)
 - [x] Quickstarts that run end to end, and a sample app (#153)
 
-## Milestone 13: Billing, credits and profitability
+## Milestone 13: Billing, credits and profitability ✅
 
 Starts only after Milestone 11: customer invoicing must not rest on costs or tenant boundaries that aren't reliable.
 
@@ -150,7 +150,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
   - [x] Payment status from Stripe's signed, idempotent webhooks (#180)
 - [x] Revenue and a "revenue minus AI API cost" view per customer, never labelled profit (#165)
 
-## Milestone 14: Insights
+## Milestone 14: Insights ✅
 
 - Why spend changed:
   - [x] Volume, model mix, tokens per request and cost per token, adding up exactly (#167)
@@ -175,7 +175,7 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
   - [x] Architecture: [docs/ARCHITECTURE.md](ARCHITECTURE.md) (#198)
   - [x] Cost accounting: [docs/COST-ACCOUNTING.md](COST-ACCOUNTING.md) (#200)
   - [x] Integration guide: [docs/INTEGRATION.md](INTEGRATION.md) (#202)
-  - [ ] Release notes
+  - [x] Release notes: [docs/RELEASE_NOTES.md](RELEASE_NOTES.md) (#204)
   - [ ] Screenshots of the newer pages from the running app
 
 ## Why these milestones
