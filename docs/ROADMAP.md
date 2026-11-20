@@ -174,7 +174,8 @@ Starts only after Milestone 11: customer invoicing must not rest on costs or ten
 - [ ] Architecture, cost accounting, integration and release documents, with screenshots from the running app
   - [x] Architecture: [docs/ARCHITECTURE.md](ARCHITECTURE.md) (#198)
   - [x] Cost accounting: [docs/COST-ACCOUNTING.md](COST-ACCOUNTING.md) (#200)
-  - [ ] Integration guide, and release notes
+  - [x] Integration guide: [docs/INTEGRATION.md](INTEGRATION.md) (#202)
+  - [ ] Release notes
   - [ ] Screenshots of the newer pages from the running app
 
 ## Why these milestones

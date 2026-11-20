@@ -207,6 +207,7 @@ docs/OPENTELEMETRY.md  OpenTelemetry intake and Collector setup
 docs/BILLING.md   The billing ledger, kept apart from provider cost
 docs/ARCHITECTURE.md  How the parts fit together
 docs/COST-ACCOUNTING.md  How a request's cost is computed, priced and reconciled
+docs/INTEGRATION.md  Wiring the tracker into an app, with a go-live checklist
 scripts/          End-to-end smoke tests and screenshots run in CI
 clients/typescript/  Dependency-free client that reports usage from provider responses
 clients/python/      The same for Python, standard library only
@@ -390,7 +391,7 @@ The sign-in page then shows **Sign in with …** above the password form; withou
 
 Each request is authenticated with a per-project API key. The key decides which project the usage belongs to.
 
-The [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients read usage from OpenAI, Anthropic and Gemini responses and report it for you, e.g. `tracker.track(openai.responses.create(...))`. Apps instrumented with OpenTelemetry can send their traces instead; see [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md). Anything else calls the API below. The [quickstart](docs/QUICKSTART.md) has runnable scripts and a [sample support agent](examples/support-agent/README.md) that need no provider keys; [docs/DEMOS.md](docs/DEMOS.md) lists every runnable demo, including a [multi-model agent under a run budget](examples/multi-model-agent/README.md).
+The [TypeScript](clients/typescript/README.md) and [Python](clients/python/README.md) clients read usage from OpenAI, Anthropic and Gemini responses and report it for you, e.g. `tracker.track(openai.responses.create(...))`. Apps instrumented with OpenTelemetry can send their traces instead; see [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md). Anything else calls the API below. The [quickstart](docs/QUICKSTART.md) has runnable scripts, the [integration guide](docs/INTEGRATION.md) covers wiring it into a real app, and a [sample support agent](examples/support-agent/README.md) that need no provider keys; [docs/DEMOS.md](docs/DEMOS.md) lists every runnable demo, including a [multi-model agent under a run budget](examples/multi-model-agent/README.md).
 
 ### API keys
 

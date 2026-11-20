@@ -89,6 +89,8 @@ Each run uses new request IDs, so running it again adds the same amounts again. 
 
 Keys go in server-side code only. Create one key per service, so you can revoke one without the others.
 
+Before going live, read the [integration guide](INTEGRATION.md): attribution, retries, failure modes, budgets and a go-live checklist.
+
 ## Troubleshooting
 
 | What you see                                                     | Why, and what to do                                                                                                                                                                     |
