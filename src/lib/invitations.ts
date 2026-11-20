@@ -1,37 +1,27 @@
 import { z } from "zod";
 import { USER_ROLES, type UserRole } from "@/db/schema";
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "./passwords";
-import { generateSessionToken, hashSessionToken } from "./sessions";
+import {
+  absoluteUrl,
+  generateLinkToken,
+  hashLinkToken,
+  isWellFormedLinkToken,
+} from "./links";
 
 /** How long an invitation link works. */
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** A new link token, 256 bits from a secure random source, and its hash. */
-export function generateInvitationToken(): { token: string; hash: string } {
-  const token = generateSessionToken();
-  return { token, hash: hashInvitationToken(token) };
-}
-
-export const hashInvitationToken = hashSessionToken;
-
-/** Tokens are base64url of 32 bytes; anything else is refused unread. */
-export function isWellFormedInvitationToken(token: string): boolean {
-  return /^[A-Za-z0-9_-]{43}$/.test(token);
-}
+export const generateInvitationToken = generateLinkToken;
+export const hashInvitationToken = hashLinkToken;
+export const isWellFormedInvitationToken = isWellFormedLinkToken;
 
 export const invitationPath = (token: string) => `/invite/${token}`;
 
 /** The link's full address, from the request's own scheme and host. */
-export function invitationUrl(
+export const invitationUrl = (
   token: string,
   request: { host: string | null; proto: string | null },
-): string {
-  const host = request.host ?? "localhost:3000";
-  const proto =
-    request.proto?.split(",")[0]?.trim() ||
-    (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}${invitationPath(token)}`;
-}
+) => absoluteUrl(invitationPath(token), request);
 
 // --- The admin's invite form -------------------------------------------
 

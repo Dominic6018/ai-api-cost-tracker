@@ -21,7 +21,15 @@ import {
   type Parsed,
 } from "@/lib/billing";
 import { parseEnv } from "@/lib/env";
-import { COMMAND_LINE } from "../audit";
+import { audited, COMMAND_LINE } from "../audit";
+import {
+  createPortalLink,
+  listPortalLinks,
+  revokePortalLink,
+} from "../billing-portal";
+import { portalLinkCreatedEntry, portalLinkRevokedEntry } from "@/lib/audit";
+import { absoluteUrl } from "@/lib/links";
+import { portalPath } from "@/lib/portal";
 import {
   addAdjustment,
   createBillingCustomer,
@@ -74,6 +82,9 @@ const USAGE = `Usage:
   npm run billing -- revenue [--month YYYY-MM]
   npm run billing -- stripe-invoice [--customer <id>]
   npm run billing -- stripe-invoices --customer <id>
+  npm run billing -- portal-link --customer <id> [--url <app URL>]
+  npm run billing -- portal-links
+  npm run billing -- portal-revoke --link <link id>
 
 Each takes --org <slug>; the default organization otherwise.
 
@@ -110,11 +121,29 @@ stripe-invoice creates a draft Stripe invoice for each customer's ledger
 entries not yet invoiced (or one --customer), for you to review and send
 in Stripe. It needs STRIPE_SECRET_KEY, a test key unless
 STRIPE_ALLOW_LIVE=true. stripe-invoices lists a customer's invoices with
-their latest status from Stripe's webhooks.`;
+their latest status from Stripe's webhooks.
+
+portal-link makes a link that lets one customer read their own statement,
+read-only and without an account, for 90 days; it's printed once. With
+--url (e.g. https://costs.example.com) it prints the full address,
+otherwise the path to add to yours. It never shows AI API cost.
+portal-links lists the working links; portal-revoke stops one.`;
 
 function valid<T>(parsed: Parsed<T>): T {
   if (!parsed.ok) throw new Error(parsed.error);
   return parsed.value;
+}
+
+function parseAppUrl(value: string): URL {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:" || url.protocol === "http:") return url;
+  } catch {
+    // Reported below.
+  }
+  throw new Error(
+    "--url must be the app's address, e.g. https://costs.example.com",
+  );
 }
 
 // Manages the billing ledger in the database in DATABASE_URL.
@@ -138,6 +167,8 @@ async function main() {
       month: { type: "string" },
       expires: { type: "string" },
       grant: { type: "string" },
+      link: { type: "string" },
+      url: { type: "string" },
     },
   });
   const [command] = positionals;
@@ -159,6 +190,9 @@ async function main() {
     revenue: [],
     "stripe-invoice": [],
     "stripe-invoices": ["customer"],
+    "portal-link": ["customer"],
+    "portal-links": [],
+    "portal-revoke": ["link"],
   };
   if (
     !command ||
@@ -227,6 +261,7 @@ async function main() {
   }
   const key =
     values.key !== undefined ? valid(parseEntryKey(values.key)) : undefined;
+  const appUrl = values.url !== undefined ? parseAppUrl(values.url) : null;
 
   // Stripe settings are checked before connecting, like the arguments.
   const stripe = command === "stripe-invoice" ? parseStripeConfig() : null;
@@ -470,6 +505,61 @@ async function main() {
           console.log(`${target.externalId}  nothing to invoice`);
         }
       }
+    } else if (command === "portal-link") {
+      const found = await customer();
+      const { token, link } = await audited(db, actor, async (tx) => {
+        const created = await createPortalLink(tx, {
+          customer: found,
+          createdBy: actor.label,
+        });
+        return { result: created, entry: portalLinkCreatedEntry(created.link) };
+      });
+      const path = portalPath(token);
+      console.log(
+        `Portal link for ${found.externalId}, working until ${link.expiresAt.toISOString().slice(0, 10)}. ` +
+          "Send it only to the customer; it can't be shown again:\n\n" +
+          (appUrl
+            ? absoluteUrl(path, {
+                host: appUrl.host,
+                proto: appUrl.protocol.replace(":", ""),
+              })
+            : path),
+      );
+    } else if (command === "portal-links") {
+      const links = await listPortalLinks(db, organization.id);
+      if (links.length === 0) console.log("No working portal links.");
+      for (const link of links) {
+        console.log(
+          [
+            link.id,
+            link.customer.externalId,
+            `until ${link.expiresAt.toISOString().slice(0, 10)}`,
+            link.lastViewedAt
+              ? `opened ${link.lastViewedAt.toISOString().slice(0, 10)}`
+              : "never opened",
+            link.createdBy,
+          ].join("  "),
+        );
+      }
+    } else if (command === "portal-revoke") {
+      const revoked = await audited(db, actor, async (tx) => {
+        const done = await revokePortalLink(tx, {
+          organizationId: organization.id,
+          linkId: values.link!,
+        });
+        return {
+          result: done,
+          entry: done ? portalLinkRevokedEntry(done) : null,
+        };
+      });
+      if (!revoked) {
+        throw new Error(
+          `No working portal link "${values.link}" in ${organization.slug}.`,
+        );
+      }
+      console.log(
+        `Revoked the portal link for ${revoked.customer.externalId}.`,
+      );
     } else if (command === "stripe-invoices") {
       const found = await customer();
       const invoices = await listStripeInvoices(db, found);

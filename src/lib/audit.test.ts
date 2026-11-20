@@ -4,6 +4,8 @@ import {
   apiKeyCreatedEntry,
   apiKeyRevokedEntry,
   formatAuditDetails,
+  portalLinkCreatedEntry,
+  portalLinkRevokedEntry,
   invitationAcceptedEntry,
   invitationRevokedEntry,
   invitedEntry,
@@ -187,6 +189,31 @@ describe("invitation entries", () => {
       action: "account.created",
       target: "new@example.com",
       details: { role: "member", invitedBy: "admin@example.com" },
+    });
+  });
+});
+
+describe("portal link entries", () => {
+  const link = {
+    id: "4f0c6c5e-2f7a-4b8e-9d1a-3c5e7f9a1b2c",
+    expiresAt: new Date("2027-02-19T09:00:00Z"),
+    customer: { externalId: "cus_42", name: "Acme" },
+  };
+
+  it("name the customer and link id, never the link", () => {
+    expect(portalLinkCreatedEntry(link)).toEqual({
+      action: "billing.portal_link_created",
+      target: "cus_42",
+      details: {
+        linkId: link.id,
+        customer: "Acme",
+        expiresAt: "2027-02-19T09:00:00.000Z",
+      },
+    });
+    expect(portalLinkRevokedEntry(link)).toEqual({
+      action: "billing.portal_link_revoked",
+      target: "cus_42",
+      details: { linkId: link.id, customer: "Acme" },
     });
   });
 });

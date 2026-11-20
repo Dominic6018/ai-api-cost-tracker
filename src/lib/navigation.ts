@@ -35,7 +35,17 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/savings", label: "Savings estimates" },
     ],
   },
-  { label: "Customers", links: [{ href: "/revenue", label: "Revenue" }] },
+  {
+    label: "Customers",
+    links: [
+      { href: "/revenue", label: "Revenue" },
+      {
+        href: "/revenue/portal",
+        label: "Portal links",
+        permission: "portal:manage",
+      },
+    ],
+  },
   {
     label: "Budgets",
     links: [{ href: "/projects", label: "Projects and budgets" }],

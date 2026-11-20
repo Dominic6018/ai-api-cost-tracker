@@ -109,6 +109,21 @@ What happens to each request:
 
 `npm run billing -- stripe-invoices --customer cus_42` lists a customer's invoices with their latest status. A failed payment or a void invoice changes nothing on the ledger: correct it with an adjustment if needed.
 
+## Customer portal
+
+A customer can read their own statement through a portal link, with no account. An admin makes one at **Customers → Portal links** (`/revenue/portal`) or with `npm run billing -- portal-link --customer cus_42 --url https://costs.example.com`. The link is shown once, and the admin sends it to the customer. It works for 90 days unless it's revoked first. Only a hash of it is stored.
+
+The portal (`/portal/<token>`) is read-only. It shows the customer's name and your organization's name, then:
+
+- **Balance:** what they owe, or the credit they have.
+- **Plan:** this month's plan, by name and monthly fee.
+- **Credit:** what's left to use, and when it expires.
+- **Entries:** the latest 100 ledger entries, each with its date, type, description and amount.
+
+It never shows AI API cost, a plan's usage multiplier or included usage, or who entered anything. The descriptions you write on adjustments and credit **are** shown, so write them for the customer. The page has no forms and no links into the dashboard. It sends no `Referer` and asks not to be indexed. Revoked, expired and unknown links all get the same message.
+
+Working links are listed on the page and by `npm run billing -- portal-links`, with who made them, when they expire and when they were last opened. You can revoke them on the page or with `npm run billing -- portal-revoke --link <link id>`. Only admins can manage links, and only their own organization's. Making and revoking links is audited.
+
 ## Revenue and AI API cost
 
 `/revenue` on the dashboard, and `npm run billing -- revenue --month 2026-10`, put each customer's revenue next to what their usage cost, for a UTC month:
@@ -165,6 +180,10 @@ npm run billing -- revenue --month 2026-10        # revenue, AI API cost and the
 
 npm run billing -- stripe-invoice                 # draft Stripe invoices; needs STRIPE_SECRET_KEY
 npm run billing -- stripe-invoices --customer cus_42  # its invoices and their status in Stripe
+
+npm run billing -- portal-link --customer cus_42 --url https://costs.example.com  # a read-only statement link
+npm run billing -- portal-links                   # working links
+npm run billing -- portal-revoke --link <link id>
 ```
 
 `--from` defaults to the current UTC month and `--month` to last month. `ledger` also lists the customer's plan history. Run `charge` early each month, for example from cron, after any late usage has arrived.
