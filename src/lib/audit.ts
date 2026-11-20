@@ -47,6 +47,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "billing.stripe_paid": "Paid through Stripe",
   "account.invited": "Invited account",
   "account.invitation_revoked": "Revoked invitation",
+  "billing.portal_link_created": "Created portal link",
+  "billing.portal_link_revoked": "Revoked portal link",
 };
 
 const PROJECT_FIELDS = [
@@ -148,6 +150,33 @@ export function invitationAcceptedEntry(
       role: invitation.role,
       invitedBy: invitation.invitedByLabel,
     },
+  };
+}
+
+type PortalLinkFields = {
+  id: string;
+  expiresAt: Date;
+  customer: { externalId: string; name: string };
+};
+
+/** A portal link, by its customer; never the link. */
+export function portalLinkCreatedEntry(link: PortalLinkFields): AuditEntry {
+  return {
+    action: "billing.portal_link_created",
+    target: link.customer.externalId,
+    details: {
+      linkId: link.id,
+      customer: link.customer.name,
+      expiresAt: link.expiresAt.toISOString(),
+    },
+  };
+}
+
+export function portalLinkRevokedEntry(link: PortalLinkFields): AuditEntry {
+  return {
+    action: "billing.portal_link_revoked",
+    target: link.customer.externalId,
+    details: { linkId: link.id, customer: link.customer.name },
   };
 }
 

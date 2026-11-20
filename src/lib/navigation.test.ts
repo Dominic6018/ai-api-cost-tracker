@@ -31,6 +31,7 @@ describe("navigationFor", () => {
       const hrefs = sections.flatMap((s) => s.links.map((l) => l.href));
       expect(hrefs).not.toContain("/audit");
       expect(hrefs).not.toContain("/team");
+      expect(hrefs).not.toContain("/revenue/portal");
     }
   });
 

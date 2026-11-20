@@ -620,6 +620,8 @@ export const AUDIT_ACTIONS = [
   "billing.stripe_paid",
   "account.invited",
   "account.invitation_revoked",
+  "billing.portal_link_created",
+  "billing.portal_link_revoked",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -657,7 +659,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_action_valid",
-      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded', 'billing.stripe_invoiced', 'billing.stripe_paid', 'account.invited', 'account.invitation_revoked')`,
+      sql`${t.action} in ('project.created', 'project.updated', 'price.added', 'price.ended', 'account.created', 'account.role_changed', 'account.password_reset', 'account.sessions_revoked', 'api_key.created', 'api_key.revoked', 'organization.created', 'account.organization_changed', 'usage.repriced', 'billing.customer_created', 'billing.adjusted', 'billing.reversed', 'billing.plan_created', 'billing.subscribed', 'billing.unsubscribed', 'billing.charged', 'billing.credit_granted', 'billing.credits_applied', 'billing.credit_refunded', 'billing.stripe_invoiced', 'billing.stripe_paid', 'account.invited', 'account.invitation_revoked', 'billing.portal_link_created', 'billing.portal_link_revoked')`,
     ),
   ],
 );
@@ -1226,6 +1228,38 @@ export const billingStripeCustomers = pgTable(
 );
 
 /**
+ * Links that let one billing customer read their own statement, without
+ * an account. Only a hash of the link's token is stored.
+ */
+export const billingPortalLinks = pgTable(
+  "billing_portal_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id").notNull(),
+    customerId: uuid("customer_id").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    // Who made it, by email or "command line".
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+  },
+  (t) => [
+    // The customer, and only in its own organization.
+    foreignKey({
+      name: "billing_portal_links_customer_fk",
+      columns: [t.customerId, t.organizationId],
+      foreignColumns: [billingCustomers.id, billingCustomers.organizationId],
+    }).onDelete("cascade"),
+    uniqueIndex("billing_portal_links_token_hash_idx").on(t.tokenHash),
+    index("billing_portal_links_customer_idx").on(t.customerId),
+  ],
+);
+
+/**
  * A draft invoice created in Stripe for ledger entries not invoiced
  * before, in one mode. Append-only, like the ledger.
  */
@@ -1377,6 +1411,7 @@ export type BillingCreditUse = typeof billingCreditUses.$inferSelect;
 export type StripeInvoice = typeof billingStripeInvoices.$inferSelect;
 export type StripeInvoiceEvent = typeof billingStripeInvoiceEvents.$inferSelect;
 export type AccountInvitation = typeof accountInvitations.$inferSelect;
+export type BillingPortalLink = typeof billingPortalLinks.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ModelPricing = typeof modelPricing.$inferSelect;

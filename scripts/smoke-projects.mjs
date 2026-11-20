@@ -926,6 +926,64 @@ step("an admin invites someone by link, who joins with their own password");
   cookie = admin;
 }
 
+step("an admin makes and revokes a customer portal link");
+{
+  const admin = await page("/revenue/portal");
+  assert.equal(admin.status, 200);
+  if (!admin.html.includes('id="customerId"')) {
+    // CI adds billing customers later, from the command line.
+    assert.match(admin.html, /No billing customers yet/);
+  } else {
+    const form = formFields(admin.html, 'id="customerId"');
+    const customerId = admin.html.match(
+      /<select[^>]*id="customerId"[\s\S]*?<option value="([^"]+)"/,
+    )?.[1];
+    assert.ok(customerId, "a customer to choose");
+    form.set("customerId", customerId);
+    const response = await fetch(`${base}/revenue/portal`, {
+      method: "POST",
+      body: form,
+      headers: { cookie },
+      redirect: "manual",
+    });
+    const body = await response.text();
+    assert.equal(response.status, 200);
+    const links = [
+      ...new Set(body.match(/\/portal\/[A-Za-z0-9_-]{43}/g) ?? []),
+    ];
+    assert.equal(links.length, 1, "the link is shown once");
+    const [link] = links;
+
+    const signedIn = cookie;
+    cookie = "";
+    const portal = await page(link);
+    assert.equal(portal.status, 200);
+    assert.match(portal.html, /Statement as of/);
+    assert.match(portal.html, /<meta name="referrer" content="no-referrer"\/>/);
+    assert.doesNotMatch(portal.html, /Sign out|dashboard-nav/);
+    cookie = signedIn;
+
+    const listed = await page("/revenue/portal");
+    assert.ok(!listed.html.includes(link), "the link isn't shown again");
+    const revokeButton = listed.html.match(
+      /<button[^>]*aria-label="(Revoke the portal link for [^"]+)"/,
+    )?.[1];
+    assert.ok(revokeButton, "a working link to revoke");
+    const revoke = await fetch(`${base}/revenue/portal`, {
+      method: "POST",
+      body: formFields(listed.html, `aria-label="${revokeButton}"`),
+      headers: { cookie },
+      redirect: "manual",
+    });
+    await revoke.text();
+    assert.equal(revoke.status, 303);
+    // The newest link is listed first, so this revoked the one just made.
+    cookie = "";
+    assert.match((await page(link)).html, /This link can(&#x27;|')t be used/);
+    cookie = signedIn;
+  }
+}
+
 step("the audit log records who changed projects and prices");
 {
   const result = await page("/audit");
@@ -970,6 +1028,7 @@ if (process.env.SMOKE_VIEWER_EMAIL) {
     "/prices/new",
     "/audit",
     "/team",
+    "/revenue/portal",
     keysPath,
   ]) {
     const denied = await page(path);
@@ -1049,6 +1108,7 @@ if (process.env.SMOKE_OTHER_ORG_EMAIL) {
     "/changes",
     "/savings",
     "/team",
+    "/revenue/portal",
   ]) {
     const result = await page(path);
     assert.equal(result.status, 200, `GET ${path}`);

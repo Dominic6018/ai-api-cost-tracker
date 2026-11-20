@@ -773,6 +773,44 @@ jobs:
           grep -qF "\"customer\":{\"customerId\":\"$C3\",\"plan\":\"$P-limited\",\"capUsd\":\"5.000000\",\"spentUsd\":\"4.000000\"" limit.json
           test "$(limit_check 1)" = 200
           grep -q '"allowed":true' limit.json
+          # Customer portal: a read-only statement by link, showing what's
+          # billed and never AI API cost. $C2 was charged and paid in full;
+          # $C3 has $4 of AI API cost and no entries.
+          portal_link() {
+            npm run --silent billing -- portal-link --customer "$1" --url http://localhost:3000 \
+              | grep -oE 'http://localhost:3000/portal/[A-Za-z0-9_-]{43}'
+          }
+          if npm run --silent billing -- portal-link --customer "$C2" --url ftp://example.com; then exit 1; fi
+          LINK=$(portal_link "$C2")
+          echo "::add-mask::$LINK"
+          test "$(curl -s -o portal.html -w '%{http_code}' "$LINK")" = 200
+          grep -qF 'CI charged' portal.html
+          grep -qF 'Nothing owed' portal.html
+          grep -qF '>Payment<' portal.html
+          grep -qF "Paid in Stripe, invoice $INV" portal.html
+          grep -qF '<meta name="referrer" content="no-referrer"/>' portal.html
+          LIMITED=$(portal_link "$C3")
+          echo "::add-mask::$LIMITED"
+          curl -s -o limited.html "$LIMITED"
+          grep -qF 'CI limited' limited.html
+          grep -qF 'No entries yet' limited.html
+          # The page as read, without scripts (dev builds put file paths there),
+          # and the data sent to the browser, for fields it must never carry.
+          visible() { node -e 'const h=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(h.replace(/<script[\s\S]*?<\/script>/g,""))' "$1"; }
+          for page in portal.html limited.html; do
+            if visible "$page" | grep -qiE 'AI API|multiplier|cost|command line|4\.00'; then
+              echo "$page shows internal data"; exit 1
+            fi
+            if grep -qiE 'usage_?multiplier|included_?usage|cost_?usd|created_?by' "$page"; then
+              echo "$page sends internal data"; exit 1
+            fi
+          done
+          LINK_ID=$(npm run --silent billing -- portal-links | grep -F "  $C2  " | cut -d' ' -f1)
+          npm run --silent billing -- portal-revoke --link "$LINK_ID" | grep -qF "Revoked the portal link for $C2"
+          curl -s "$LINK" | grep -qF 'This link can'
+          if npm run --silent billing -- portal-revoke --link "$LINK_ID"; then exit 1; fi
+          test "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/portal/$(printf 'A%.0s' $(seq 43))")" = 200
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM audit_log WHERE action LIKE 'billing.portal_link_%' AND target IN ('$C2', '$C3')")" = 3
       - name: Budget alerts reach a signed webhook once per threshold
         run: |
           # A local receiver that checks each request's HMAC signature.

@@ -16,6 +16,8 @@ const ALLOWED_ROLES = {
   "api_keys:manage": ["admin"],
   // Who is in the organization and what they may do.
   "team:manage": ["admin"],
+  // A portal link opens a customer's statement to whoever holds it.
+  "portal:manage": ["admin"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Permission = keyof typeof ALLOWED_ROLES;

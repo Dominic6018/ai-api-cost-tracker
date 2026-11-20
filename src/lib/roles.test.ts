@@ -24,6 +24,9 @@ describe("can", () => {
     ["admin", "team:manage", true],
     ["member", "team:manage", false],
     ["viewer", "team:manage", false],
+    ["admin", "portal:manage", true],
+    ["member", "portal:manage", false],
+    ["viewer", "portal:manage", false],
   ] as const)("%s, %s: %s", (role, permission, allowed) => {
     expect(can(inDefault(role), permission)).toBe(allowed);
   });
